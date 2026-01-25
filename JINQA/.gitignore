@@ -1,0 +1,3 @@
+# JINQA .gitignore
+logs/
+*.ex5
