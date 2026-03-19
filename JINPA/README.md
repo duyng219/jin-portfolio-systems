@@ -67,18 +67,28 @@ Tùy chỉnh: xem `configs/hotkeys.json`
 
 ---
 
+#include "managers/indicators_manager.mqh";
+#include "managers/trade_executor.mqh";
+#include "managers/position_manager.mqh";
+#include "managers/time_manager.mqh"
+#include "managers/bar_manager.mqh"
+#include "managers/risk_manager.mqh"
+
 ## Cấu trúc Files
 
 ```
 JINPA/
 ├── jinpa-manual.mq5          # EA chính
-├── ui_components.mqh         # UI buttons, panels
+├── ui_components.mqh     # UI components
 │
 ├── _core/                    # Core logic
 │   ├── managers/
 │   │   ├── account_manager.mqh
 │   │   ├── risk_manager.mqh
 │   │   ├── position_manager.mqh
+│   │   ├── indicators_manager.mqh
+│   │   ├── bar_manager.mqh
+│   │   ├── time_manager.mqh
 │   │   └── trade_executor.mqh
 │   └── infrastructure/
 │       ├── ui_base.mqh

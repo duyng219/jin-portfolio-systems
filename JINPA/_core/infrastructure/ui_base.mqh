@@ -1,1 +1,0 @@
-// JINPA UI Base
