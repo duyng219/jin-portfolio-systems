@@ -1,140 +1,141 @@
 //+------------------------------------------------------------------+
-//|                                                                    jinpa-manual.mq5 |
-//|                                                                                       duyng |
-//|                                                  https://github.com/duyng219 |
+//|                                                 jinpa-manual.mq5 |
+//|                                       Copyright 2026, Duy Nguyen |
+//|                                             https://duyquant.dev |
 //+------------------------------------------------------------------+
-#property copyright "duyng"
-#property link      "https://github.com/duyng219"
+#property copyright "Copyright 2026, Duy Nguyen"
+#property link      "https://duyquant.dev"
 #property version   "1.00"
+#property description "JINPA - Manual Trading Assistant"
+#property description ""
+#property description "Price Action based manual trading with one-click order entry and ATR risk management"
+#property strict
 
 //+------ INCLUDES ------+//
 #include <Trade/Trade.mqh>
 #include "_core/framework_manager.mqh"
 
 //+------ GLOBAL OBJECTS ------+//
-// Trade & Core Objects
-CTrade trade;                      // Core trade object
-CPM PM;                             // Position manager
-CRM RM;                             // Risk manager
-CTradeExecutor Trade;              // Trade executor
-CBar Bar;                           // Bar info handler
-CiATR ATR;                          // ATR indicator
-CiMA MA;                            // Moving average indicator
-
-// UI & Manager Objects
-CUIManager uiManager;              // UI management
-CDrawdownManager drawdownManager;  // Drawdown tracking
-COrderExecutor orderExecutor;      // Order execution
-CInfoDisplay infoDisplay;          // Info display
+CTrade                           trade;                              // MT5 built-in trade object (dùng cho tất cả orders)
+CRiskManager               RM;                                 // Tính lot size
+CPositionManager         PM;                                // SL/TP, Trailing Stop
+CBar                               Bar;                                // Bar OHLCV data
+CiATR                             ATR;                               // ATR indicator
+CiMA                              MA;                                // Moving Average indicator
+CUIManager                  uiManager;                     // 10 buttons trên chart
+CDrawdownManager    drawdownManager;       // Theo dõi drawdown ngày/tháng
+COrderExecutor             orderExecutor;               // Bridge UI → orders
+CInfoDisplay                  infoDisplay;                    // Stats display
 
 //+------ TRADING SETTINGS ------+//
-sinput group                               "────────────── BASIC SETTINGS ──────────────"
-input ulong                                 MagicNumber = 0001;                     // Magic Number
-input int                                      slPoints = 0;                                      // Stop Loss Points - 0 = Use ATR
-input ushort                                POExpirationMinutes = 360;            // Pending Order Expiration (minutes)
-input double                               MaxDrawdownDaily = 0;                  // Max Daily Drawdown (%) - 0 = Disabled
+sinput group                              "────────────── BASIC SETTINGS ──────────────"
+input ulong                               MagicNumber                   = 1010;   // Magic Number
+input int                                    slPointsValue                      = 0;      // Stop Loss Points - 0 = Use ATR
+input ushort                              POExpirationMinutes       = 360;    // Pending Order Expiration (minutes)
+input double                             MaxDrawdownDaily           = 0;      // Max Daily Drawdown (%) - 0 = Disabled
 
-sinput group                               "────────────── RISK MANAGEMENT ────────────"
-input ENUM_MONEY_MANAGEMENT  MoneyManagement = MM_EQUITY_RISK_PERCENT; // Risk Method
-input double                                RiskPercent = 0.2;                              // Risk per Trade (%)
-input double                                FixedVolume = 0.01;                         // Fixed Lot Size
-input double                                MinLotPerEquitySteps = 500;           // Minimum Lot per Equity
+sinput group                              "────────────── RISK MANAGEMENT ────────────"
+input ENUM_MONEY_MANAGEMENT    MoneyManagement      = MM_EQUITY_RISK_PERCENT; // Risk Method
+input double                              RiskPercent                      = 0.5;   // Risk per Trade (%) - 0.1 to 5
+input double                              FixedVolume                    = 0.01;  // Fixed Lot Size (when using fixed MM)
+input double                              MinLotPerEquitySteps      = 500;   // Equity per Lot (e.g. 500 USD = 0.01 lot)
 
-sinput group                               "────────────── MOVING AVERAGE ─────────────"
-input int                                      MAPeriod = 21;                                   // Period
-input ENUM_MA_METHOD        MAMethod = MODE_EMA;                 // Type
-input int                                      MAShift = 0;                                        // Shift
-input ENUM_APPLIED_PRICE      MAPrice = PRICE_CLOSE;                    // Applied Price
+sinput group                              "────────────── MOVING AVERAGE ─────────────"
+input int                                       MAPeriod             = 21;          // Period
+input ENUM_MA_METHOD         MAMethod          = MODE_EMA;    // Type
+input int                                       MAShift                = 0;           // Shift
+input ENUM_APPLIED_PRICE       MAPrice               = PRICE_CLOSE; // Applied Price
 
-sinput group                               "─────────────── ATR SETTINGS ──────────────"
-input int                                      ATRPeriod = 14;                                  // Period
-input double                               ATRFactor = 1;                                    // Factor (for SL)
-input double                               ATRFactorPO = 1;                               // Factor (for Pending Order)
+sinput group                              "─────────────── ATR SETTINGS ──────────────"
+input int                                       ATRPeriod                     = 14;  // Period
+input double                                ATRFactor                      = 2;   // Factor (for SL & Trailing SL)
+input double                                ATRFactorPO                 = 2;   // Factor (for Pending Order)
+
+sinput group                              "──────────── TRAILING STOP ─────────────────"
+input ENUM_TSL_MODE            TSLMode          = TSL_CONTINUOUS; // Trailing Stop Mode
+input double                              TSLActivationATR = 1.0;            // Breakeven First: kích hoạt sau X ATR lãi
+input double                              TSLStepATR       = 1.0;            // Step: dịch SL tối thiểu X ATR mỗi bước
+
+sinput group                              "────────────────── LOGGING ─────────────────"
+input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;              // Log Level
 
 int OnInit()
-{  
-    // Set magic number
-    Trade.SetMagicNumber(MagicNumber);
+{
+    // Set magic number trên CTrade — áp dụng cho tất cả orders
+    trade.SetExpertMagicNumber(MagicNumber);
 
-    // Validate trading is allowed
     if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))
     {
         Alert("Trading is disabled in Terminal!");
-        return(INIT_FAILED);
+        return INIT_FAILED;
     }
-    
+
     if(!MQLInfoInteger(MQL_TRADE_ALLOWED))
     {
-        Alert("EA not allowed to trade! Please enable AutoTrading!");
-        return(INIT_FAILED);
+        Alert("EA not allowed to trade! Please enable AutoTrading.");
+        return INIT_FAILED;
     }
-    
-    // Select and validate symbol
+
     if(!SymbolSelect(_Symbol, true))
     {
-        Alert("Failed to select symbol: " + _Symbol);
-        return(INIT_FAILED);
+        Alert("Failed to select symbol: ", _Symbol);
+        return INIT_FAILED;
     }
-    
-    // Display symbol volume specifications in Experts tab
-    Print("Symbol Info - Min Vol: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN),
+
+    Print("Symbol — Min Vol: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN),
           " | Max Vol: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX),
           " | Step: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP));
 
-    // Initialize UI manager
     uiManager.Initialize();
     Sleep(100);
 
-    // Initialize Moving Average indicator
-    int MAHandle = MA.Init(_Symbol, _Period, MAPeriod, MAShift, MAMethod, MAPrice);
-    if(MAHandle == -1)
+    if(MA.Init(_Symbol, _Period, MAPeriod, MAShift, MAMethod, MAPrice) == -1)
     {
-        Alert("Moving Average indicator initialization failed!");
-        return(INIT_FAILED);
+        Alert("MA indicator initialization failed!");
+        return INIT_FAILED;
     }
 
-    // Initialize ATR indicator
-    int ATRHandle = ATR.Init(_Symbol, _Period, ATRPeriod);   
-    if(ATRHandle == -1)
+    if(ATR.Init(_Symbol, _Period, ATRPeriod) == -1)
     {
         Alert("ATR indicator initialization failed!");
-        return(INIT_FAILED);
+        return INIT_FAILED;
     }
-    
-    // Initialize order executor with all parameters
-    orderExecutor.Initialize(_Symbol, &RM, &PM, &Trade, &trade, &uiManager, 
-                            MagicNumber, MoneyManagement, MinLotPerEquitySteps, 
-                            RiskPercent, FixedVolume, POExpirationMinutes);
-    
-    Print("EA Initialized Successfully!");
-    return(INIT_SUCCEEDED);
+
+    SOrderExecutorParams params;
+    params.magicNumber          = MagicNumber;
+    params.moneyManagement      = MoneyManagement;
+    params.minLotPerEquitySteps = MinLotPerEquitySteps;
+    params.riskPercent          = RiskPercent;
+    params.fixedVolume          = FixedVolume;
+    params.poExpirationMinutes  = POExpirationMinutes;
+    params.logLevel             = LogLevel;
+
+    orderExecutor.Initialize(_Symbol, &RM, &PM, &trade, &uiManager, params);
+
+    Print("JINPA initialized successfully.");
+    return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason)
 {
-    // Clean up UI elements and info displays
     uiManager.Destroy(reason);
     infoDisplay.ClearDisplay();
-    
-    Print("EA Stopped - Reason Code: " + IntegerToString(reason));
+    Print("JINPA stopped — reason: ", reason);
 }
 
 void OnTick()
-{ 
+{
     //──────────────────────────────────────────────────────────────────
     // 1 - REFRESH INDICATORS
     //──────────────────────────────────────────────────────────────────
     MA.RefreshMain();
-    double ma1 = MA.main[1];
-
     ATR.RefreshMain();
-    double atr0 = ATR.main[0];
-    double atr1 = ATR.main[1]; 
-    double ATRValue = atr1 * ATRFactor;      // Stop loss adjustment value
-    double ATRValuePO = atr0 * ATRFactorPO;  // Pending order adjustment value
+
+    double atrValue   = ATR.main[1] * ATRFactor;    // SL & Trailing SL
+    double atrValuePO = ATR.main[0] * ATRFactorPO;  // Pending order offset
 
     //──────────────────────────────────────────────────────────────────
-    // 2 - GET CURRENT MARKET PRICES
+    // 2 - GET MARKET PRICES
     //──────────────────────────────────────────────────────────────────
     Bar.Refresh(_Symbol, PERIOD_CURRENT, 6);
     double askPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
@@ -146,48 +147,40 @@ void OnTick()
     drawdownManager.UpdateDaily();
     drawdownManager.UpdateMonthly();
 
-    double dailyDD = drawdownManager.GetDailyPercent();
+    double dailyDD   = drawdownManager.GetDailyPercent();
     double monthlyDD = drawdownManager.GetMonthlyPercent();
 
-    // Stop trading if maximum daily drawdown is reached
-    if(MaxDrawdownDaily > 0)
+    if(MaxDrawdownDaily > 0 && dailyDD <= -MaxDrawdownDaily)
     {
-        if(dailyDD >= MaxDrawdownDaily)
-        {
-            string message = "Max Daily DD: " + DoubleToString(dailyDD, 2) + "% - Trading Halted!";
-            Comment(message);
-            return; 
-        }
+        Comment("Max Daily DD reached: ", DoubleToString(MathAbs(dailyDD), 2), "% — Trading Halted!");
+        return;
     }
 
     //──────────────────────────────────────────────────────────────────
-    // 4 - GET POSITION COUNT & MARKET DATA
+    // 4 - UPDATE INFORMATION DISPLAY
     //──────────────────────────────────────────────────────────────────
-    int openBuy = CPositionHelper::CountBuyPositions(_Symbol);
+    int openBuy  = CPositionHelper::CountBuyPositions(_Symbol);
     int openSell = CPositionHelper::CountSellPositions(_Symbol);
-    int spread = (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-    
-    //──────────────────────────────────────────────────────────────────
-    // 5 - UPDATE INFORMATION DISPLAY
-    //──────────────────────────────────────────────────────────────────
+    int spread   = (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+
     infoDisplay.UpdateDisplay(dailyDD, monthlyDD, openBuy, openSell,
-                             AccountInfoDouble(ACCOUNT_BALANCE), RiskPercent, 
-                             spread, MagicNumber);
+                              AccountInfoDouble(ACCOUNT_BALANCE), RiskPercent,
+                              spread, MagicNumber);
     infoDisplay.UpdateButtonTooltips(askPrice, bidPrice);
-    
-    //──────────────────────────────────────────────────────────────────
-    // 6 - EXECUTE PENDING & MARKET ORDERS
-    //──────────────────────────────────────────────────────────────────
-    orderExecutor.HandleAllOrders(askPrice, bidPrice, ATRValue, ATRValuePO, slPoints);
 
     //──────────────────────────────────────────────────────────────────
-    // 7 - MANAGE TRAILING STOP LOSS
+    // 5 - HANDLE BUTTON ORDERS
     //──────────────────────────────────────────────────────────────────
-    PM.TrailingStopLossByATR(_Symbol, MagicNumber, ATRValue, ATRFactor);
+    orderExecutor.HandleAllOrders(askPrice, bidPrice, atrValue, atrValuePO, slPointsValue);
+
+    //──────────────────────────────────────────────────────────────────
+    // 6 - TRAILING STOP LOSS
+    //──────────────────────────────────────────────────────────────────
+    PM.TrailingStopLossByATR(_Symbol, MagicNumber, ATR.main[1], ATRFactor,
+                             TSLMode, TSLActivationATR, TSLStepATR);
 }
 
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
 {
-    // Route all UI events to manager (button clicks, mouse interactions, etc.)
     uiManager.OnChartEvent(id, lparam, dparam, sparam);
 }

@@ -5,6 +5,10 @@
 //+------------------------------------------------------------------+
 #property copyright "duyng"
 #property link      "https://github.com/duyng219"
+#property strict
+
+#ifndef JINPA_UI_MANAGER_MQH
+#define JINPA_UI_MANAGER_MQH
 
 #include <Controls/Button.mqh>
 #include <Controls/Label.mqh>
@@ -321,3 +325,5 @@ void CUIManager::OnChartEvent(const int id, const long &lparam, const double &dp
         }
     }
 }
+
+#endif

@@ -1,88 +1,104 @@
 //+------------------------------------------------------------------+
-//|                                              PositionHelper.mqh |
+//|                                             position_helper.mqh |
 //|                                                            duyng |
 //|                                      https://github.com/duyng219 |
 //+------------------------------------------------------------------+
 #property copyright "duyng"
 #property link      "https://github.com/duyng219"
+#property strict
 
-#include "../managers/bar_manager.mqh"
-
+#ifndef JINPA_POSITION_HELPER_MQH
+#define JINPA_POSITION_HELPER_MQH
 
 //+------------------------------------------------------------------+
-//| CPositionHelper Class - Static Helper Functions                  |
+//| CPositionHelper — Static helpers, không cần khởi tạo            |
 //+------------------------------------------------------------------+
 class CPositionHelper
 {
 public:
-    static int CountBuyPositions(string symbol);
-    static int CountSellPositions(string symbol);
+    static int    CountBuyPositions(string symbol);
+    static int    CountSellPositions(string symbol);
     static double GetAverageHigh(int periods = 3);
     static double GetAverageLow(int periods = 3);
 };
 
-//+------------------------------------------------------------------+
-//| Count Buy Positions                                              |
-//+------------------------------------------------------------------+
 int CPositionHelper::CountBuyPositions(string symbol)
 {
     int count = 0;
     for(int i = 0; i < PositionsTotal(); i++)
-    {
         if(PositionGetSymbol(i) == symbol && PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
-        {
             count++;
-        }
-    }
     return count;
 }
 
-//+------------------------------------------------------------------+
-//| Count Sell Positions                                             |
-//+------------------------------------------------------------------+
 int CPositionHelper::CountSellPositions(string symbol)
 {
     int count = 0;
     for(int i = 0; i < PositionsTotal(); i++)
-    {
         if(PositionGetSymbol(i) == symbol && PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
-        {
             count++;
-        }
-    }
     return count;
 }
 
-//+------------------------------------------------------------------+
-//| Get Average High Price                                           |
-//+------------------------------------------------------------------+
+// Dùng iHigh/iLow built-in thay vì tạo CBar mới mỗi lần gọi
 double CPositionHelper::GetAverageHigh(int periods = 3)
 {
-    CBar bar;
-    bar.Refresh(_Symbol, PERIOD_CURRENT, periods);
-    
     double sum = 0.0;
     for(int i = 1; i <= periods; i++)
-    {
-        sum += bar.High(i);
-    }
-    
+        sum += iHigh(_Symbol, PERIOD_CURRENT, i);
+    return sum / periods;
+}
+
+double CPositionHelper::GetAverageLow(int periods = 3)
+{
+    double sum = 0.0;
+    for(int i = 1; i <= periods; i++)
+        sum += iLow(_Symbol, PERIOD_CURRENT, i);
     return sum / periods;
 }
 
 //+------------------------------------------------------------------+
-//| Get Average Low Price                                            |
+//| Stop Level Helpers — đảm bảo SL/TP không vi phạm broker limits  |
 //+------------------------------------------------------------------+
-double CPositionHelper::GetAverageLow(int periods = 3)
+
+// Điều chỉnh giá lên trên mức stop level tối thiểu (dùng cho SELL SL, BUY TP)
+double AdjustAboveStopLevel(string pSymbol, double pCurrentPrice, double pPriceToAdjust, int pPointsToAdd = 10)
 {
-    CBar bar;
-    bar.Refresh(_Symbol, PERIOD_CURRENT, periods);
-    
-    double sum = 0.0;
-    for(int i = 1; i <= periods; i++)
+    double adjustedPrice = pPriceToAdjust;
+    double point         = SymbolInfoDouble(pSymbol, SYMBOL_POINT);
+    long   stopsLevel    = SymbolInfoInteger(pSymbol, SYMBOL_TRADE_STOPS_LEVEL);
+
+    if(stopsLevel > 0)
     {
-        sum += bar.Low(i);
+        double minDistance = (stopsLevel + pPointsToAdd) * point;
+        if(adjustedPrice <= pCurrentPrice + minDistance)
+        {
+            adjustedPrice = pCurrentPrice + minDistance;
+            Print("..Price adjusted above stop level to ", adjustedPrice);
+        }
     }
-    
-    return sum / periods;
+
+    return adjustedPrice;
 }
+
+// Điều chỉnh giá xuống dưới mức stop level tối thiểu (dùng cho BUY SL, SELL TP)
+double AdjustBelowStopLevel(string pSymbol, double pCurrentPrice, double pPriceToAdjust, int pPointsToAdd = 10)
+{
+    double adjustedPrice = pPriceToAdjust;
+    double point         = SymbolInfoDouble(pSymbol, SYMBOL_POINT);
+    long   stopsLevel    = SymbolInfoInteger(pSymbol, SYMBOL_TRADE_STOPS_LEVEL);
+
+    if(stopsLevel > 0)
+    {
+        double minDistance = (stopsLevel + pPointsToAdd) * point;
+        if(adjustedPrice >= pCurrentPrice - minDistance)
+        {
+            adjustedPrice = pCurrentPrice - minDistance;
+            Print("..Price adjusted below stop level to ", adjustedPrice);
+        }
+    }
+
+    return adjustedPrice;
+}
+
+#endif

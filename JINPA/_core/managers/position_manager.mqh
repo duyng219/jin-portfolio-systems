@@ -1,269 +1,149 @@
 //+------------------------------------------------------------------+
-//|                                              PositionManager.mqh |
+//|                                              position_manager.mqh |
 //|                                                            duyng |
 //|                                      https://github.com/duyng219 |
 //+------------------------------------------------------------------+
 #property copyright "duyng"
 #property link      "https://github.com/duyng219"
+#property strict
 
-#include "trade_executor.mqh"
-//AdjustStopLvl is used by SL,TP, TSL & BE functions
+#ifndef JINPA_POSITION_MANAGER_MQH
+#define JINPA_POSITION_MANAGER_MQH
 
-//+------------------------------------------------------------------+
-//| CPM Class - Stop Loss, Take Profit, TSL & BE                     |
-//+------------------------------------------------------------------+
-class CPM
+#include "../infrastructure/position_helper.mqh"
+
+enum ENUM_TSL_MODE
 {
-    public:
-        MqlTradeRequest     request;
-        MqlTradeResult      result;
-
-                            CPM(void);
-
-        double              CalculatorStopLoss(string pSymbol, string pEntrySignal, int pSLFixedPoints);
-        double              CalculateStopLossByATR(string pSymbol, string pEntrySignal, double pATRValue, double pATRFactor);
-
-        void              TrailingStopLoss(string pSymbol,ulong pMagic,int pTSLFixedPoints);
-        void              TrailingStopLossByATR(string pSymbol, ulong pMagic, double atrValue, double pATRFactor);
+    TSL_CONTINUOUS,       // Kéo SL liên tục mỗi tick (mặc định)
+    TSL_BREAKEVEN_FIRST,  // Chỉ bật sau khi lãi đủ X ATR
+    TSL_STEP,             // Kéo SL theo bước, mỗi bước tối thiểu X ATR
 };
 
 //+------------------------------------------------------------------+
-//| CPM Class Methods                                                |
+//| CPositionManager — Tính SL/TP và quản lý Trailing Stop          |
 //+------------------------------------------------------------------+
-CPM::CPM()
+class CPositionManager
+{
+public:
+    MqlTradeRequest request;
+    MqlTradeResult  result;
+
+                    CPositionManager(void);
+
+    // Tính SL từ khoảng cách ATR đã tính sẵn (pATRDistance = ATR × Factor)
+    double          CalculateStopLossByATR(string pSymbol, string pEntrySignal, double pATRDistance);
+
+    // Kéo SL theo ATR mỗi tick
+    // atrValue      = ATR raw (ATR.main[1])
+    // pATRFactor    = hệ số khoảng cách SL
+    // tslMode       = chế độ trailing
+    // activationATR = (BREAKEVEN_FIRST) số ATR lãi tối thiểu để kích hoạt
+    // stepATR       = (STEP) số ATR tối thiểu mỗi lần dịch SL
+    void            TrailingStopLossByATR(string pSymbol, ulong pMagic,
+                                          double atrValue, double pATRFactor,
+                                          ENUM_TSL_MODE tslMode       = TSL_CONTINUOUS,
+                                          double        activationATR = 1.0,
+                                          double        stepATR       = 1.0);
+};
+
+CPositionManager::CPositionManager(void)
 {
     ZeroMemory(request);
     ZeroMemory(result);
 }
 
-double CPM::CalculatorStopLoss(string pSymbol, string pEntrySignal, int pSLFixedPoints)
+double CPositionManager::CalculateStopLossByATR(string pSymbol, string pEntrySignal, double pATRDistance)
 {
+    double tickSize = SymbolInfoDouble(pSymbol, SYMBOL_TRADE_TICK_SIZE);
     double stopLoss = 0.0;
-    double askPrice = SymbolInfoDouble(pSymbol,SYMBOL_ASK);
-    double bidPrice = SymbolInfoDouble(pSymbol,SYMBOL_BID);
-    double tickSize = SymbolInfoDouble(pSymbol,SYMBOL_TRADE_TICK_SIZE);
-    double point    = SymbolInfoDouble(pSymbol,SYMBOL_POINT);
 
     if(pEntrySignal == "BUY")
-    {
-        if(pSLFixedPoints > 0){ 
-            stopLoss = askPrice - (pSLFixedPoints * point); }
-    }
+        stopLoss = SymbolInfoDouble(pSymbol, SYMBOL_ASK) - pATRDistance;
     else if(pEntrySignal == "SELL")
-    {
-        if(pSLFixedPoints > 0){ 
-            stopLoss = bidPrice + (pSLFixedPoints * point); }
-    }
+        stopLoss = SymbolInfoDouble(pSymbol, SYMBOL_BID) + pATRDistance;
 
-    stopLoss = round(stopLoss/tickSize) * tickSize;
-    return stopLoss;
+    return round(stopLoss / tickSize) * tickSize;
 }
 
-double CPM::CalculateStopLossByATR(string pSymbol, string pEntrySignal, double pATRValue, double pATRFactor)
+void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
+                                              double atrValue, double pATRFactor,
+                                              ENUM_TSL_MODE tslMode,
+                                              double        activationATR,
+                                              double        stepATR)
 {
-    double stopLoss = 0.0;
-    double atrStopLossDistance = pATRValue * pATRFactor;
-    double askPrice = SymbolInfoDouble(pSymbol, SYMBOL_ASK);
-    double bidPrice = SymbolInfoDouble(pSymbol, SYMBOL_BID);
-    double tickSize = SymbolInfoDouble(pSymbol, SYMBOL_TRADE_TICK_SIZE);
-
-    if (pEntrySignal == "BUY")
-    {
-        stopLoss = askPrice - atrStopLossDistance;
-    }
-    else if (pEntrySignal == "SELL")
-    {
-        stopLoss = bidPrice + atrStopLossDistance;
-    }
-
-    stopLoss = round(stopLoss / tickSize) * tickSize;
-    return stopLoss;
-}
-
-void CPM::TrailingStopLoss(string pSymbol,ulong pMagic,int pTSLFixedPoints)
-{	
-	for(int i = PositionsTotal() - 1; i >= 0; i--)
-	{
-      //Reset of request and result values
-      ZeroMemory(request);
-      ZeroMemory(result);
-         	   
-	   ulong positionTicket = PositionGetTicket(i);
-	   PositionSelectByTicket(positionTicket);
-   
-      string posSymbol        = PositionGetString(POSITION_SYMBOL);   
-	   ulong posMagic          = PositionGetInteger(POSITION_MAGIC);
-	   ulong posType           = PositionGetInteger(POSITION_TYPE);
-      double currentStopLoss  = PositionGetDouble(POSITION_SL);
-      double tickSize         = SymbolInfoDouble(posSymbol,SYMBOL_TRADE_TICK_SIZE);
-      double point            = SymbolInfoDouble(posSymbol,SYMBOL_POINT);   
-      	   
-	   double newStopLoss;
-	   
-	   if(posSymbol == pSymbol && posMagic == pMagic && posType == POSITION_TYPE_BUY)
-	   {        
-         double bidPrice = SymbolInfoDouble(posSymbol,SYMBOL_BID);  
-         newStopLoss = bidPrice - (pTSLFixedPoints * point);
-         newStopLoss = AdjustBelowStopLevel(posSymbol,bidPrice,newStopLoss);         
-         newStopLoss = round(newStopLoss/tickSize) * tickSize;
-         
-         if(newStopLoss > currentStopLoss)
-         {
-            request.action    = TRADE_ACTION_SLTP;
-            request.position  = positionTicket;
-            request.comment   = "TSL." + " | " + posSymbol + " | " + string(pMagic);
-            request.sl        = newStopLoss;
-            request.tp        = PositionGetDouble(POSITION_TP);          
-         }     
-	   }
-	   else if(posSymbol == pSymbol && posMagic == pMagic && posType == POSITION_TYPE_SELL)
-	   {                 
-         double askPrice = SymbolInfoDouble(posSymbol,SYMBOL_ASK);                  
-         newStopLoss = askPrice + (pTSLFixedPoints * point);
-         newStopLoss = AdjustAboveStopLevel(posSymbol,askPrice,newStopLoss);
-         newStopLoss = round(newStopLoss/tickSize) * tickSize;
-         
-         if(newStopLoss < currentStopLoss)
-         {
-            request.action    = TRADE_ACTION_SLTP;
-            request.position  = positionTicket;
-            request.comment   = "TSL." + " | " + posSymbol + " | " + string(pMagic);
-            request.sl        = newStopLoss;  
-            request.tp        = PositionGetDouble(POSITION_TP);                              
-         }        
-	   } 
-      
-      if(request.sl > 0)
-      {
-         bool sent = OrderSend(request,result);
-   	   if(!sent) Print("OrderSend TSL error: ", GetLastError());           
-      }
-	}
-}
-/*
-void CPM::TrailingStopLossByATR(string pSymbol, ulong pMagic, double atrValue)
-{
-    for(int i = PositionsTotal() - 1; i >= 0; i--)
-    {
-        ZeroMemory(request);
-        ZeroMemory(result);
-
-        ulong positionTicket = PositionGetTicket(i);
-        PositionSelectByTicket(positionTicket);
-        string posSymbol = PositionGetString(POSITION_SYMBOL);
-        ulong posMagic = PositionGetInteger(POSITION_MAGIC);
-        ulong posType = PositionGetInteger(POSITION_TYPE);
-        double currentStopLoss = PositionGetDouble(POSITION_SL);
-        double tickSize = SymbolInfoDouble(posSymbol, SYMBOL_TRADE_TICK_SIZE);
-        double point = SymbolInfoDouble(posSymbol, SYMBOL_POINT);
-
-        if(posSymbol == pSymbol && posMagic == pMagic)
-        {
-            double newStopLoss = 0.0;
-
-            if(posType == POSITION_TYPE_BUY)
-            {
-                double bidPrice = SymbolInfoDouble(posSymbol, SYMBOL_BID);
-                newStopLoss = bidPrice - atrValue;
-                newStopLoss = AdjustBelowStopLevel(posSymbol, bidPrice, newStopLoss);
-                newStopLoss = round(newStopLoss / tickSize) * tickSize;
-
-                if(newStopLoss > currentStopLoss)
-                {
-                    request.action = TRADE_ACTION_SLTP;
-                    request.position = positionTicket;
-                    request.comment = "ATR TSL." + " | " + posSymbol + " | " + string(pMagic);
-                    request.sl = newStopLoss;
-                    request.tp = PositionGetDouble(POSITION_TP);
-                }
-            }
-            else if(posType == POSITION_TYPE_SELL)
-            {
-                double askPrice = SymbolInfoDouble(posSymbol, SYMBOL_ASK);
-                newStopLoss = askPrice + atrValue;
-                newStopLoss = AdjustAboveStopLevel(posSymbol, askPrice, newStopLoss);
-                newStopLoss = round(newStopLoss / tickSize) * tickSize;
-
-                if(newStopLoss < currentStopLoss)
-                {
-                    request.action = TRADE_ACTION_SLTP;
-                    request.position = positionTicket;
-                    request.comment = "ATR TSL." + " | " + posSymbol + " | " + string(pMagic);
-                    request.sl = newStopLoss;
-                    request.tp = PositionGetDouble(POSITION_TP);
-                }
-            }
-
-            if(request.sl > 0)
-            {
-                bool sent = OrderSend(request, result);
-                if(!sent) Print("OrderSend ATR TSL error: ", GetLastError());
-            }
-        }
-    }
-}
-*/
-
-void CPM::TrailingStopLossByATR(string pSymbol, ulong pMagic, double atrValue, double pATRFactor)
-{
-    double atrStopLossDistance = atrValue * pATRFactor;
+    double distance       = atrValue * pATRFactor;   // khoảng cách SL so với giá
+    double activationDist = atrValue * activationATR; // lãi tối thiểu để kích hoạt (BREAKEVEN)
+    double stepDist       = atrValue * stepATR;       // bước dịch tối thiểu (STEP)
 
     for(int i = PositionsTotal() - 1; i >= 0; i--)
     {
         ZeroMemory(request);
         ZeroMemory(result);
 
-        ulong positionTicket = PositionGetTicket(i);
-        PositionSelectByTicket(positionTicket);
-        string posSymbol = PositionGetString(POSITION_SYMBOL);
-        ulong posMagic = PositionGetInteger(POSITION_MAGIC);
-        ulong posType = PositionGetInteger(POSITION_TYPE);
-        double currentStopLoss = PositionGetDouble(POSITION_SL);
-        double tickSize = SymbolInfoDouble(posSymbol, SYMBOL_TRADE_TICK_SIZE);
-        double point = SymbolInfoDouble(posSymbol, SYMBOL_POINT);
+        ulong  ticket    = PositionGetTicket(i);
+        PositionSelectByTicket(ticket);
 
-        if(posSymbol == pSymbol && posMagic == pMagic)
+        if(PositionGetString(POSITION_SYMBOL)  != pSymbol)        continue;
+        if(PositionGetInteger(POSITION_MAGIC)  != (long)pMagic)   continue;
+
+        ulong  posType   = PositionGetInteger(POSITION_TYPE);
+        double currentSL = PositionGetDouble(POSITION_SL);
+        double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+        double tickSize  = SymbolInfoDouble(pSymbol, SYMBOL_TRADE_TICK_SIZE);
+        double newSL     = 0.0;
+
+        if(posType == POSITION_TYPE_BUY)
         {
-            double newStopLoss = 0.0;
+            double bid = SymbolInfoDouble(pSymbol, SYMBOL_BID);
 
-            if(posType == POSITION_TYPE_BUY)
-            {
-                double bidPrice = SymbolInfoDouble(posSymbol, SYMBOL_BID);
-                newStopLoss = bidPrice - atrStopLossDistance;
-                newStopLoss = AdjustBelowStopLevel(posSymbol, bidPrice, newStopLoss);
-                newStopLoss = round(newStopLoss / tickSize) * tickSize;
+            // BREAKEVEN_FIRST: chỉ kích hoạt khi lãi >= activationDist
+            if(tslMode == TSL_BREAKEVEN_FIRST && (bid - openPrice) < activationDist)
+                continue;
 
-                if(newStopLoss > currentStopLoss)
-                {
-                    request.action = TRADE_ACTION_SLTP;
-                    request.position = positionTicket;
-                    request.comment = "ATR TSL | BUY | " + posSymbol + " | " + string(pMagic);
-                    request.sl = newStopLoss;
-                    request.tp = PositionGetDouble(POSITION_TP);
-                }
-            }
-            else if(posType == POSITION_TYPE_SELL)
-            {
-                double askPrice = SymbolInfoDouble(posSymbol, SYMBOL_ASK);
-                newStopLoss = askPrice + atrStopLossDistance;
-                newStopLoss = AdjustAboveStopLevel(posSymbol, askPrice, newStopLoss);
-                newStopLoss = round(newStopLoss / tickSize) * tickSize;
+            newSL = round((bid - distance) / tickSize) * tickSize;
+            newSL = AdjustBelowStopLevel(pSymbol, bid, newSL);
 
-                if(newStopLoss < currentStopLoss)
-                {
-                    request.action = TRADE_ACTION_SLTP;
-                    request.position = positionTicket;
-                    request.comment = "ATR TSL | SELL | " + posSymbol + " | " + string(pMagic);
-                    request.sl = newStopLoss;
-                    request.tp = PositionGetDouble(POSITION_TP);
-                }
-            }
+            if(newSL <= currentSL) continue;
 
-            if(request.sl > 0)
-            {
-                bool sent = OrderSend(request, result);
-                if(!sent) Print("OrderSend ATR TSL error: ", GetLastError());
-            }
+            // STEP: chỉ dịch khi newSL tiến thêm ít nhất stepDist so với currentSL
+            if(tslMode == TSL_STEP && newSL < currentSL + stepDist) continue;
+        }
+        else if(posType == POSITION_TYPE_SELL)
+        {
+            double ask = SymbolInfoDouble(pSymbol, SYMBOL_ASK);
+
+            // BREAKEVEN_FIRST: chỉ kích hoạt khi lãi >= activationDist
+            if(tslMode == TSL_BREAKEVEN_FIRST && (openPrice - ask) < activationDist)
+                continue;
+
+            newSL = round((ask + distance) / tickSize) * tickSize;
+            newSL = AdjustAboveStopLevel(pSymbol, ask, newSL);
+
+            if(newSL >= currentSL) continue;
+
+            // STEP: chỉ dịch khi newSL lùi thêm ít nhất stepDist so với currentSL
+            if(tslMode == TSL_STEP && newSL > currentSL - stepDist) continue;
+        }
+
+        request.action   = TRADE_ACTION_SLTP;
+        request.position = ticket;
+        request.sl       = newSL;
+        request.tp       = PositionGetDouble(POSITION_TP);
+        request.comment  = "ATR TSL | " + pSymbol + " | " + string(pMagic);
+
+        string direction = (posType == POSITION_TYPE_BUY) ? "BUY" : "SELL";
+        if(!OrderSend(request, result))
+        {
+            Print("[ERROR] TSL ", direction, " #", ticket,
+                  " | Code ", result.retcode, ": ", result.comment);
+        }
+        else
+        {
+            Print("[TSL] ", direction, " #", ticket, " ", pSymbol,
+                  " | SL: ", DoubleToString(currentSL, _Digits),
+                  " → ",     DoubleToString(newSL,     _Digits));
         }
     }
 }
+
+#endif

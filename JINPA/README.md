@@ -1,313 +1,105 @@
-# JINPA - Manual Trading System
+# JINPA — Manual Trading Assistant
 
-> **Hệ thống Hỗ trợ Giao dịch Thủ công**  
-> Price Action + UI Tools + Risk Management
+> MT5 Expert Advisor hỗ trợ giao dịch thủ công
+> One-click order entry + ATR-based risk management
 
-Version: 1.0.0 | Part of JINLABS
-
----
-
-## Giới thiệu
-
-JINPA là hệ thống hỗ trợ giao dịch thủ công dựa trên Price Action, giúp:
-
-✅ Entry/Exit nhanh với hotkeys  
-✅ Vẽ levels và quản lý orders  
-✅ Tính risk tự động  
-✅ Log trades để review
+Version: 1.0.0 | Platform: MetaTrader 5
 
 ---
 
-## Quick Start
+## Cách dùng
 
-### Sử dụng cơ bản
+1. Attach `jinpa-manual.mq5` lên chart
+2. Bật **AutoTrading** trong MT5
+3. 10 buttons xuất hiện góc trên-trái chart
+4. Click button để đặt/hủy/đóng lệnh
+
+---
+
+## Buttons
+
+| Button | Hành động |
+|--------|-----------|
+| **Buy** | Market buy tại Ask, SL tính theo ATR |
+| **Sell** | Market sell tại Bid, SL tính theo ATR |
+| **Buy Stop** | Pending buy stop tại Ask + ATR |
+| **Sell Stop** | Pending sell stop tại Bid − ATR |
+| **Buy Limit** | Pending buy limit tại Ask − ATR |
+| **Sell Limit** | Pending sell limit tại Bid + ATR |
+| **Cancel Buy Order** | Hủy pending buy order đang chờ |
+| **Cancel Sell Order** | Hủy pending sell order đang chờ |
+| **Close Buy** | Đóng buy position đầu tiên |
+| **Close Sell** | Đóng sell position đầu tiên |
+
+---
+
+## Input Parameters
+
+### Basic Settings
+| Parameter | Default | Mô tả |
+|-----------|---------|-------|
+| Magic Number | 1010 | ID định danh lệnh của EA |
+| SL Points | 0 | Stop loss cố định (0 = dùng ATR) |
+| PO Expiration | 360 phút | Thời gian hết hạn pending order |
+| Max Daily Drawdown | 0% | Ngưỡng dừng giao dịch (0 = tắt) |
+
+### Risk Management
+| Parameter | Default | Mô tả |
+|-----------|---------|-------|
+| Money Management | Equity Risk % | Phương pháp tính lot |
+| Risk Percent | 0.2% | % equity rủi ro mỗi lệnh |
+| Fixed Volume | 0.01 | Lot cố định (khi dùng Fixed MM) |
+| Min Lot Per Equity | 500 | USD/lot (khi dùng Per Equity MM) |
+
+### ATR Settings
+| Parameter | Default | Mô tả |
+|-----------|---------|-------|
+| ATR Period | 14 | Chu kỳ ATR |
+| ATR Factor | 1.0 | Hệ số nhân ATR cho Stop Loss |
+| ATR Factor PO | 1.0 | Hệ số nhân ATR cho Pending Order |
+
+---
+
+## Info Display (góc trên-phải chart)
 
 ```
-1. Attach jinpa-manual.mq5 lên chart
-2. UI panel sẽ hiện bên phải chart
-3. Dùng buttons hoặc hotkeys để trade
+Account Balance: 10000.00$ | Risk: 0.20%
+Max Drawdown Daily: -0.50%
+Max Drawdown Monthly: -1.20%
+Spread: 12 points
+Open Buy: 1
+Open Sell: 0
 ```
 
-### Hotkeys mặc định
-
-| Phím | Chức năng |
-|------|-----------|
-| `Ctrl+B` | Buy market |
-| `Ctrl+S` | Sell market |
-| `Ctrl+L` | Draw horizontal line |
-| `Ctrl+R` | Calculate risk |
-| `F1` | Show hotkey help |
-
-Tùy chỉnh: xem `configs/hotkeys.json`
-
 ---
-
-## Tính năng
-
-### 1. Quick Order Entry
-- Đặt lệnh nhanh với hotkeys
-- Auto-calculate lot size theo risk%
-- One-click SL/TP placement
-
-### 2. Drawing Tools
-- Vẽ S/R levels
-- Mark entry zones
-- Price action annotations
-
-### 3. Risk Calculator
-- Input: SL distance (pips)
-- Output: Lot size cho risk% cố định
-- Hiển thị ngay trên UI
-
-### 4. Position Management
-- View open positions
-- Modify SL/TP
-- Close partial/full
-- Break-even trigger
-
----
-
-#include "managers/indicators_manager.mqh";
-#include "managers/trade_executor.mqh";
-#include "managers/position_manager.mqh";
-#include "managers/time_manager.mqh"
-#include "managers/bar_manager.mqh"
-#include "managers/risk_manager.mqh"
 
 ## Cấu trúc Files
 
 ```
 JINPA/
-├── jinpa-manual.mq5          # EA chính
-├── ui_components.mqh     # UI components
-│
-├── _core/                    # Core logic
+├── jinpa-manual.mq5              # EA chính
+├── _core/
+│   ├── framework_manager.mqh     # Hub include tất cả modules
 │   ├── managers/
-│   │   ├── account_manager.mqh
-│   │   ├── risk_manager.mqh
-│   │   ├── position_manager.mqh
-│   │   ├── indicators_manager.mqh
-│   │   ├── bar_manager.mqh
-│   │   ├── time_manager.mqh
-│   │   └── trade_executor.mqh
+│   │   ├── risk_manager.mqh      # Tính lot size (5 phương pháp)
+│   │   ├── position_manager.mqh  # SL/TP, Trailing Stop by ATR
+│   │   ├── trade_executor.mqh    # Gửi orders tới MT5
+│   │   ├── drawdown_manager.mqh  # Theo dõi drawdown ngày/tháng
+│   │   ├── bar_manager.mqh       # OHLCV data
+│   │   ├── indicators_manager.mqh # ATR, MA wrappers
+│   │   └── time_manager.mqh      # Kiểm tra giờ giao dịch
 │   └── infrastructure/
-│       ├── ui_base.mqh
-│       └── utils.mqh
-│
-├── configs/
-│   ├── symbols.json         # Symbol settings
-│   └── hotkeys.json         # Hotkey mappings
-│
-└── logs/                     # Trade logs
+│       ├── ui_manager.mqh        # 10 buttons trên chart
+│       ├── order_executor.mqh    # Bridge UI → trade logic
+│       ├── info_display.mqh      # Hiển thị stats trên chart
+│       └── position_helper.mqh   # Static helpers (count, avg high/low)
+└── configs/
+    ├── symbols.json
+    └── hotkeys.json
 ```
 
 ---
 
-## Configuration
+## Tài liệu kỹ thuật
 
-### symbols.json
-```json
-{
-  "EURUSD": {
-    "risk_pct": 0.02,
-    "min_sl_pips": 10,
-    "max_sl_pips": 100
-  }
-}
-```
-
-### hotkeys.json
-```json
-{
-  "buy_market": "Ctrl+B",
-  "sell_market": "Ctrl+S",
-  "draw_line": "Ctrl+L",
-  "close_all": "Ctrl+X"
-}
-```
-
----
-
-## Workflow Giao dịch
-
-### Setup Phase
-```
-1. Phân tích chart (PA, S/R, patterns)
-2. Mark levels với drawing tools
-3. Xác định entry zone
-```
-
-### Execution Phase
-```
-1. Price vào zone → Press hotkey (Ctrl+B/S)
-2. JINPA tự động:
-   - Calculate lot size
-   - Place order với SL/TP
-   - Log trade
-```
-
-### Management Phase
-```
-1. Monitor position trên UI panel
-2. Modify SL/TP nếu cần
-3. Close theo plan
-```
-
----
-
-## Risk Management
-
-### Cài đặt mặc định
-- Risk per trade: **2%** của equity
-- Min SL: **10 pips**
-- Max SL: **100 pips**
-- Max positions: **3**
-
-### Tính toán Lot Size
-```
-Formula:
-Lot Size = (Equity × Risk%) / (SL_Pips × PipValue)
-
-Ví dụ:
-Equity: $10,000
-Risk: 2% = $200
-SL: 20 pips
-PipValue: $10 (1 lot EURUSD)
-
-→ Lot Size = $200 / (20 × $10) = 1.0 lot
-```
-
----
-
-## Logging
-
-### Trade Logs
-```
-logs/trades_YYYY-MM.csv
-
-Columns:
-- Timestamp
-- Symbol
-- Side (Buy/Sell)
-- Entry
-- SL/TP
-- Exit
-- P&L
-- Notes (manual input)
-```
-
-### Review Logs
-```
-1. Export CSV từ logs/
-2. Analyze trong Excel/Python
-3. Identify patterns
-4. Improve discipline
-```
-
----
-
-## UI Components
-
-### Main Panel (Bên phải chart)
-```
-┌─────────────────┐
-│ JINPA v1.0.0   │
-├─────────────────┤
-│ [BUY]  [SELL]  │
-│ [CLOSE ALL]    │
-│                │
-│ Risk: 2.0%     │
-│ SL: 20 pips    │
-│ Size: 1.0 lot  │
-│                │
-│ Open: 2        │
-│ P&L: +$45.20   │
-└─────────────────┘
-```
-
-### Drawing Toolbar (Trên chart)
-```
-[Line] [Rect] [Text] [Clear]
-```
-
----
-
-## Best Practices
-
-### ✅ DO:
-- Phân tích kỹ trước khi vào lệnh
-- Stick to plan (SL/TP đã định)
-- Log notes sau mỗi trade
-- Review logs cuối tuần
-- Respect max daily loss
-
-### ❌ DON'T:
-- Vào lệnh impulse
-- Move SL xa hơn plan
-- Revenge trade sau loss
-- Over-trade (>5 trades/day)
-- Ignore risk limits
-
----
-
-## Troubleshooting
-
-### UI không hiện
-```
-→ Check chart size (minimum 1200×800)
-→ Restart EA
-→ Check Expert Advisors enabled
-```
-
-### Hotkeys không work
-```
-→ Check hotkeys.json format
-→ Verify no conflict với MT5 hotkeys
-→ Restart MetaTrader
-```
-
-### Risk calculator sai
-```
-→ Check symbols.json pip value
-→ Verify account currency
-→ Check broker commission settings
-```
-
----
-
-## Updates & Changelog
-
-### v1.0.0 (Current)
-- ✅ Basic UI components
-- ✅ Hotkey system
-- ✅ Risk calculator
-- ✅ Position management
-- ✅ Trade logging
-
-### Planned (v1.1.0)
-- 🔜 Templates cho setups
-- 🔜 Price alerts
-- 🔜 Session statistics
-- 🔜 Mobile notifications
-
-Chi tiết: xem `CHANGELOG.md`
-
----
-
-## Tài liệu Thêm
-
-- `SPEC_JINPA-SYSTEM.md` - Chi tiết kỹ thuật
-- `../ARCHITECTURE.md` - Kiến trúc tổng thể
-- `CLAUDE.md` - Hướng dẫn cho AI Agent
-
----
-
-## Support
-
-- Author: JIN / DuyQuant
-- Issues: Report qua Git repo
-- Questions: Xem ARCHITECTURE.md
-
----
-
-**License**: Private | **Version**: 1.0.0 | **Platform**: MT5
+Xem `SPEC_JINPA-SYSTEM.md` để hiểu chi tiết luồng xử lý, các class và công thức tính toán.
