@@ -71,6 +71,9 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
                                               double        activationATR,
                                               double        stepATR)
 {
+    if(atrValue <= 0 || pATRFactor <= 0)
+        return;
+
     double distance       = atrValue * pATRFactor;   // khoảng cách SL so với giá
     double activationDist = atrValue * activationATR; // lãi tối thiểu để kích hoạt (BREAKEVEN)
     double stepDist       = atrValue * stepATR;       // bước dịch tối thiểu (STEP)
@@ -81,7 +84,7 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
         ZeroMemory(result);
 
         ulong  ticket    = PositionGetTicket(i);
-        PositionSelectByTicket(ticket);
+        if(!PositionSelectByTicket(ticket)) continue;
 
         if(PositionGetString(POSITION_SYMBOL)  != pSymbol)        continue;
         if(PositionGetInteger(POSITION_MAGIC)  != (long)pMagic)   continue;
@@ -103,10 +106,10 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
             newSL = round((bid - distance) / tickSize) * tickSize;
             newSL = AdjustBelowStopLevel(pSymbol, bid, newSL);
 
-            if(newSL <= currentSL) continue;
+            if(currentSL > 0 && newSL <= currentSL) continue;
 
             // STEP: chỉ dịch khi newSL tiến thêm ít nhất stepDist so với currentSL
-            if(tslMode == TSL_STEP && newSL < currentSL + stepDist) continue;
+            if(tslMode == TSL_STEP && currentSL > 0 && newSL < currentSL + stepDist) continue;
         }
         else if(posType == POSITION_TYPE_SELL)
         {
@@ -119,20 +122,26 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
             newSL = round((ask + distance) / tickSize) * tickSize;
             newSL = AdjustAboveStopLevel(pSymbol, ask, newSL);
 
-            if(newSL >= currentSL) continue;
+            if(currentSL > 0 && newSL >= currentSL) continue;
 
             // STEP: chỉ dịch khi newSL lùi thêm ít nhất stepDist so với currentSL
-            if(tslMode == TSL_STEP && newSL > currentSL - stepDist) continue;
+            if(tslMode == TSL_STEP && currentSL > 0 && newSL > currentSL - stepDist) continue;
         }
 
         request.action   = TRADE_ACTION_SLTP;
+        request.symbol   = pSymbol;
         request.position = ticket;
         request.sl       = newSL;
         request.tp       = PositionGetDouble(POSITION_TP);
+        request.magic    = pMagic;
         request.comment  = "ATR TSL | " + pSymbol + " | " + string(pMagic);
 
         string direction = (posType == POSITION_TYPE_BUY) ? "BUY" : "SELL";
-        if(!OrderSend(request, result))
+        bool sent = OrderSend(request, result);
+        bool ok   = (result.retcode == TRADE_RETCODE_DONE ||
+                     result.retcode == TRADE_RETCODE_NO_CHANGES);
+
+        if(!sent || !ok)
         {
             Print("[ERROR] TSL ", direction, " #", ticket,
                   " | Code ", result.retcode, ": ", result.comment);

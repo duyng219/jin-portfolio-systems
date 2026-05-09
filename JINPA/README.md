@@ -103,3 +103,35 @@ JINPA/
 ## Tài liệu kỹ thuật
 
 Xem `SPEC_JINPA-SYSTEM.md` để hiểu chi tiết luồng xử lý, các class và công thức tính toán.
+
+
+
+Trong JINPA_v2.mq5 là version mới của manual trading của tôi khác là sử dụng bảng panel để vào lệnh, tôi muốn thêm chức năng khi gửi lệnh thì tự động gán các  comment vào lệnh , bạn có thể tạo 1 thư mục mới để đưa những file code liên quan đến panel vào và đổi tên cho 2 file .mq5 cho tách bạch giúp tôi version 1 và version 2           
+tôi có danh sách các comment theo từng vị thế vào lệnh như: 
+bres-pma
+ bres-pmb 
+ bres-pmb-st 
+ revs-ppf 
+ revs-pps 
+ revs-pmr
+  revs-pfb 
+  
+  _0 : vào lệnh đúng setup (lợi thế rr giảm khi xác suất đúng) 
+  _1 : vào lệnh sớm hơn setup (lợi thế rr cao hơn khi xác suất đúng) 
+  _bias : khi backtest vào lệnh bị trễ nên tua lại để vào đúng setup dẫn đến bias xem trước tương lai (nhưng vẫn muốn đúng các setup trong các điều kiện môi trường thị trường) 
+  VD: 
+  revs-ppf_0 
+  revs-ppf_1
+
+
+Tôi muốn bảng dạng này và thật tối giản 
+---------------------------------------------------------- 
+| Comment: [revs-ppf ▼] [_0▼] | Custom: [___________] | 
+| Lot: [0.01] SL: [ATR] | 
+---------------------------------------------------------- 
+| BUY Market | SELL Market | BUY Stop | SELL Stop | 
+---------------------------------------------------------- 
+| Trades Log (hiện tại) | | Ticket | Type | Entry | SL | TP | Comment | Time | 
+---------------------------------------------------------- 
+| Export CSV/JSON | 
+----------------------------------------------------------
