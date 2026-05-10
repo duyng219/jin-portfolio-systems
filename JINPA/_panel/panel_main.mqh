@@ -102,12 +102,13 @@ private:
     bool   CreateControls(int ox, int oy, int pw, int ph);
     void   StyleDialogFrame();
     void   RestyleStaticObjects();
+    void   StyleComboText(string comboName, int fontSize = 8);
     bool   AddBlockBg(int idx, int x1, int y1, int x2, int y2);
     bool   AddSeparator(int idx, int x1, int y, int x2);
     bool   MakeBtn(CButton& btn, string nm, int x1, int y1, int x2, int y2,
                    string txt, color tc, color bc);
     bool   MakeLbl(CLabel& lbl, string nm, int x1, int y1, int x2, int y2,
-                   string txt, color tc, string font = "Consolas", int sz = 9);
+                   string txt, color tc, string font = "Consolas", int sz = 8);
     double CalcSL(string dir, double basePrice);
     bool   IsWeekendFxLikeMarket();
     void   PlaceOrder(ENUM_ORDER_TYPE type);
@@ -289,7 +290,7 @@ bool CJINPAPanel::MakeBtn(CButton& btn, string nm, int x1, int y1, int x2, int y
     btn.ColorBackground(bc);
     btn.ColorBorder(CLR_CONTROL_BORDER);
     btn.Font("Consolas");
-    btn.FontSize(9);
+    btn.FontSize(8);
     if(!Add(btn)) return false;
     ObjectSetInteger(m_chart_id, m_name + nm, OBJPROP_ZORDER, 2);
     return true;
@@ -310,6 +311,30 @@ bool CJINPAPanel::MakeLbl(CLabel& lbl, string nm, int x1, int y1, int x2, int y2
     ObjectSetInteger(m_chart_id, m_name + nm, OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER);
     ObjectSetInteger(m_chart_id, m_name + nm, OBJPROP_ZORDER, 2);
     return true;
+}
+
+//+------------------------------------------------------------------+
+//| Helper chỉnh font cho CComboBox và các item trong dropdown       |
+//+------------------------------------------------------------------+
+void CJINPAPanel::StyleComboText(string comboName, int fontSize)
+{
+    string editName = m_name + comboName + "Edit";
+    if(ObjectFind(m_chart_id, editName) >= 0)
+    {
+        ObjectSetString(m_chart_id, editName, OBJPROP_FONT, "Consolas");
+        ObjectSetInteger(m_chart_id, editName, OBJPROP_FONTSIZE, fontSize);
+    }
+
+    string listPrefix = m_name + comboName + "ListItem";
+    for(int i = 0; i < 20; i++)
+    {
+        string itemName = listPrefix + IntegerToString(i);
+        if(ObjectFind(m_chart_id, itemName) < 0)
+            continue;
+
+        ObjectSetString(m_chart_id, itemName, OBJPROP_FONT, "Consolas");
+        ObjectSetInteger(m_chart_id, itemName, OBJPROP_FONTSIZE, fontSize);
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -360,6 +385,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
 
     if(!m_cmbSetup.Create(m_chart_id, m_name+"CmbSetup", m_subwin,
                            ox+MX, yS0, ox+MX+setupW, yS0+RH)) return false;
+    StyleComboText("CmbSetup");
     for(int i = 0; i < PANEL_SETUPS_COUNT; i++)
         m_cmbSetup.AddItem(PANEL_SETUPS[i], i);
     m_cmbSetup.SelectByValue(3);
@@ -370,6 +396,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
 
     if(!m_cmbSuffix.Create(m_chart_id, m_name+"CmbSuffix", m_subwin,
                             ox+MX+setupW+MX+keyLblW, yS0, ox+MX+W, yS0+RH)) return false;
+    StyleComboText("CmbSuffix");
     for(int i = 0; i < PANEL_SUFFIXES_COUNT; i++)
         m_cmbSuffix.AddItem(PANEL_SUFFIXES[i], i);
     m_cmbSuffix.SelectByValue(0);
@@ -382,7 +409,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     m_edtCustom.ColorBackground(clrWhite);
     m_edtCustom.ColorBorder(CLR_CONTROL_BORDER);
     m_edtCustom.Font("Consolas");
-    m_edtCustom.FontSize(9);
+    m_edtCustom.FontSize(8);
     if(!Add(m_edtCustom)) return false;
     if(!AddSeparator(2, ox+MX, b1y2 + BLK_GAP / 2, ox+bgW-MX)) return false;
 
@@ -408,6 +435,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
 
     if(!m_cmbRiskM.Create(m_chart_id, m_name+"CmbRiskM", m_subwin,
                            ox+MX+rLblW+MX, yR0, ox+MX+rLblW+MX+mmW, yR0+RH)) return false;
+    StyleComboText("CmbRiskM");
     m_cmbRiskM.AddItem("min Lot",  MM_MIN_LOT_SIZE);
     m_cmbRiskM.AddItem("min/eq",   MM_MIN_LOT_PER_EQUITY);
     m_cmbRiskM.AddItem("fixed",    MM_FIXED_LOT_SIZE);
@@ -422,6 +450,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
 
     if(!m_cmbSL.Create(m_chart_id, m_name+"CmbSL", m_subwin,
                         slLblX+slLblW, yR0, ox+MX+W, yR0+RH)) return false;
+    StyleComboText("CmbSL");
     m_cmbSL.AddItem("atr",   PANEL_SL_ATR_IDX);
     m_cmbSL.AddItem("fixed", PANEL_SL_FIXED_IDX);
     m_cmbSL.SelectByValue(PANEL_SL_ATR_IDX);
@@ -468,10 +497,10 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!MakeLbl(m_lblTitleCancel, "TitleCancel", ox+MX, tY4, ox+bgW-MX, tY4+LOG_RH,
                 "CANCEL", CLR_TITLE, "Consolas", 9)) return false;
 
-    if(!MakeBtn(m_btnCancelBO,   "BtnCancelBO",   ox+MX,       yBO,  ox+MX+BW,       yBO+BTN_H,  "Cancel BO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
-    if(!MakeBtn(m_btnCancelSO,   "BtnCancelSO",   ox+MX+BW+MX, yBO,  ox+MX+BW+MX+BW, yBO+BTN_H,  "Cancel SO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
-    if(!MakeBtn(m_btnCancelBuy,  "BtnCancelBuy",  ox+MX,       yPos, ox+MX+BW,       yPos+BTN_H, "Cancel Buy",  CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
-    if(!MakeBtn(m_btnCancelSell, "BtnCancelSell", ox+MX+BW+MX, yPos, ox+MX+BW+MX+BW, yPos+BTN_H, "Cancel Sell", CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
+    if(!MakeBtn(m_btnCancelBO,   "BtnCancelBO",   ox+MX,       yBO,  ox+MX+BW,       yBO+BTN_H,  "xBO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
+    if(!MakeBtn(m_btnCancelSO,   "BtnCancelSO",   ox+MX+BW+MX, yBO,  ox+MX+BW+MX+BW, yBO+BTN_H,  "xSO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
+    if(!MakeBtn(m_btnCancelBuy,  "BtnCancelBuy",  ox+MX,       yPos, ox+MX+BW,       yPos+BTN_H, "xBuy",  CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
+    if(!MakeBtn(m_btnCancelSell, "BtnCancelSell", ox+MX+BW+MX, yPos, ox+MX+BW+MX+BW, yPos+BTN_H, "xSell", CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
     if(!AddSeparator(4, ox+MX, b4y2 + BLK_GAP / 2, ox+bgW-MX)) return false;
 
     // ══════════════════════════════════════════════════════════════
