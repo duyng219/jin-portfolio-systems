@@ -14,10 +14,13 @@
 
 enum ENUM_TSL_MODE
 {
-    TSL_CONTINUOUS,       // Kéo SL liên tục mỗi tick (mặc định)
+    TSL_CONTINUOUS,       // Kéo SL liên tục mỗi tick
     TSL_BREAKEVEN_FIRST,  // Chỉ bật sau khi lãi đủ X ATR
-    TSL_STEP,             // Kéo SL theo bước, mỗi bước tối thiểu X ATR
+    TSL_STEP,             // Mặc định: kéo SL theo bước, mỗi bước tối thiểu X ATR
 };
+
+#define TSL_MODIFY_THROTTLE_SECONDS 10
+#define TSL_MIN_MOVE_TICKS          3
 
 //+------------------------------------------------------------------+
 //| CPositionManager — Tính SL/TP và quản lý Trailing Stop          |
@@ -41,7 +44,7 @@ public:
     // stepATR       = (STEP) số ATR tối thiểu mỗi lần dịch SL
     void            TrailingStopLossByATR(string pSymbol, ulong pMagic,
                                           double atrValue, double pATRFactor,
-                                          ENUM_TSL_MODE tslMode       = TSL_CONTINUOUS,
+                                          ENUM_TSL_MODE tslMode       = TSL_STEP,
                                           double        activationATR = 1.0,
                                           double        stepATR       = 1.0);
 };
@@ -77,6 +80,8 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
     double distance       = atrValue * pATRFactor;   // khoảng cách SL so với giá
     double activationDist = atrValue * activationATR; // lãi tối thiểu để kích hoạt (BREAKEVEN)
     double stepDist       = atrValue * stepATR;       // bước dịch tối thiểu (STEP)
+    static ulong    s_lastTickets[];
+    static datetime s_lastModifyTimes[];
 
     for(int i = PositionsTotal() - 1; i >= 0; i--)
     {
@@ -94,6 +99,7 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
         double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
         double tickSize  = SymbolInfoDouble(pSymbol, SYMBOL_TRADE_TICK_SIZE);
         double newSL     = 0.0;
+        double minMove   = tickSize * TSL_MIN_MOVE_TICKS;
 
         if(posType == POSITION_TYPE_BUY)
         {
@@ -127,6 +133,27 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
             // STEP: chỉ dịch khi newSL lùi thêm ít nhất stepDist so với currentSL
             if(tslMode == TSL_STEP && currentSL > 0 && newSL > currentSL - stepDist) continue;
         }
+        else
+            continue;
+
+        // Avoid tiny SL changes that create noisy trade-server requests.
+        if(currentSL > 0 && MathAbs(newSL - currentSL) < minMove)
+            continue;
+
+        int ticketIndex = -1;
+        int tracked     = ArraySize(s_lastTickets);
+        for(int j = 0; j < tracked; j++)
+        {
+            if(s_lastTickets[j] == ticket)
+            {
+                ticketIndex = j;
+                break;
+            }
+        }
+
+        datetime now = TimeCurrent();
+        if(ticketIndex >= 0 && now - s_lastModifyTimes[ticketIndex] < TSL_MODIFY_THROTTLE_SECONDS)
+            continue;
 
         request.action   = TRADE_ACTION_SLTP;
         request.symbol   = pSymbol;
@@ -138,6 +165,16 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
 
         string direction = (posType == POSITION_TYPE_BUY) ? "BUY" : "SELL";
         bool sent = OrderSend(request, result);
+
+        if(ticketIndex < 0)
+        {
+            ticketIndex = tracked;
+            ArrayResize(s_lastTickets, ticketIndex + 1);
+            ArrayResize(s_lastModifyTimes, ticketIndex + 1);
+            s_lastTickets[ticketIndex] = ticket;
+        }
+        s_lastModifyTimes[ticketIndex] = now;
+
         bool ok   = (result.retcode == TRADE_RETCODE_DONE ||
                      result.retcode == TRADE_RETCODE_NO_CHANGES);
 

@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
-//|                                                    JINPA_v2.mq5 |
+//|                                                  JINPA_v2.2.mq5 |
 //|                                       Copyright 2026, Duy Nguyen |
 //|                                             https://duyquant.dev |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Duy Nguyen"
 #property link      "https://duyquant.dev"
-#property version   "2.00"
-#property description "JINPA v2 - Manual Trading Assistant"
+#property version   "2.20"
+#property description "JINPA v2.2 - Manual Trading Assistant"
 #property description ""
 #property description "Price Action based manual trading with CAppDialog panel — comment auto-assign per setup"
 #property strict
@@ -57,7 +57,7 @@ input double                                ATRFactor                      = 2; 
 input double                                ATRFactorPO                 = 2;   // Factor (Pending Order offset)
 
 sinput group                              "──────────── TRAILING STOP ─────────────────"
-input ENUM_TSL_MODE            TSLMode          = TSL_CONTINUOUS;
+input ENUM_TSL_MODE            TSLMode          = TSL_STEP;
 input double                              TSLActivationATR = 1.0;
 input double                              TSLStepATR       = 1.0;
 
@@ -120,7 +120,7 @@ int OnInit()
     if(panelH < 260)
         panelH = 260;
 
-    if(!g_panel.Create(0, "JINPA v2", 0, panelX, panelY, panelX + PANEL_W, panelY + panelH))
+    if(!g_panel.Create(0, "JINPA v2.2", 0, panelX, panelY, panelX + PANEL_W, panelY + panelH))
     {
         Alert("Panel creation failed!");
         return INIT_FAILED;
@@ -136,7 +136,7 @@ int OnInit()
     g_panel.Run();  // bắt buộc để CAppDialog xử lý events
     g_panel.RefreshVisuals();
 
-    Print("JINPA v2 initialized successfully.");
+    Print("JINPA v2.2 initialized successfully.");
     return INIT_SUCCEEDED;
 }
 
@@ -144,7 +144,7 @@ void OnDeinit(const int reason)
 {
     g_panel.Destroy(reason);
     infoDisplay.ClearDisplay();
-    Print("JINPA v2 stopped — reason: ", reason);
+    Print("JINPA v2.2 stopped — reason: ", reason);
 }
 
 void OnTick()

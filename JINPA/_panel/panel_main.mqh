@@ -524,7 +524,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!MakeLbl(m_lblTitleLog, "TitleLog", ox+MX, tY5, ox+bgW-MX, tY5+LOG_RH,
                 "TRADES LOG", CLR_TITLE, "Consolas", 9)) return false;
     if(!MakeLbl(m_lblLogCols, "LblLogCols", ox+MX, yLCols, ox+MX+W, yLCols+LOG_RH,
-                "Ticket    Comment       Time", CLR_TEXT_COMMENT, "Consolas", 8)) return false;
+                "Ticket   Comment    Time", CLR_TEXT_COMMENT, "Consolas", 8)) return false;
     for(int i = 0; i < m_visibleLogRows; i++)
     {
         int yRow = yLog0 + i * (LOG_RH + 2);
@@ -608,7 +608,7 @@ void CJINPAPanel::Tick()
         s_firstTick = true;
     }
 
-    Caption("jinpa-v2.1");
+    Caption("jinpa-v2.2");
 
     // Refresh log mỗi 3 giây
     static datetime s_last = 0;
@@ -888,7 +888,7 @@ void CJINPAPanel::OnExportCSV()
     m_log.Refresh();
     string date = TimeToString(TimeCurrent(), TIME_DATE);
     StringReplace(date, ".", "-");
-    m_log.ExportCSV("JINPA_v2_" + m_symbol + "_" + date + ".csv");
+    m_log.ExportCSV("JINPA_v2.2_" + m_symbol + "_" + date + ".csv");
 }
 
 #endif
