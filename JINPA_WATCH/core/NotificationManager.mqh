@@ -47,11 +47,7 @@ public:
       const string message = BuildMessage(symbolCount, symbols);
       ResetLastError();
       if(SendNotification(message))
-      {
-         WatcherLog("HEARTBEAT", "RUNNING");
-         WatcherLog("NOTIFY", "Heartbeat sent | symbols=" + IntegerToString(symbolCount));
          return;
-      }
 
       const int errorCode = GetLastError();
       WatcherLogError("Heartbeat notification failed | error=" + IntegerToString(errorCode));

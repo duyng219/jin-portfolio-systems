@@ -19,7 +19,6 @@ private:
    bool                  m_isBootstrapping;
    bool                  m_enableAuditLog;
    bool                  m_enableCoreBreakAuditLog;
-   bool                  m_enableTesterEventLog;
 
    string                m_symbols[];
    ENUM_TIMEFRAMES       m_timeframes[];
@@ -206,6 +205,24 @@ private:
       return recordIndex;
    }
 
+   string JournalCycleText(const ENUM_MARKET_CYCLE cycle) const
+   {
+      if(cycle == MARKET_CYCLE_BULL)
+         return "Bull ↑";
+      if(cycle == MARKET_CYCLE_BEAR)
+         return "Bear ↓";
+      return "Unknown";
+   }
+
+   string JournalCoreText(const ENUM_CORE_SWING_TYPE coreType) const
+   {
+      if(coreType == CORE_SWING_LOW)
+         return "Core low";
+      if(coreType == CORE_SWING_HIGH)
+         return "Core high";
+      return "Core";
+   }
+
    void LogStructureEvent(const StructureEvent &event) const
    {
       const int digits = (int)SymbolInfoInteger(event.symbol, SYMBOL_DIGITS);
@@ -213,32 +230,32 @@ private:
 
       if(event.type == CORE_SWING_INITIALIZED)
       {
-         WatcherLog("CORE", prefix + CoreSwingTypeToString(event.coreType)
-                    + " initialized | " + DoubleToString(event.newCoreLevel, digits));
+         WatcherLog("CORE", prefix + JournalCoreText(event.coreType)
+                     + " initialized | " + DoubleToString(event.newCoreLevel, digits));
       }
       else if(event.type == CORE_SWING_CHANGED)
       {
-         WatcherLog("CORE", prefix + CoreSwingTypeToString(event.coreType)
-                    + " | " + DoubleToString(event.oldCoreLevel, digits)
-                    + " -> " + DoubleToString(event.newCoreLevel, digits)
-                    + " | " + event.reason);
+         WatcherLog("CORE", prefix + JournalCoreText(event.coreType)
+                    + " updated | " + DoubleToString(event.oldCoreLevel, digits)
+                    + " → " + DoubleToString(event.newCoreLevel, digits));
       }
       else if(event.type == CORE_BREAK_CANDIDATE)
       {
-         WatcherLog("CYCLE", prefix + MarketCycleToString(event.cycleBefore)
-                    + " | Core break candidate | "
+         WatcherLog("CORE", prefix + "Break candidate | "
+                    + JournalCycleText(event.cycleBefore) + " | "
+                    + JournalCoreText(event.coreType) + " "
                     + DoubleToString(event.oldCoreLevel, digits));
       }
       else if(event.type == CORE_BREAK_FAILED)
       {
-         WatcherLog("CYCLE", prefix + MarketCycleToString(event.cycleBefore)
-                    + " | Core break failed");
+         WatcherLog("CORE", prefix + "Break failed | "
+                    + JournalCycleText(event.cycleBefore));
       }
       else if(event.type == CYCLE_CHANGED)
       {
-         WatcherLog("CYCLE", prefix + MarketCycleToString(event.cycleBefore)
-                    + " -> " + MarketCycleToString(event.cycleAfter)
-                    + " | CONFIRMED");
+         WatcherLog("CYCLE", prefix + JournalCycleText(event.cycleBefore)
+                    + " → " + JournalCycleText(event.cycleAfter)
+                    + " | Confirmed");
       }
    }
 
@@ -748,10 +765,35 @@ private:
                                const SwingPoint &origin,
                                const string detail = "") const
    {
-      if(!m_enableCoreBreakAuditLog || m_isBootstrapping)
+      if(m_isBootstrapping)
          return;
 
       const int digits = (int)SymbolInfoInteger(m_symbols[contextIndex], SYMBOL_DIGITS);
+      const string prefix = m_symbols[contextIndex] + " "
+                            + WatcherTimeframeToString(m_timeframes[contextIndex])
+                            + " | ";
+      if(decision == "PENDING_ORIGIN_CREATED")
+         WatcherLog("CORE", prefix + "Pending origin created");
+      else if(decision == "PENDING_ORIGIN_CANCELLED_CYCLE_CHANGE")
+         WatcherLog("CORE", prefix
+                    + "Pending origin cancelled | Cycle changed");
+      else if(decision == "PENDING_ORIGIN_EXPIRED")
+         WatcherLog("CORE", prefix + "Pending origin expired");
+      else if(decision == "PENDING_ORIGIN_RESOLVED")
+      {
+         const ENUM_CORE_SWING_TYPE resolvedCoreType =
+            pending.cycleAtBreak == MARKET_CYCLE_BULL
+            ? CORE_SWING_LOW : CORE_SWING_HIGH;
+         WatcherLog("CORE", prefix + "Pending origin resolved"
+                    + (originFound && detail == "CORE_MOVED"
+                       ? " | " + JournalCoreText(resolvedCoreType) + " "
+                         + DoubleToString(origin.price, digits)
+                       : " | Core unchanged"));
+      }
+
+      if(!m_enableCoreBreakAuditLog)
+         return;
+
       double currentCore = 0.0;
       bool hasCurrentCore = false;
       if(pending.cycleAtBreak == MARKET_CYCLE_BULL
@@ -1114,10 +1156,8 @@ private:
    void LogSwing(const int contextIndex, const SwingPoint &point) const
    {
       const int digits = (int)SymbolInfoInteger(m_symbols[contextIndex], SYMBOL_DIGITS);
-      const string swingName = point.type == SWING_HIGH ? "New Swing High" : "New Swing Low";
-      WatcherLog("STRUCTURE", m_symbols[contextIndex]
+      WatcherLog("SWING", m_symbols[contextIndex]
                  + " " + WatcherTimeframeToString(m_timeframes[contextIndex])
-                 + " | " + swingName
                  + " | " + StructurePointToString(point.classification)
                  + " | " + DoubleToString(point.price, digits));
    }
@@ -1356,22 +1396,41 @@ private:
                              const datetime eventTime,
                              const string detail = "") const
    {
-      if(m_isBootstrapping
-         || (!m_enableAuditLog && !m_enableCoreBreakAuditLog))
+      if(m_isBootstrapping)
          return;
 
       const int digits = (int)SymbolInfoInteger(m_symbols[contextIndex], SYMBOL_DIGITS);
-      WatcherLog("SIDEWAY", m_symbols[contextIndex] + " "
-                 + WatcherTimeframeToString(m_timeframes[contextIndex])
-                 + " | STATE=" + state
-                 + " | ownerCycle=" + MarketCycleToString(box.ownerCycle)
-                 + " | boxHigh=" + DoubleToString(box.boxHigh, digits)
-                 + " | boxLow=" + DoubleToString(box.boxLow, digits)
-                 + " | coreFrozen="
-                    + DoubleToString(box.activeCoreAtEntry, digits)
-                 + " | eventTime="
-                    + TimeToString(eventTime, TIME_DATE | TIME_MINUTES)
-                 + (detail == "" ? "" : " | " + detail));
+      const string prefix = m_symbols[contextIndex] + " "
+                            + WatcherTimeframeToString(m_timeframes[contextIndex])
+                            + " | ";
+      if(state == "CONFIRMED")
+      {
+         WatcherLog("SIDEWAY", prefix + JournalCycleText(box.ownerCycle)
+                    + " | Activated | High "
+                    + DoubleToString(box.boxHigh, digits)
+                    + " | Low " + DoubleToString(box.boxLow, digits));
+      }
+      else if(state == "BREAKOUT")
+      {
+         const bool upperBreak = StringFind(detail, "BOX_BREAKOUT_UP") >= 0;
+         WatcherLog("SIDEWAY", prefix
+                    + (upperBreak ? "Breakout high | " : "Breakout low | ")
+                    + DoubleToString(upperBreak ? box.boxHigh : box.boxLow,
+                                     digits));
+      }
+
+      if(m_enableAuditLog || m_enableCoreBreakAuditLog)
+      {
+         WatcherLog("AUDIT][SIDEWAY", prefix + "state=" + state
+                    + " | ownerCycle=" + MarketCycleToString(box.ownerCycle)
+                    + " | boxHigh=" + DoubleToString(box.boxHigh, digits)
+                    + " | boxLow=" + DoubleToString(box.boxLow, digits)
+                    + " | coreFrozen="
+                       + DoubleToString(box.activeCoreAtEntry, digits)
+                    + " | eventTime="
+                       + TimeToString(eventTime, TIME_DATE | TIME_MINUTES)
+                    + (detail == "" ? "" : " | " + detail));
+      }
    }
 
    void CancelPendingContinuationForSideway(const int contextIndex,
@@ -1936,14 +1995,12 @@ private:
          return;
 
       SwingPoint source;
-      bool initialized = false;
       if(newCycle == MARKET_CYCLE_BULL
          && FindNearestConfirmedClassifiedSwing(contextIndex, SWING_LOW, STRUCT_HL,
                                                 confirmationBarTime, source))
       {
          SetCoreLow(contextIndex, source, confirmationBarTime,
                     "Reversal confirmed | nearest HL", reversalBreakLevel);
-         initialized = m_states[contextIndex].coreSwing.hasCoreLow;
       }
       else if(newCycle == MARKET_CYCLE_BEAR
               && FindNearestConfirmedClassifiedSwing(contextIndex, SWING_HIGH, STRUCT_LH,
@@ -1951,23 +2008,7 @@ private:
       {
          SetCoreHigh(contextIndex, source, confirmationBarTime,
                      "Reversal confirmed | nearest LH", reversalBreakLevel);
-         initialized = m_states[contextIndex].coreSwing.hasCoreHigh;
       }
-
-      if(!initialized || m_isBootstrapping || !m_enableTesterEventLog
-         || !(bool)MQLInfoInteger(MQL_TESTER))
-         return;
-
-      const int digits = (int)SymbolInfoInteger(m_symbols[contextIndex], SYMBOL_DIGITS);
-      WatcherLog("TESTER][CORE_INIT_AFTER_REVERSAL",
-                 m_symbols[contextIndex] + " "
-                 + WatcherTimeframeToString(m_timeframes[contextIndex])
-                 + " | Cycle: " + MarketCycleToString(newCycle)
-                 + " | " + CoreSwingTypeToString(
-                    newCycle == MARKET_CYCLE_BULL ? CORE_SWING_LOW : CORE_SWING_HIGH)
-                 + ": " + DoubleToString(source.price, digits)
-                 + " | Source: nearest confirmed "
-                 + (newCycle == MARKET_CYCLE_BULL ? "HL" : "LH"));
    }
 
    void ConfirmCycleChange(const int contextIndex,
@@ -2161,22 +2202,11 @@ private:
       {
          if(logFailure && !m_dataErrorLogged[contextIndex])
          {
-            if((bool)MQLInfoInteger(MQL_TESTER) && m_enableTesterEventLog)
-            {
-               WatcherLog("TESTER][WARN", m_symbols[contextIndex] + " "
-                          + WatcherTimeframeToString(m_timeframes[contextIndex])
-                          + " | insufficient history"
-                          + " | bars=" + IntegerToString(copied)
-                          + " | required=" + IntegerToString(minimumBars));
-            }
-            else
-            {
-               WatcherLogError("Structure bootstrap waiting for history: "
-                               + m_symbols[contextIndex]
-                               + " | bars=" + IntegerToString(copied)
-                               + " | required=" + IntegerToString(minimumBars)
-                               + " | error=" + IntegerToString(GetLastError()));
-            }
+            WatcherLogWarning("Structure bootstrap waiting for history: "
+                              + m_symbols[contextIndex]
+                              + " | bars=" + IntegerToString(copied)
+                              + " | required=" + IntegerToString(minimumBars)
+                              + " | error=" + IntegerToString(GetLastError()));
             m_dataErrorLogged[contextIndex] = true;
          }
          return false;
@@ -2192,18 +2222,24 @@ private:
       m_lastSeenCurrentBarTime[contextIndex] = rates[copied - 1].time;
       m_dataErrorLogged[contextIndex] = false;
 
-      string coreText = "UNCONFIRMED";
-      if(m_states[contextIndex].coreSwing.hasCoreLow)
-         coreText = "CORE LOW";
-      else if(m_states[contextIndex].coreSwing.hasCoreHigh)
-         coreText = "CORE HIGH";
+      string coreText = "Core -";
+      const int digits = (int)SymbolInfoInteger(m_symbols[contextIndex], SYMBOL_DIGITS);
+      if(m_states[contextIndex].cycleState.cycle == MARKET_CYCLE_BULL
+         && m_states[contextIndex].coreSwing.hasCoreLow)
+         coreText = "Core low "
+                    + DoubleToString(m_states[contextIndex].coreSwing.coreSwingLow,
+                                     digits);
+      else if(m_states[contextIndex].cycleState.cycle == MARKET_CYCLE_BEAR
+              && m_states[contextIndex].coreSwing.hasCoreHigh)
+         coreText = "Core high "
+                    + DoubleToString(m_states[contextIndex].coreSwing.coreSwingHigh,
+                                     digits);
 
-      WatcherLog("STRUCTURE", "INIT | " + m_symbols[contextIndex]
-                 + " " + WatcherTimeframeToString(m_timeframes[contextIndex])
-                 + " | swings=" + IntegerToString(m_swingCounts[contextIndex])
-                 + " | structure=" + m_states[contextIndex].structureSummary
-                 + " | cycle=" + MarketCycleToString(m_states[contextIndex].cycleState.cycle)
-                 + " | core=" + coreText);
+      WatcherLog("INIT", m_symbols[contextIndex] + " "
+                 + WatcherTimeframeToString(m_timeframes[contextIndex])
+                 + " | Ready | "
+                 + JournalCycleText(m_states[contextIndex].cycleState.cycle)
+                 + " | " + coreText);
       AuditBootstrap(contextIndex);
       return true;
    }
@@ -2259,7 +2295,6 @@ public:
       m_isBootstrapping = false;
       m_enableAuditLog = false;
       m_enableCoreBreakAuditLog = false;
-      m_enableTesterEventLog = true;
    }
 
    void Configure(const int swingLeftBars,
@@ -2271,8 +2306,7 @@ public:
                    const bool useCoreBreakATRBuffer,
                    const double coreBreakATRBuffer,
                    const bool enableAuditLog,
-                   const bool enableCoreBreakAuditLog,
-                   const bool enableTesterEventLog)
+                   const bool enableCoreBreakAuditLog)
    {
       m_swingLeftBars = swingLeftBars;
       m_swingRightBars = swingRightBars;
@@ -2284,7 +2318,6 @@ public:
       m_coreBreakATRBuffer = coreBreakATRBuffer;
       m_enableAuditLog = enableAuditLog;
       m_enableCoreBreakAuditLog = enableCoreBreakAuditLog;
-      m_enableTesterEventLog = enableTesterEventLog;
    }
 
    bool Initialize(SymbolState &symbolStates[])
@@ -2405,19 +2438,10 @@ public:
             }
             else if(!m_dataErrorLogged[contextIndex])
             {
-               if((bool)MQLInfoInteger(MQL_TESTER) && m_enableTesterEventLog)
-               {
-                  WatcherLog("TESTER][WARN", m_symbols[contextIndex] + " "
-                             + WatcherTimeframeToString(m_timeframes[contextIndex])
-                             + " | insufficient history during update"
-                             + " | bars=" + IntegerToString(copied));
-               }
-               else
-               {
-                  WatcherLogError("Structure update failed: " + m_symbols[contextIndex]
-                                  + " | bars=" + IntegerToString(copied)
-                                  + " | error=" + IntegerToString(GetLastError()));
-               }
+               WatcherLogWarning("Structure update waiting for history: "
+                                 + m_symbols[contextIndex]
+                                 + " | bars=" + IntegerToString(copied)
+                                 + " | error=" + IntegerToString(GetLastError()));
                m_dataErrorLogged[contextIndex] = true;
             }
          }

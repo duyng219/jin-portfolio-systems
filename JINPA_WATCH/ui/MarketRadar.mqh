@@ -7,6 +7,8 @@
 #define JINPA_RADAR_COLUMN_COUNT 10
 #define JINPA_RADAR_FOOTER_FIELD_COUNT 5
 
+const bool JINPA_RADAR_LAYOUT_TRACE = false;
+
 enum ENUM_RADAR_LAYOUT_PROFILE
 {
    RADAR_LAYOUT_COMPACT = 0,
@@ -205,7 +207,7 @@ private:
       m_lastChartWidth = chartWidth;
       m_layoutProfile = profile;
 
-      if(layoutChanged)
+      if(layoutChanged && JINPA_RADAR_LAYOUT_TRACE)
       {
          WatcherLog("RADAR][LAYOUT", "chart_width=" + IntegerToString(chartWidth)
                     + " | available_width=" + IntegerToString(availableWidth)
@@ -548,7 +550,6 @@ public:
 
       RefreshLayout();
       ChartRedraw(m_chartId);
-      WatcherLog("INIT", "Market Radar created | rows=" + IntegerToString(m_rowCount));
       return true;
    }
 

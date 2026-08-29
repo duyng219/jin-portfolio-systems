@@ -182,7 +182,6 @@ public:
       ResetLastError();
       if(SendNotification(message))
       {
-         WatcherLog("NOTIFY", "Structure event sent | " + event.identity);
          if(m_enableAuditLog)
          {
             WatcherLog("AUDIT][PUSH", "\nEvent: "

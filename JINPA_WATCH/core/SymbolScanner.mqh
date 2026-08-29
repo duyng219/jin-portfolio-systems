@@ -42,11 +42,8 @@ private:
    int         m_configuredSymbolCount;
    int         m_activityTimeoutSeconds;
 
-   void UpdateActivity(const int index, const bool logTransition)
+   void UpdateActivity(const int index)
    {
-      const bool previousActive = m_states[index].isActive;
-      const bool hadPreviousState = m_states[index].activityInitialized;
-
       MqlTick tick;
       ResetLastError();
       if(SymbolInfoTick(m_states[index].symbol, tick) && tick.time > 0)
@@ -70,13 +67,6 @@ private:
 
       m_states[index].isActive = currentActive;
       m_states[index].activityInitialized = true;
-
-      if(logTransition && hadPreviousState && previousActive != currentActive)
-      {
-         WatcherLog("MARKET", m_states[index].symbol + " | "
-                    + (previousActive ? "ACTIVE" : "INACTIVE") + " -> "
-                    + (currentActive ? "ACTIVE" : "INACTIVE"));
-      }
    }
 
    void AddSymbol(const string symbol, const ENUM_TIMEFRAMES timeframe)
@@ -104,7 +94,7 @@ private:
       m_states[index].activityInitialized = false;
 
       IsNewBar(m_states[index]);
-      UpdateActivity(index, false);
+      UpdateActivity(index);
    }
 
 public:
@@ -149,7 +139,7 @@ public:
 
          if(duplicate)
          {
-            WatcherLog("INIT", "Duplicate symbol skipped: " + symbol);
+            WatcherLogWarning("Duplicate symbol skipped: " + symbol);
             continue;
          }
 
@@ -167,11 +157,6 @@ public:
          }
 
          AddSymbol(symbol, timeframe);
-         const int stateIndex = ArraySize(m_states) - 1;
-         const string status = m_states[stateIndex].isReady ? "READY" : "WAITING_DATA";
-         WatcherLog("INIT", "Symbol added: " + symbol
-                    + " | timeframe=" + WatcherTimeframeToString(timeframe)
-                    + " | status=" + status);
       }
 
       if(ArraySize(m_states) == 0)
@@ -189,7 +174,7 @@ public:
 
       for(int index = 0; index < count; index++)
       {
-         UpdateActivity(index, true);
+         UpdateActivity(index);
          const bool wasReady = m_states[index].isReady;
          const bool newBar = IsNewBar(m_states[index]);
 
@@ -209,8 +194,6 @@ public:
 
          if(!wasReady)
          {
-            WatcherLog("SCAN", "Market data ready: " + m_states[index].symbol
-                       + " | timeframe=" + WatcherTimeframeToString(m_states[index].timeframe));
             m_states[index].lastEvent = "DATA READY";
             m_states[index].lastEventTime = TimeCurrent();
          }
@@ -219,9 +202,6 @@ public:
          {
             m_states[index].lastEvent = "NEW_BAR";
             m_states[index].lastEventTime = m_states[index].lastBarTime;
-            WatcherLog("NEW_BAR", m_states[index].symbol
-                       + " | " + WatcherTimeframeToString(m_states[index].timeframe)
-                       + " | " + TimeToString(m_states[index].lastBarTime, TIME_DATE | TIME_MINUTES));
          }
       }
    }

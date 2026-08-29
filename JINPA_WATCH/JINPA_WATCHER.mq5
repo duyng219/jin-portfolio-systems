@@ -58,7 +58,6 @@ const bool             EnableTestNotification  = false;
 const int              TestNotificationSeconds = 60;
 const bool             EnableStructureAuditLog = false;
 const bool             EnableCoreBreakAuditLog = false;
-const bool             EnableTesterEventLog    = true;
 
 CSymbolScanner       g_scanner;
 CNotificationManager g_notificationManager;
@@ -79,119 +78,6 @@ bool IsTesterMode()
    return (bool)MQLInfoInteger(MQL_TESTER);
 }
 
-void PrintTesterEvent(const StructureEvent &event)
-{
-   if(!EnableTesterEventLog)
-      return;
-
-   const int digits = (int)SymbolInfoInteger(event.symbol, SYMBOL_DIGITS);
-   const string prefix = event.symbol + " "
-                         + WatcherTimeframeToString(event.timeframe) + " | ";
-   const string coreName = event.coreType == CORE_SWING_LOW ? "CORE LOW" : "CORE HIGH";
-
-   if(event.type == CORE_SWING_INITIALIZED)
-   {
-      WatcherLog("TESTER][CORE", prefix
-                 + coreName
-                 + " INITIALIZED | " + DoubleToString(event.newCoreLevel, digits));
-   }
-   else if(event.type == CORE_SWING_CHANGED)
-   {
-      WatcherLog("TESTER][CORE", prefix
-                 + coreName + " | "
-                 + DoubleToString(event.oldCoreLevel, digits) + " -> "
-                 + DoubleToString(event.newCoreLevel, digits)
-                 + " | " + event.reason);
-   }
-   else if(event.type == CORE_BREAK_CANDIDATE)
-   {
-      WatcherLog("TESTER][CYCLE", prefix
-                 + MarketCycleToString(event.cycleBefore)
-                 + " | CORE BREAK CANDIDATE | level="
-                 + DoubleToString(event.oldCoreLevel, digits));
-   }
-   else if(event.type == CORE_BREAK_FAILED)
-   {
-      WatcherLog("TESTER][CYCLE", prefix + "CORE BREAK FAILED | cycle remains "
-                 + MarketCycleToString(event.cycleBefore));
-   }
-   else if(event.type == CYCLE_CHANGED)
-   {
-      WatcherLog("TESTER][CYCLE", prefix
-                 + MarketCycleToString(event.cycleBefore) + " -> "
-                 + MarketCycleToString(event.cycleAfter) + " | CONFIRMED");
-   }
-}
-
-void PrintTesterBootstrapState()
-{
-   if(!IsTesterMode() || !EnableTesterEventLog)
-      return;
-
-   const int count = ArraySize(g_displayStates);
-   for(int index = 0; index < count; index++)
-   {
-      const int digits = (int)SymbolInfoInteger(g_displayStates[index].symbol, SYMBOL_DIGITS);
-      string coreText = "core=-";
-      if(g_displayStates[index].hasActiveCore)
-      {
-         coreText = (g_displayStates[index].cycle == "BULL" ? "coreLow=" : "coreHigh=")
-                    + DoubleToString(g_displayStates[index].activeCorePrice, digits);
-      }
-
-      WatcherLog("TESTER][INIT", g_displayStates[index].symbol + " "
-                 + WatcherTimeframeToString(g_displayStates[index].timeframe)
-                 + " | cycle=" + g_displayStates[index].cycle
-                 + " | " + coreText);
-   }
-}
-
-void LogTesterActiveCore(const PriceStructureState &state)
-{
-   if(!IsTesterMode() || !EnableTesterEventLog)
-      return;
-
-   bool hasActiveCore = false;
-   double corePrice = 0.0;
-   datetime coreTime = 0;
-   string coreType = "NONE";
-   string objectName = "";
-
-   if(state.cycleState.cycle == MARKET_CYCLE_BULL
-      && state.coreSwing.activeCoreType == CORE_SWING_LOW
-      && state.coreSwing.hasCoreLow)
-   {
-      hasActiveCore = true;
-      corePrice = state.coreSwing.coreSwingLow;
-      coreTime = state.coreSwing.coreSwingLowTime;
-      coreType = "CORE LOW";
-      objectName = "JINPA_STRUCT_CORE_LOW";
-   }
-   else if(state.cycleState.cycle == MARKET_CYCLE_BEAR
-           && state.coreSwing.activeCoreType == CORE_SWING_HIGH
-           && state.coreSwing.hasCoreHigh)
-   {
-      hasActiveCore = true;
-      corePrice = state.coreSwing.coreSwingHigh;
-      coreTime = state.coreSwing.coreSwingHighTime;
-      coreType = "CORE HIGH";
-      objectName = "JINPA_STRUCT_CORE_HIGH";
-   }
-
-   const int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   const bool objectExists = objectName != "" && ObjectFind(0, objectName) >= 0;
-   WatcherLog("TESTER][ACTIVE_CORE",
-              "symbol=" + _Symbol
-              + " | cycle=" + MarketCycleToString(state.cycleState.cycle)
-              + " | hasActiveCore=" + (hasActiveCore ? "TRUE" : "FALSE")
-              + " | coreType=" + coreType
-              + " | corePrice=" + (hasActiveCore
-                                      ? DoubleToString(corePrice, digits) : "-")
-              + " | coreTime=" + (coreTime > 0
-                                     ? TimeToString(coreTime, TIME_DATE | TIME_MINUTES) : "-")
-              + " | activeObject=" + (objectExists ? "PRESENT" : "ABSENT"));
-}
-
 void UpdateChartStructureDebug()
 {
    if(!ShowStructureDebug)
@@ -205,7 +91,6 @@ void UpdateChartStructureDebug()
       g_structureDebugRenderer.Update(g_chartStructureState, g_chartSwings,
                                       g_chartBrokenCores,
                                       g_chartSidewayBoxes);
-      LogTesterActiveCore(g_chartStructureState);
    }
 }
 
@@ -258,13 +143,10 @@ int OnInit()
                                      ATRPeriod, StructureLookbackBars,
                                      UseCoreBreakATRBuffer, CoreBreakATRBuffer,
                                      EnableStructureAuditLog,
-                                     EnableCoreBreakAuditLog,
-                                     EnableTesterEventLog);
+                                     EnableCoreBreakAuditLog);
 
    if(!g_priceStructureEngine.Initialize(g_displayStates))
       return INIT_FAILED;
-
-   PrintTesterBootstrapState();
 
    g_structureNotificationManager.Configure(NotifyCoreSwingChange,
                                             NotifyCoreBreakCandidate,
@@ -299,19 +181,9 @@ int OnInit()
    if(IsTesterMode())
       g_testerLastBarTime = iTime(_Symbol, ScannerTimeframe, 0);
 
-   WatcherLog("INIT", "JINPA WATCH v1.1 started"
-              + " | symbols=" + IntegerToString(g_scanner.Count())
-              + " | timeframe=" + WatcherTimeframeToString(ScannerTimeframe)
-               + " | scan_seconds=" + IntegerToString(ScanIntervalSeconds)
-               + " | activity_timeout_seconds="
-               + IntegerToString(MarketActivityTimeoutSeconds)
-              + " | heartbeat=" + (EnableTestNotification ? "ON" : "OFF")
-              + " | radar=" + (ShowMarketRadar ? "ON" : "OFF")
-              + " | radar_test=" + (RadarTestMode ? "ON" : "OFF")
-               + " | structure_debug=" + (ShowStructureDebug ? "ON" : "OFF")
-               + " | core_break_buffer_atr=" + DoubleToString(CoreBreakATRBuffer, 2)
-               + " | structure_audit=" + (EnableStructureAuditLog ? "ON" : "OFF")
-               + " | core_break_audit=" + (EnableCoreBreakAuditLog ? "ON" : "OFF"));
+   WatcherLog("INIT", "JINPA WATCH v1.1 started | symbols="
+              + IntegerToString(g_scanner.Count()) + " | timeframe="
+              + WatcherTimeframeToString(ScannerTimeframe));
 
    return INIT_SUCCEEDED;
 }
@@ -359,9 +231,6 @@ void OnTick()
                          ScannerTimeframe, true);
 
    g_priceStructureEngine.ConsumeEvents(g_structureEvents);
-   const int structureEventCount = ArraySize(g_structureEvents);
-   for(int index = 0; index < structureEventCount; index++)
-      PrintTesterEvent(g_structureEvents[index]);
 
    ChartRedraw(0);
 }
@@ -383,5 +252,6 @@ void OnDeinit(const int reason)
    EventKillTimer();
    g_structureDebugRenderer.Destroy();
    g_marketRadar.Destroy();
-   WatcherLog("INIT", "JINPA_WATCHER stopped | reason=" + IntegerToString(reason));
+   WatcherLog("SYSTEM", "JINPA WATCH stopped | reason="
+              + IntegerToString(reason));
 }

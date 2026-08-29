@@ -3,7 +3,12 @@
 
 void WatcherLog(const string channel, const string message)
 {
-   Print("[JINPA_WATCH][", channel, "] ", message);
+   Print("[JINPA][", channel, "] ", message);
+}
+
+void WatcherLogWarning(const string message)
+{
+   WatcherLog("WARN", message);
 }
 
 void WatcherLogError(const string message)
