@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
-//|                                                    JINPA_v1.mq5 |
+//|                                                 jinpa-manual.mq5 |
 //|                                       Copyright 2026, Duy Nguyen |
 //|                                             https://duyquant.dev |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Duy Nguyen"
 #property link      "https://duyquant.dev"
 #property version   "1.00"
-#property description "JINPA v1 - Manual Trading Assistant"
+#property description "JINPA - Manual Trading Assistant"
 #property description ""
 #property description "Price Action based manual trading with one-click order entry and ATR risk management"
 #property strict
@@ -48,14 +48,13 @@ input ENUM_APPLIED_PRICE       MAPrice               = PRICE_CLOSE; // Applied P
 
 sinput group                              "─────────────── ATR SETTINGS ──────────────"
 input int                                       ATRPeriod                     = 14;  // Period
-input double                                ATRFactorSL                 = 2.5;   // Factor for initial Stop Loss
-input double                                ATRFactorTSL                = 3.5;   // Factor for Trailing Stop distance
-input double                                ATRFactorPO                 = 2.5;   // Factor (for Pending Order)
+input double                                ATRFactor                      = 2;   // Factor (for SL & Trailing SL)
+input double                                ATRFactorPO                 = 2;   // Factor (for Pending Order)
 
 sinput group                              "──────────── TRAILING STOP ─────────────────"
-input ENUM_TSL_MODE            TSLMode          = TSL_STEP;       // Trailing Stop Mode
-input double                              TSLActivationATR = 2.5;            // Breakeven First: kích hoạt sau X ATR lãi
-input double                              TSLStepATR       = 2.5;            // Step: dịch SL tối thiểu X ATR mỗi bước
+input ENUM_TSL_MODE            TSLMode          = TSL_CONTINUOUS; // Trailing Stop Mode
+input double                              TSLActivationATR = 1.0;            // Breakeven First: kích hoạt sau X ATR lãi
+input double                              TSLStepATR       = 1.0;            // Step: dịch SL tối thiểu X ATR mỗi bước
 
 sinput group                              "────────────────── LOGGING ─────────────────"
 input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;              // Log Level
@@ -113,25 +112,7 @@ int OnInit()
 
     orderExecutor.Initialize(_Symbol, &RM, &PM, &trade, &uiManager, params);
 
-    Print("[JINPA V1 INPUT 1/3] Symbol=", _Symbol,
-          " | Magic=", MagicNumber,
-          " | POExpMin=", POExpirationMinutes,
-          " | MaxDD=", DoubleToString(MaxDrawdownDaily, 2), "%");
-    Print("[JINPA V1 INPUT 2/3] MM=", EnumToString(MoneyManagement),
-          " | Risk=", DoubleToString(RiskPercent, 2), "%",
-          " | FixedLot=", DoubleToString(FixedVolume, 2),
-          " | MinLotEqStep=", DoubleToString(MinLotPerEquitySteps, 2),
-          " | SLPoints=", slPointsValue);
-    Print("[JINPA V1 INPUT 3/3] MA=", IntegerToString(MAPeriod), "/", EnumToString(MAMethod),
-          " | ATR=", IntegerToString(ATRPeriod),
-          " | ATRFactorSL=", DoubleToString(ATRFactorSL, 2),
-          " | ATRFactorTSL=", DoubleToString(ATRFactorTSL, 2),
-          " | ATRFactorPO=", DoubleToString(ATRFactorPO, 2),
-          " | TSL=", EnumToString(TSLMode),
-          " | TSLActivationATR=", DoubleToString(TSLActivationATR, 2),
-          " | TSLStepATR=", DoubleToString(TSLStepATR, 2),
-          " | LogLevel=", EnumToString(LogLevel));
-    Print("JINPA v1 initialized successfully.");
+    Print("JINPA initialized successfully.");
     return INIT_SUCCEEDED;
 }
 
@@ -139,7 +120,7 @@ void OnDeinit(const int reason)
 {
     uiManager.Destroy(reason);
     infoDisplay.ClearDisplay();
-    Print("JINPA v1 stopped — reason: ", reason);
+    Print("JINPA stopped — reason: ", reason);
 }
 
 void OnTick()
@@ -150,7 +131,7 @@ void OnTick()
     MA.RefreshMain();
     ATR.RefreshMain();
 
-    double atrValue   = ATR.main[1] * ATRFactorSL;  // Initial Stop Loss
+    double atrValue   = ATR.main[1] * ATRFactor;    // SL & Trailing SL
     double atrValuePO = ATR.main[0] * ATRFactorPO;  // Pending order offset
 
     //──────────────────────────────────────────────────────────────────
@@ -195,7 +176,7 @@ void OnTick()
     //──────────────────────────────────────────────────────────────────
     // 6 - TRAILING STOP LOSS
     //──────────────────────────────────────────────────────────────────
-    PM.TrailingStopLossByATR(_Symbol, MagicNumber, ATR.main[1], ATRFactorTSL,
+    PM.TrailingStopLossByATR(_Symbol, MagicNumber, ATR.main[1], ATRFactor,
                              TSLMode, TSLActivationATR, TSLStepATR);
 }
 
