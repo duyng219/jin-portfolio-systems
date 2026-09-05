@@ -59,7 +59,7 @@ private:
     ENUM_LOG_LEVEL         logLevel;
 
     // Tính lot size cho một lệnh
-    double CalcVolume(double slDistance, ENUM_ORDER_TYPE orderType);
+    double CalcVolume(double slDistance, ENUM_ORDER_TYPE orderType, double openPrice = 0.0);
 
     // Thời gian hết hạn pending order
     datetime GetExpiration() { return TimeCurrent() + poExpirationMinutes * 60; }
@@ -69,14 +69,16 @@ private:
     ulong GetPendingSellTicket();
 
     // Đọc CTrade result và in log theo logLevel
-    void LogResult(string action);
+    void LogResult(string action, double stopLoss = 0.0,
+                   ulong targetTicket = 0, double targetVolume = 0.0,
+                   bool includePrice = true, bool logSuccess = true);
 
     void HandleBuyMarket(double askPrice, double stopLoss);
     void HandleSellMarket(double bidPrice, double stopLoss);
     void HandleBuyStop(double askPrice, double atrPO);
     void HandleSellStop(double bidPrice, double atrPO);
-    void HandleBuyLimit(double askPrice, double atrPO);
-    void HandleSellLimit(double bidPrice, double atrPO);
+    void HandleBuyLimit(double askPrice, double atrPO, double atrSL);
+    void HandleSellLimit(double bidPrice, double atrPO, double atrSL);
     void HandleCancelBuyOrder();
     void HandleCancelSellOrder();
     void HandleCloseBuyPosition();
@@ -123,7 +125,9 @@ void COrderExecutor::Initialize(string sym, CRiskManager* rm, CPositionManager* 
 //+------------------------------------------------------------------+
 //| Đọc CTrade result và in log theo level                           |
 //+------------------------------------------------------------------+
-void COrderExecutor::LogResult(string action)
+void COrderExecutor::LogResult(string action, double stopLoss,
+                                ulong targetTicket, double targetVolume,
+                                bool includePrice, bool logSuccess)
 {
     if(logLevel == LOG_NONE) return;
 
@@ -136,27 +140,41 @@ void COrderExecutor::LogResult(string action)
     if(!success)
     {
         if(logLevel >= LOG_ERROR)
-            Print("[ERROR] ", action,
-                  " | Code ", retcode, ": ", trade.ResultRetcodeDescription());
+            Print("[JINPA][ERROR] ", action, " failed",
+                  " | retcode=", retcode,
+                  " | ", trade.ResultRetcodeDescription());
         return;
     }
 
+    if(!logSuccess)
+        return;
+
     if(logLevel >= LOG_INFO)
-        Print("[OK] ", action,
-              " | #", trade.ResultOrder(),
-              " vol=", DoubleToString(trade.ResultVolume(), 2),
-              " price=", DoubleToString(trade.ResultPrice(), _Digits));
+    {
+        const ulong  ticket = (targetTicket > 0) ? targetTicket : trade.ResultOrder();
+        const double volume = (targetVolume > 0.0) ? targetVolume : trade.ResultVolume();
+        const double price  = trade.ResultPrice();
+        string message = "[JINPA][TRADE] " + action + " | #" + string(ticket);
+        if(volume > 0.0)
+            message += " | " + DoubleToString(volume, 2);
+        if(includePrice && price > 0.0)
+            message += " | " + DoubleToString(price, _Digits);
+        if(stopLoss > 0.0)
+            message += " | SL " + DoubleToString(stopLoss, _Digits);
+        Print(message);
+    }
 
     if(logLevel >= LOG_DEBUG)
-        Print("     ask=", trade.ResultAsk(),
+        Print("[JINPA][TRADE] DEBUG ", action,
+              " | ask=", trade.ResultAsk(),
               " bid=", trade.ResultBid(),
               " | ", trade.ResultComment());
 }
 
-double COrderExecutor::CalcVolume(double slDistance, ENUM_ORDER_TYPE orderType)
+double COrderExecutor::CalcVolume(double slDistance, ENUM_ORDER_TYPE orderType, double openPrice)
 {
     return riskManager.MoneyManagement(symbol, moneyManagement, minLotPerEquitySteps,
-                                       riskPercent, slDistance, fixedVolume, orderType);
+                                       riskPercent, slDistance, fixedVolume, orderType, openPrice);
 }
 
 ulong COrderExecutor::GetPendingBuyTicket()
@@ -211,8 +229,8 @@ void COrderExecutor::HandleAllOrders(double askPrice, double bidPrice,
 
     if(uiManager.BuyStopped())  { HandleBuyStop(askPrice, atrPO);  uiManager.ResetBuyStopped();  }
     if(uiManager.SellStopped()) { HandleSellStop(bidPrice, atrPO); uiManager.ResetSellStopped(); }
-    if(uiManager.BuyLimited())  { HandleBuyLimit(askPrice, atrPO); uiManager.ResetBuyLimited();  }
-    if(uiManager.SellLimited()) { HandleSellLimit(bidPrice, atrPO);uiManager.ResetSellLimited(); }
+    if(uiManager.BuyLimited())  { HandleBuyLimit(askPrice, atrPO, atrSL); uiManager.ResetBuyLimited();  }
+    if(uiManager.SellLimited()) { HandleSellLimit(bidPrice, atrPO, atrSL);uiManager.ResetSellLimited(); }
 
     if(uiManager.BuyCancelled())  { HandleCancelBuyOrder();    uiManager.ResetBuyCancelled();  }
     if(uiManager.SellCancelled()) { HandleCancelSellOrder();   uiManager.ResetSellCancelled(); }
@@ -225,74 +243,74 @@ void COrderExecutor::HandleBuyMarket(double askPrice, double stopLoss)
 {
     double volume = CalcVolume(MathAbs(askPrice - stopLoss), ORDER_TYPE_BUY);
     if(logLevel >= LOG_DEBUG)
-        Print("[DEBUG] BUY MARKET | vol=", DoubleToString(volume,2),
+        Print("[JINPA][TRADE] DEBUG BUY MARKET | vol=", DoubleToString(volume,2),
               " ask=", askPrice, " sl=", stopLoss);
-    if(volume > 0) { trade.Buy(volume, symbol, askPrice, stopLoss, 0); LogResult("BUY MARKET"); }
+    if(volume > 0) { trade.Buy(volume, symbol, askPrice, stopLoss, 0); LogResult("BUY", stopLoss); }
 }
 
 void COrderExecutor::HandleSellMarket(double bidPrice, double stopLoss)
 {
     double volume = CalcVolume(MathAbs(bidPrice - stopLoss), ORDER_TYPE_SELL);
     if(logLevel >= LOG_DEBUG)
-        Print("[DEBUG] SELL MARKET | vol=", DoubleToString(volume,2),
+        Print("[JINPA][TRADE] DEBUG SELL MARKET | vol=", DoubleToString(volume,2),
               " bid=", bidPrice, " sl=", stopLoss);
-    if(volume > 0) { trade.Sell(volume, symbol, bidPrice, stopLoss, 0); LogResult("SELL MARKET"); }
+    if(volume > 0) { trade.Sell(volume, symbol, bidPrice, stopLoss, 0); LogResult("SELL", stopLoss); }
 }
 
 void COrderExecutor::HandleBuyStop(double askPrice, double atrPO)
 {
     double poPrice = askPrice + atrPO;
     double sl      = positionManager.CalculateStopLossByATR(symbol, "BUY", atrPO);
-    double volume  = CalcVolume(MathAbs(poPrice - sl), ORDER_TYPE_BUY);
+    double volume  = CalcVolume(MathAbs(poPrice - sl), ORDER_TYPE_BUY_STOP, poPrice);
     if(logLevel >= LOG_DEBUG)
-        Print("[DEBUG] BUY STOP | vol=", DoubleToString(volume,2),
+        Print("[JINPA][TRADE] DEBUG BUY STOP | vol=", DoubleToString(volume,2),
               " price=", poPrice, " sl=", sl);
-    if(volume > 0) { trade.BuyStop(volume, poPrice, symbol, sl, 0, ORDER_TIME_SPECIFIED, GetExpiration()); LogResult("BUY STOP"); }
+    if(volume > 0) { trade.BuyStop(volume, poPrice, symbol, sl, 0, ORDER_TIME_SPECIFIED, GetExpiration()); LogResult("BUY STOP", sl); }
 }
 
 void COrderExecutor::HandleSellStop(double bidPrice, double atrPO)
 {
     double poPrice = bidPrice - atrPO;
     double sl      = positionManager.CalculateStopLossByATR(symbol, "SELL", atrPO);
-    double volume  = CalcVolume(MathAbs(poPrice - sl), ORDER_TYPE_SELL);
+    double volume  = CalcVolume(MathAbs(poPrice - sl), ORDER_TYPE_SELL_STOP, poPrice);
     if(logLevel >= LOG_DEBUG)
-        Print("[DEBUG] SELL STOP | vol=", DoubleToString(volume,2),
+        Print("[JINPA][TRADE] DEBUG SELL STOP | vol=", DoubleToString(volume,2),
               " price=", poPrice, " sl=", sl);
-    if(volume > 0) { trade.SellStop(volume, poPrice, symbol, sl, 0, ORDER_TIME_SPECIFIED, GetExpiration()); LogResult("SELL STOP"); }
+    if(volume > 0) { trade.SellStop(volume, poPrice, symbol, sl, 0, ORDER_TIME_SPECIFIED, GetExpiration()); LogResult("SELL STOP", sl); }
 }
 
-void COrderExecutor::HandleBuyLimit(double askPrice, double atrPO)
+void COrderExecutor::HandleBuyLimit(double askPrice, double atrPO, double atrSL)
 {
     double poPrice = askPrice - atrPO;
-    double sl      = positionManager.CalculateStopLossByATR(symbol, "BUY", atrPO) - 100 * _Point;
-    double volume  = CalcVolume(MathAbs(poPrice - sl), ORDER_TYPE_BUY);
+    double sl      = poPrice - atrSL;
+    double volume  = CalcVolume(MathAbs(poPrice - sl), ORDER_TYPE_BUY_LIMIT, poPrice);
     if(logLevel >= LOG_DEBUG)
-        Print("[DEBUG] BUY LIMIT | vol=", DoubleToString(volume,2),
+        Print("[JINPA][TRADE] DEBUG BUY LIMIT | vol=", DoubleToString(volume,2),
               " price=", poPrice, " sl=", sl);
-    if(volume > 0) { trade.BuyLimit(volume, poPrice, symbol, sl, 0, ORDER_TIME_SPECIFIED, GetExpiration()); LogResult("BUY LIMIT"); }
+    if(volume > 0) { trade.BuyLimit(volume, poPrice, symbol, sl, 0, ORDER_TIME_SPECIFIED, GetExpiration()); LogResult("BUY LIMIT", sl); }
 }
 
-void COrderExecutor::HandleSellLimit(double bidPrice, double atrPO)
+void COrderExecutor::HandleSellLimit(double bidPrice, double atrPO, double atrSL)
 {
     double poPrice = bidPrice + atrPO;
-    double sl      = positionManager.CalculateStopLossByATR(symbol, "SELL", atrPO) + 100 * _Point;
-    double volume  = CalcVolume(MathAbs(poPrice - sl), ORDER_TYPE_SELL);
+    double sl      = poPrice + atrSL;
+    double volume  = CalcVolume(MathAbs(poPrice - sl), ORDER_TYPE_SELL_LIMIT, poPrice);
     if(logLevel >= LOG_DEBUG)
-        Print("[DEBUG] SELL LIMIT | vol=", DoubleToString(volume,2),
+        Print("[JINPA][TRADE] DEBUG SELL LIMIT | vol=", DoubleToString(volume,2),
               " price=", poPrice, " sl=", sl);
-    if(volume > 0) { trade.SellLimit(volume, poPrice, symbol, sl, 0, ORDER_TIME_SPECIFIED, GetExpiration()); LogResult("SELL LIMIT"); }
+    if(volume > 0) { trade.SellLimit(volume, poPrice, symbol, sl, 0, ORDER_TIME_SPECIFIED, GetExpiration()); LogResult("SELL LIMIT", sl); }
 }
 
 void COrderExecutor::HandleCancelBuyOrder()
 {
     ulong ticket = GetPendingBuyTicket();
-    if(ticket > 0) { trade.OrderDelete(ticket); LogResult("CANCEL BUY #" + string(ticket)); }
+    if(ticket > 0) { trade.OrderDelete(ticket); LogResult("CANCEL BUY", 0.0, ticket, 0.0, false); }
 }
 
 void COrderExecutor::HandleCancelSellOrder()
 {
     ulong ticket = GetPendingSellTicket();
-    if(ticket > 0) { trade.OrderDelete(ticket); LogResult("CANCEL SELL #" + string(ticket)); }
+    if(ticket > 0) { trade.OrderDelete(ticket); LogResult("CANCEL SELL", 0.0, ticket, 0.0, false); }
 }
 
 void COrderExecutor::HandleCloseBuyPosition()
@@ -302,8 +320,9 @@ void COrderExecutor::HandleCloseBuyPosition()
         if(PositionGetSymbol(i) != symbol) continue;
         if(PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_BUY) continue;
         ulong ticket = PositionGetTicket(i);
+        double volume = PositionGetDouble(POSITION_VOLUME);
         trade.PositionClose(ticket);
-        LogResult("CLOSE BUY #" + string(ticket));
+        LogResult("CLOSE BUY", 0.0, ticket, volume, false, false);
         break;
     }
 }
@@ -315,8 +334,9 @@ void COrderExecutor::HandleCloseSellPosition()
         if(PositionGetSymbol(i) != symbol) continue;
         if(PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_SELL) continue;
         ulong ticket = PositionGetTicket(i);
+        double volume = PositionGetDouble(POSITION_VOLUME);
         trade.PositionClose(ticket);
-        LogResult("CLOSE SELL #" + string(ticket));
+        LogResult("CLOSE SELL", 0.0, ticket, volume, false, false);
         break;
     }
 }

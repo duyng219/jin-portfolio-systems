@@ -58,7 +58,7 @@ const bool             EnableTestNotification  = false;
 const int              TestNotificationSeconds = 60;
 const bool             EnableStructureAuditLog = false;
 const bool             EnableCoreBreakAuditLog = false;
-
+ 
 CSymbolScanner       g_scanner;
 CNotificationManager g_notificationManager;
 CMarketRadar         g_marketRadar;

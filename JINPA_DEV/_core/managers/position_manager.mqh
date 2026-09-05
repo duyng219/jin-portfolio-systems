@@ -180,13 +180,16 @@ void CPositionManager::TrailingStopLossByATR(string pSymbol, ulong pMagic,
 
         if(!sent || !ok)
         {
-            Print("[ERROR] TSL ", direction, " #", ticket,
-                  " | Code ", result.retcode, ": ", result.comment);
+            Print("[JINPA][ERROR] TSL ", direction, " failed",
+                  " | #", ticket,
+                  " | retcode=", result.retcode,
+                  " | ", result.comment);
         }
         else
         {
-            Print("[TSL] ", direction, " #", ticket, " ", pSymbol,
-                  " | SL: ", DoubleToString(currentSL, _Digits),
+            Print("[JINPA][TSL] ", direction,
+                  " | #", ticket,
+                  " | SL ", DoubleToString(currentSL, _Digits),
                   " → ",     DoubleToString(newSL,     _Digits));
         }
     }

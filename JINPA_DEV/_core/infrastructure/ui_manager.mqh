@@ -57,17 +57,16 @@ private:
     double BtnSellStartPercent;
     double BtnStartYPercent;
     
-    // BUY button colors
-    color BtnBuyTextColor;
+    // Manual button palette
+    color ManualTextColor;
+    color ManualBorderColor;
     color BtnBuyBackColor;
-    color BtnBuyBorderColor;
-    color BtnBuyCancelBackColor;
-    
-    // SELL button colors
-    color BtnSellTextColor;
     color BtnSellBackColor;
-    color BtnSellBorderColor;
-    color BtnSellCancelBackColor;
+    color BtnCancelBackColor;
+    color BtnCloseBackColor;
+
+    bool AreAllButtonsPresent();
+    void RecoverButtonsIfNeeded();
     
 public:
     // Constructor
@@ -76,6 +75,7 @@ public:
     // Methods
     void Initialize();
     void CreateAllButtons();
+    void RecreateAllButtons();
     void Destroy(const int reason);
     void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam);
     
@@ -135,17 +135,13 @@ CUIManager::CUIManager()
     BtnSellStartPercent = 0.10;
     BtnStartYPercent = 0.10;
     
-    // BUY button colors
-    BtnBuyTextColor = clrWhite;
-    BtnBuyBackColor = C'33,72,72';
-    BtnBuyBorderColor = clrBlack;
-    BtnBuyCancelBackColor = C'242, 220, 162';
-    
-    // SELL button colors
-    BtnSellTextColor = clrWhite;
-    BtnSellBackColor = C'112,43,43';
-    BtnSellBorderColor = clrBlack;
-    BtnSellCancelBackColor = C'242, 220, 162';
+    // Manual button colors
+    ManualTextColor = C'225,230,238';
+    ManualBorderColor = C'55,64,76';
+    BtnBuyBackColor = C'20,34,38';
+    BtnSellBackColor = C'43,26,30';
+    BtnCancelBackColor = C'14,18,24';
+    BtnCloseBackColor = C'14,18,24';
 }
 
 //+------------------------------------------------------------------+
@@ -161,48 +157,54 @@ void CUIManager::Initialize()
 //+------------------------------------------------------------------+
 void CUIManager::CreateAllButtons()
 {
+    chart_width  = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+    chart_height = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
+
     // Calculate dimensions and positions
     double btn_height_px = chart_height * BtnHeightPercent;
     double btn_width_buy_px = chart_width * BtnWidthBuyPercent;
     double btn_width_sell_px = chart_width * BtnWidthSellPercent;
-    double btn_buy_x_start = chart_width * BtnBuyStartPercent;
-    double btn_sell_x_start = chart_width * BtnSellStartPercent;
-    double btn_y_start = chart_height * BtnStartYPercent;
+    const int panel_origin_x = 15;
+    const int panel_origin_y = 45;
+    double btn_column_offset = chart_width * (BtnSellStartPercent - BtnBuyStartPercent);
+    double btn_buy_x_start = panel_origin_x;
+    double btn_sell_x_start = panel_origin_x + btn_column_offset;
+    double btn_y_start = panel_origin_y;
     
     // Create BUY buttons
     btnBuy.Create(0, BTN_BUY_NAME, 0, int(btn_buy_x_start), int(btn_y_start), 
                   int(btn_buy_x_start + btn_width_buy_px), int(btn_y_start + btn_height_px));
     btnBuy.Text("Buy");
-    btnBuy.Color(BtnBuyTextColor);
+    btnBuy.Color(ManualTextColor);
     btnBuy.ColorBackground(BtnBuyBackColor);
-    btnBuy.ColorBorder(BtnBuyBorderColor);
+    btnBuy.ColorBorder(ManualBorderColor);
     btnBuy.FontSize(11);
 
     double btn_y_offset = btn_height_px;
     btnBuyStop.Create(0, BTN_BUY_STOP_NAME, 0, int(btn_buy_x_start), int(btn_y_start + btn_y_offset), 
                       int(btn_buy_x_start + btn_width_buy_px), int(btn_y_start + btn_y_offset + btn_height_px));
     btnBuyStop.Text("Buy Stop");
-    btnBuyStop.Color(BtnBuyTextColor);
+    btnBuyStop.Color(ManualTextColor);
     btnBuyStop.ColorBackground(BtnBuyBackColor);
-    btnBuyStop.ColorBorder(BtnBuyBorderColor);
+    btnBuyStop.ColorBorder(ManualBorderColor);
     btnBuyStop.FontSize(9);
 
     btn_y_offset *= 2;
     btnBuyLimit.Create(0, BTN_BUY_LIMIT_NAME, 0, int(btn_buy_x_start), int(btn_y_start + btn_y_offset), 
                        int(btn_buy_x_start + btn_width_buy_px), int(btn_y_start + btn_y_offset + btn_height_px));
     btnBuyLimit.Text("Buy Limit");
-    btnBuyLimit.Color(BtnBuyTextColor);
+    btnBuyLimit.Color(ManualTextColor);
     btnBuyLimit.ColorBackground(BtnBuyBackColor);
-    btnBuyLimit.ColorBorder(BtnBuyBorderColor);
+    btnBuyLimit.ColorBorder(ManualBorderColor);
     btnBuyLimit.FontSize(9);
 
     btn_y_offset = btn_height_px * 2.85;
     btnCancelBuy.Create(0, BTN_CANCEL_BUY_NAME, 0, int(btn_buy_x_start), int(btn_y_start + btn_y_offset), 
                         int(btn_buy_x_start + btn_width_buy_px), int(btn_y_start + btn_y_offset + btn_height_px));
     btnCancelBuy.Text("Cancel Buy Order");
-    btnCancelBuy.Color(BtnBuyBorderColor);
-    btnCancelBuy.ColorBackground(BtnBuyCancelBackColor);
-    btnCancelBuy.ColorBorder(BtnBuyBorderColor);
+    btnCancelBuy.Color(ManualTextColor);
+    btnCancelBuy.ColorBackground(BtnCancelBackColor);
+    btnCancelBuy.ColorBorder(ManualBorderColor);
     btnCancelBuy.FontSize(7);
     ObjectSetString(0, BTN_CANCEL_BUY_NAME, OBJPROP_TOOLTIP, "Cancel Pending Order");
 
@@ -210,9 +212,9 @@ void CUIManager::CreateAllButtons()
     btnCloseBuy.Create(0, BTN_CLOSE_BUY_NAME, 0, int(btn_buy_x_start), int(btn_y_start + btn_y_offset), 
                        int(btn_buy_x_start + btn_width_buy_px), int(btn_y_start + btn_y_offset + btn_height_px));
     btnCloseBuy.Text("Close Buy");
-    btnCloseBuy.Color(BtnBuyBorderColor);
-    btnCloseBuy.ColorBackground(clrWhite);
-    btnCloseBuy.ColorBorder(BtnBuyBorderColor);
+    btnCloseBuy.Color(ManualTextColor);
+    btnCloseBuy.ColorBackground(BtnCloseBackColor);
+    btnCloseBuy.ColorBorder(ManualBorderColor);
     btnCloseBuy.FontSize(9);
     ObjectSetString(0, BTN_CLOSE_BUY_NAME, OBJPROP_TOOLTIP, "Close Buy First");
 
@@ -220,36 +222,36 @@ void CUIManager::CreateAllButtons()
     btnSell.Create(0, BTN_SELL_NAME, 0, int(btn_sell_x_start), int(btn_y_start), 
                    int(btn_sell_x_start + btn_width_sell_px), int(btn_y_start + btn_height_px));
     btnSell.Text("Sell");
-    btnSell.Color(BtnSellTextColor);
+    btnSell.Color(ManualTextColor);
     btnSell.ColorBackground(BtnSellBackColor);
-    btnSell.ColorBorder(BtnSellBorderColor);
+    btnSell.ColorBorder(ManualBorderColor);
     btnSell.FontSize(11);
 
     btn_y_offset = btn_height_px;
     btnSellStop.Create(0, BTN_SELL_STOP_NAME, 0, int(btn_sell_x_start), int(btn_y_start + btn_y_offset), 
                        int(btn_sell_x_start + btn_width_sell_px), int(btn_y_start + btn_y_offset + btn_height_px));
     btnSellStop.Text("Sell Stop");
-    btnSellStop.Color(BtnSellTextColor);
+    btnSellStop.Color(ManualTextColor);
     btnSellStop.ColorBackground(BtnSellBackColor);
-    btnSellStop.ColorBorder(BtnSellBorderColor);
+    btnSellStop.ColorBorder(ManualBorderColor);
     btnSellStop.FontSize(9);
 
     btn_y_offset *= 2;
     btnSellLimit.Create(0, BTN_SELL_LIMIT_NAME, 0, int(btn_sell_x_start), int(btn_y_start + btn_y_offset), 
                         int(btn_sell_x_start + btn_width_sell_px), int(btn_y_start + btn_y_offset + btn_height_px));
     btnSellLimit.Text("Sell Limit");
-    btnSellLimit.Color(BtnSellTextColor);
+    btnSellLimit.Color(ManualTextColor);
     btnSellLimit.ColorBackground(BtnSellBackColor);
-    btnSellLimit.ColorBorder(BtnSellBorderColor);
+    btnSellLimit.ColorBorder(ManualBorderColor);
     btnSellLimit.FontSize(9);
 
     btn_y_offset = btn_height_px * 2.85;
     btnCancelSell.Create(0, BTN_CANCEL_SELL_NAME, 0, int(btn_sell_x_start), int(btn_y_start + btn_y_offset), 
                          int(btn_sell_x_start + btn_width_sell_px), int(btn_y_start + btn_y_offset + btn_height_px));
     btnCancelSell.Text("Cancel Sell Order");
-    btnCancelSell.Color(BtnSellBorderColor);
-    btnCancelSell.ColorBackground(BtnSellCancelBackColor);
-    btnCancelSell.ColorBorder(BtnSellBorderColor);
+    btnCancelSell.Color(ManualTextColor);
+    btnCancelSell.ColorBackground(BtnCancelBackColor);
+    btnCancelSell.ColorBorder(ManualBorderColor);
     btnCancelSell.FontSize(7);
     ObjectSetString(0, BTN_CANCEL_SELL_NAME, OBJPROP_TOOLTIP, "Cancel Pending Order");
 
@@ -257,13 +259,51 @@ void CUIManager::CreateAllButtons()
     btnCloseSell.Create(0, BTN_CLOSE_SELL_NAME, 0, int(btn_sell_x_start), int(btn_y_start + btn_y_offset), 
                         int(btn_sell_x_start + btn_width_sell_px), int(btn_y_start + btn_y_offset + btn_height_px));
     btnCloseSell.Text("Close Sell");
-    btnCloseSell.Color(BtnSellBorderColor);
-    btnCloseSell.ColorBackground(clrWhite);
-    btnCloseSell.ColorBorder(BtnSellBorderColor);
+    btnCloseSell.Color(ManualTextColor);
+    btnCloseSell.ColorBackground(BtnCloseBackColor);
+    btnCloseSell.ColorBorder(ManualBorderColor);
     btnCloseSell.FontSize(9);
     ObjectSetString(0, BTN_CLOSE_SELL_NAME, OBJPROP_TOOLTIP, "Close Sell First");
 
     ChartRedraw();
+}
+
+void CUIManager::RecreateAllButtons()
+{
+    ObjectDelete(0, BTN_BUY_NAME);
+    ObjectDelete(0, BTN_BUY_STOP_NAME);
+    ObjectDelete(0, BTN_BUY_LIMIT_NAME);
+    ObjectDelete(0, BTN_CANCEL_BUY_NAME);
+    ObjectDelete(0, BTN_CLOSE_BUY_NAME);
+    ObjectDelete(0, BTN_SELL_NAME);
+    ObjectDelete(0, BTN_SELL_STOP_NAME);
+    ObjectDelete(0, BTN_SELL_LIMIT_NAME);
+    ObjectDelete(0, BTN_CANCEL_SELL_NAME);
+    ObjectDelete(0, BTN_CLOSE_SELL_NAME);
+    CreateAllButtons();
+}
+
+bool CUIManager::AreAllButtonsPresent()
+{
+    return ObjectFind(0, BTN_BUY_NAME) >= 0
+           && ObjectFind(0, BTN_BUY_STOP_NAME) >= 0
+           && ObjectFind(0, BTN_BUY_LIMIT_NAME) >= 0
+           && ObjectFind(0, BTN_CANCEL_BUY_NAME) >= 0
+           && ObjectFind(0, BTN_CLOSE_BUY_NAME) >= 0
+           && ObjectFind(0, BTN_SELL_NAME) >= 0
+           && ObjectFind(0, BTN_SELL_STOP_NAME) >= 0
+           && ObjectFind(0, BTN_SELL_LIMIT_NAME) >= 0
+           && ObjectFind(0, BTN_CANCEL_SELL_NAME) >= 0
+           && ObjectFind(0, BTN_CLOSE_SELL_NAME) >= 0;
+}
+
+void CUIManager::RecoverButtonsIfNeeded()
+{
+    if(AreAllButtonsPresent())
+        return;
+
+    Print("JINPA UI incomplete. Recreating buttons...");
+    CreateAllButtons();
 }
 
 //+------------------------------------------------------------------+
@@ -303,13 +343,7 @@ void CUIManager::OnChartEvent(const int id, const long &lparam, const double &dp
 
     // Handle chart change
     if(id == CHARTEVENT_CHART_CHANGE)
-    {
-        if(ObjectFind(0, BTN_BUY_NAME) < 0)
-        {
-            Print("Chart changed. Recreating buttons...");
-            CreateAllButtons();
-        }
-    }
+        RecoverButtonsIfNeeded();
 
     // Handle object delete event
     if(id == CHARTEVENT_OBJECT_DELETE)
@@ -320,8 +354,7 @@ void CUIManager::OnChartEvent(const int id, const long &lparam, const double &dp
            sparam == BTN_SELL_STOP_NAME || sparam == BTN_SELL_LIMIT_NAME || 
            sparam == BTN_CANCEL_SELL_NAME || sparam == BTN_CLOSE_SELL_NAME)
         {
-            Print("Button deleted: ", sparam, ". Recreating all buttons...");
-            CreateAllButtons();
+            RecoverButtonsIfNeeded();
         }
     }
 }

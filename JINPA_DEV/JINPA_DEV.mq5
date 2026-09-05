@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
-//|                                                    JINPA_v1.mq5 |
+//|                                                   JINPA_DEV.mq5 |
 //|                                       Copyright 2026, Duy Nguyen |
 //|                                             https://duyquant.dev |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Duy Nguyen"
 #property link      "https://duyquant.dev"
 #property version   "1.00"
-#property description "JINPA v1 - Manual Trading Assistant"
+#property description "JINPA DEV - Development / Research / Backtest"
 #property description ""
 #property description "Price Action based manual trading with one-click order entry and ATR risk management"
 #property strict
@@ -14,6 +14,8 @@
 //+------ INCLUDES ------+//
 #include <Trade/Trade.mqh>
 #include "_core/framework_manager.mqh"
+#include "_core/infrastructure/magic_number_resolver.mqh"
+#include "watch/WatchIntegration.mqh"
 
 //+------ GLOBAL OBJECTS ------+//
 CTrade                           trade;                              // MT5 built-in trade object (dùng cho tất cả orders)
@@ -26,10 +28,90 @@ CUIManager                  uiManager;                     // 10 buttons trên c
 CDrawdownManager    drawdownManager;       // Theo dõi drawdown ngày/tháng
 COrderExecutor             orderExecutor;               // Bridge UI → orders
 CInfoDisplay                  infoDisplay;                    // Stats display
+CWatchIntegration        watchIntegration;           // Read-only WATCH boundary
+ulong                    MagicNumber = 0;             // Resolved once per EA instance
+string                   CanonicalSymbol = "UNKNOWN";
+
+int VolumeDigitsForSymbol(const string symbol)
+{
+    double step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+    int digits = 0;
+    while(digits < 8 && MathAbs(step - MathRound(step)) > 1e-8)
+    {
+        step *= 10.0;
+        digits++;
+    }
+    return digits;
+}
+
+string ExitReasonText(const ENUM_DEAL_REASON reason)
+{
+    if(reason == DEAL_REASON_SL) return "SL";
+    if(reason == DEAL_REASON_TP) return "TP";
+    if(reason == DEAL_REASON_CLIENT || reason == DEAL_REASON_MOBILE
+       || reason == DEAL_REASON_WEB || reason == DEAL_REASON_EXPERT)
+        return "Manual";
+    return "Other";
+}
+
+bool IsJinpaPosition(const ulong positionId, const string symbol, const long closingDealMagic)
+{
+    if(closingDealMagic == (long)MagicNumber)
+        return true;
+    if(positionId == 0 || !HistorySelectByPosition(positionId))
+        return false;
+
+    const int deals = HistoryDealsTotal();
+    for(int index = 0; index < deals; index++)
+    {
+        const ulong ticket = HistoryDealGetTicket(index);
+        const ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY);
+        if((entry == DEAL_ENTRY_IN || entry == DEAL_ENTRY_INOUT)
+           && HistoryDealGetString(ticket, DEAL_SYMBOL) == symbol
+           && HistoryDealGetInteger(ticket, DEAL_MAGIC) == (long)MagicNumber)
+            return true;
+    }
+    return false;
+}
+
+void LogExitDeal(const ulong dealTicket)
+{
+    if(dealTicket == 0 || !HistoryDealSelect(dealTicket))
+        return;
+
+    const ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+    if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY)
+        return;
+
+    const string dealSymbol = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
+    const ulong positionId = (ulong)HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+    const long dealMagic = HistoryDealGetInteger(dealTicket, DEAL_MAGIC);
+    if(dealSymbol != _Symbol || !IsJinpaPosition(positionId, dealSymbol, dealMagic))
+        return;
+
+    const ENUM_DEAL_TYPE dealType = (ENUM_DEAL_TYPE)HistoryDealGetInteger(dealTicket, DEAL_TYPE);
+    string originalSide;
+    if(dealType == DEAL_TYPE_SELL)
+        originalSide = "BUY";
+    else if(dealType == DEAL_TYPE_BUY)
+        originalSide = "SELL";
+    else
+        return;
+
+    const double volume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
+    const double price = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
+    const ENUM_DEAL_REASON reason = (ENUM_DEAL_REASON)HistoryDealGetInteger(dealTicket, DEAL_REASON);
+    const int priceDigits = (int)SymbolInfoInteger(dealSymbol, SYMBOL_DIGITS);
+
+    Print("[JINPA][EXIT] ", originalSide,
+          " | #", positionId,
+          " | ", DoubleToString(volume, VolumeDigitsForSymbol(dealSymbol)),
+          " | ", DoubleToString(price, priceDigits),
+          " | ", ExitReasonText(reason));
+}
 
 //+------ TRADING SETTINGS ------+//
 sinput group                              "────────────── BASIC SETTINGS ──────────────"
-input ulong                               MagicNumber                   = 1010;   // Magic Number
 input int                                    slPointsValue                      = 0;      // Stop Loss Points - 0 = Use ATR
 input ushort                              POExpirationMinutes       = 360;    // Pending Order Expiration (minutes)
 input double                             MaxDrawdownDaily           = 0;      // Max Daily Drawdown (%) - 0 = Disabled
@@ -62,8 +144,17 @@ input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;              // Log Level
 
 int OnInit()
 {
+    const bool knownSymbol = CMagicNumberResolver::Resolve(_Symbol, MagicNumber,
+                                                            CanonicalSymbol);
+    if(!knownSymbol)
+        Print("[JINPA][WARN] Unknown symbol ", _Symbol,
+              " | using fallback Magic ", MagicNumber);
+
     // Set magic number trên CTrade — áp dụng cho tất cả orders
     trade.SetExpertMagicNumber(MagicNumber);
+    // Tester defaults CTrade to LOG_LEVEL_ALL. Keep its failures, but let
+    // COrderExecutor own the single concise success summary.
+    trade.LogLevel(LOG_LEVEL_ERRORS);
 
     if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))
     {
@@ -113,6 +204,9 @@ int OnInit()
 
     orderExecutor.Initialize(_Symbol, &RM, &PM, &trade, &uiManager, params);
 
+    if(!watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period))
+        Print("[JINPA][WATCH][WARN] Integration disabled — initialization failed.");
+
     Print("[JINPA V1 INPUT 1/3] Symbol=", _Symbol,
           " | Magic=", MagicNumber,
           " | POExpMin=", POExpirationMinutes,
@@ -131,7 +225,7 @@ int OnInit()
           " | TSLActivationATR=", DoubleToString(TSLActivationATR, 2),
           " | TSLStepATR=", DoubleToString(TSLStepATR, 2),
           " | LogLevel=", EnumToString(LogLevel));
-    Print("JINPA v1 initialized successfully.");
+    Print("JINPA DEV initialized successfully.");
     return INIT_SUCCEEDED;
 }
 
@@ -139,11 +233,14 @@ void OnDeinit(const int reason)
 {
     uiManager.Destroy(reason);
     infoDisplay.ClearDisplay();
-    Print("JINPA v1 stopped — reason: ", reason);
+    watchIntegration.Shutdown();
+    Print("JINPA DEV stopped — reason: ", reason);
 }
 
 void OnTick()
 {
+    watchIntegration.ProcessTick();
+
     //──────────────────────────────────────────────────────────────────
     // 1 - REFRESH INDICATORS
     //──────────────────────────────────────────────────────────────────
@@ -185,7 +282,11 @@ void OnTick()
     infoDisplay.UpdateDisplay(dailyDD, monthlyDD, openBuy, openSell,
                               AccountInfoDouble(ACCOUNT_BALANCE), RiskPercent,
                               spread, MagicNumber);
-    infoDisplay.UpdateButtonTooltips(askPrice, bidPrice);
+    if(!infoDisplay.UpdateButtonTooltips(askPrice, bidPrice) && !IsStopped())
+    {
+        uiManager.RecreateAllButtons();
+        infoDisplay.UpdateButtonTooltips(askPrice, bidPrice);
+    }
 
     //──────────────────────────────────────────────────────────────────
     // 5 - HANDLE BUTTON ORDERS
@@ -202,4 +303,15 @@ void OnTick()
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
 {
     uiManager.OnChartEvent(id, lparam, dparam, sparam);
+
+    if(id == CHARTEVENT_CHART_CHANGE)
+        watchIntegration.OnChartChange();
+}
+
+void OnTradeTransaction(const MqlTradeTransaction &transaction,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+{
+    if(transaction.type == TRADE_TRANSACTION_DEAL_ADD)
+        LogExitDeal(transaction.deal);
 }

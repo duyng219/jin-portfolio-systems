@@ -28,7 +28,7 @@ public:
     void UpdateDisplay(double dailyDD, double monthlyDD, int openBuy, int openSell,
                        double balance, double risk, int spread, ulong magicNumber);
     void UpdatePoolSummary(string symbol, ulong magicNumber, double risk, double maxDrawdown);
-    void UpdateButtonTooltips(double askPrice, double bidPrice);
+    bool UpdateButtonTooltips(double askPrice, double bidPrice);
     void ClearDisplay();
 };
 
@@ -43,9 +43,12 @@ void CInfoDisplay::SetText(string objName, string text, int x, int y, int fontSi
     // Chỉ tạo object một lần, những lần sau chỉ update text
     if(ObjectFind(0, objName) < 0)
     {
+        ResetLastError();
         if(!ObjectCreate(0, objName, OBJ_LABEL, 0, 0, 0))
         {
-            Print(__FUNCTION__, " - Error creating ", objName, ": ", GetLastError());
+            const int errorCode = GetLastError();
+            if(errorCode != ERR_PROGRAM_STOPPED)
+                Print(__FUNCTION__, " - Error creating ", objName, ": ", errorCode);
             return;
         }
         ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, x);
@@ -172,14 +175,27 @@ void CInfoDisplay::UpdatePoolSummary(string symbol, ulong magicNumber, double ri
             x, y0 + 7 * rowGap, 8, textColor);
 }
 
-void CInfoDisplay::UpdateButtonTooltips(double askPrice, double bidPrice)
+bool CInfoDisplay::UpdateButtonTooltips(double askPrice, double bidPrice)
 {
-    ObjectSetString(0, "Btn Buy",        OBJPROP_TOOLTIP, "Buy at: "  + DoubleToString(askPrice, 5));
-    ObjectSetString(0, "Btn Buy Stop",   OBJPROP_TOOLTIP, "Buy Stop");
-    ObjectSetString(0, "Btn Buy Limit",  OBJPROP_TOOLTIP, "Buy Limit");
-    ObjectSetString(0, "Btn Sell",       OBJPROP_TOOLTIP, "Sell at: " + DoubleToString(bidPrice, 5));
-    ObjectSetString(0, "Btn Sell Stop",  OBJPROP_TOOLTIP, "Sell Stop");
-    ObjectSetString(0, "Btn Sell Limit", OBJPROP_TOOLTIP, "Sell Limit");
+    bool success = ObjectFind(0, "Btn Buy") >= 0
+                   && ObjectFind(0, "Btn Buy Stop") >= 0
+                   && ObjectFind(0, "Btn Buy Limit") >= 0
+                   && ObjectFind(0, "Btn Cancel Buy") >= 0
+                   && ObjectFind(0, "Btn Close Buy") >= 0
+                   && ObjectFind(0, "Btn Sell") >= 0
+                   && ObjectFind(0, "Btn Sell Stop") >= 0
+                   && ObjectFind(0, "Btn Sell Limit") >= 0
+                   && ObjectFind(0, "Btn Cancel Sell") >= 0
+                   && ObjectFind(0, "Btn Close Sell") >= 0;
+    success = ObjectSetString(0, "Btn Buy", OBJPROP_TOOLTIP,
+                              "Buy at: " + DoubleToString(askPrice, 5)) && success;
+    success = ObjectSetString(0, "Btn Buy Stop", OBJPROP_TOOLTIP, "Buy Stop") && success;
+    success = ObjectSetString(0, "Btn Buy Limit", OBJPROP_TOOLTIP, "Buy Limit") && success;
+    success = ObjectSetString(0, "Btn Sell", OBJPROP_TOOLTIP,
+                              "Sell at: " + DoubleToString(bidPrice, 5)) && success;
+    success = ObjectSetString(0, "Btn Sell Stop", OBJPROP_TOOLTIP, "Sell Stop") && success;
+    success = ObjectSetString(0, "Btn Sell Limit", OBJPROP_TOOLTIP, "Sell Limit") && success;
+    return success;
 }
 
 void CInfoDisplay::ClearDisplay()
