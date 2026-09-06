@@ -1,6 +1,6 @@
-# JINPA v2.2 - Tai lieu van hanh nhanh
+# JINPA v2.4 - Tai lieu van hanh nhanh
 
-JINPA v2.2 la EA ho tro giao dich thu cong theo Price Action. EA khong tu vao lenh theo tin hieu indicator; trader chon setup tren panel va bam nut de dat lenh. Phan tu dong chinh cua EA la tinh lot, gan comment setup, tinh SL theo ATR/fixed, quan ly pending order, theo doi daily drawdown va trailing stop theo ATR.
+JINPA v2.4 la EA ho tro giao dich thu cong theo Price Action. EA khong tu vao lenh theo tin hieu indicator; trader chon setup tren panel va bam nut de dat lenh. Phan tu dong chinh cua EA la tinh lot, gan comment setup, tinh SL theo ATR/fixed, quan ly pending order, theo doi daily drawdown va trailing stop theo ATR.
 
 ## 1. Luong hoat dong cua EA
 
@@ -8,13 +8,14 @@ Khi khoi dong, EA:
 
 - Kiem tra Terminal va EA co duoc phep trade hay khong.
 - Khoi tao MA va ATR theo input.
-- Tao panel `JINPA v2.2` tren chart.
+- Tao panel `JINPA v2.4` tren chart.
 - Gan panel voi symbol hien tai, magic number, risk manager, position manager va trade engine.
 
 Moi tick, EA:
 
 - Refresh MA va ATR.
-- Tinh `atrSL = ATR[1] x ATRFactor` de dat SL va trailing SL.
+- Tinh `atrSL = ATR[1] x ATRFactorSL` de dat SL ban dau.
+- Tinh khoang cach trailing bang `ATR[1] x ATRFactorTSL`.
 - Tinh `atrPO = ATR[0] x ATRFactorPO` de dat khoang cach pending order.
 - Cap nhat daily drawdown.
 - Neu `MaxDrawdownDaily > 0` va drawdown ngay cham nguong, panel se bi halt va khong cho dat lenh moi.
@@ -64,7 +65,7 @@ Mac dinh panel dang select setup index 3, tuc `revs-ppf`, va key `_0_`.
 
 `SL` chon cach dat stop loss:
 
-- `atr`: SL cach gia vao lenh mot khoang `ATR x ATRFactor`.
+- `atr`: SL cach gia vao lenh mot khoang `ATR x ATRFactorSL`.
 - `fixed`: SL cach gia vao lenh `slPointsValue x _Point`. Neu `slPointsValue = 0` hoac khoang fixed khong hop le, EA fallback ve ATR khi tinh lot.
 
 Luu y: Neu lot tinh ra nho hon lot toi thieu cua broker, EA se clamp len lot toi thieu. Khi do risk thuc te co the cao hon muc `RiskPercent`.
@@ -98,7 +99,7 @@ Cac nut huy/dong lenh chi xu ly lenh cung symbol hien tai va cung `MagicNumber`:
 `EXPORT CSV` xuat danh sach position dang mo ra `MQL5/Files/` voi ten dang:
 
 ```text
-JINPA_v2.2_<SYMBOL>_<YYYY-MM-DD>.csv
+JINPA_v2.4_<SYMBOL>_<YYYY-MM-DD>.csv
 ```
 
 ## 3. Trailing stop
@@ -108,7 +109,7 @@ Trailing stop duoc goi moi tick cho position cung symbol va magic. EA dung ATR r
 Cong thuc khoang cach trailing:
 
 ```text
-distance = ATR[1] x ATRFactor
+distance = ATR[1] x ATRFactorTSL
 activationDist = ATR[1] x TSLActivationATR
 stepDist = ATR[1] x TSLStepATR
 ```
@@ -133,7 +134,7 @@ Sau khi kich hoat, SL van duoc dat theo cong thuc ATR trailing, khong phai bat b
 
 ### TSL_STEP
 
-Day la default trong `JINPA_v2.2`.
+Day la default trong `JINPA_v2.4`.
 
 EA van tinh SL theo `Bid - distance` voi BUY va `Ask + distance` voi SELL, nhung chi modify khi SL moi di duoc toi thieu `TSLStepATR x ATR` so voi SL hien tai.
 
@@ -176,13 +177,14 @@ MAPrice                 = PRICE_CLOSE
 
 ATR SETTINGS
 ATRPeriod               = 14
-ATRFactor               = 2.0
+ATRFactorSL             = 2.0
+ATRFactorTSL            = 3.0
 ATRFactorPO             = 1.5
 
 TRAILING STOP
 TSLMode                 = TSL_STEP
 TSLActivationATR        = 1.0
-TSLStepATR              = 0.8
+TSLStepATR              = 2.0
 
 LOGGING
 LogLevel                = LOG_INFO
@@ -196,9 +198,10 @@ FixedVolume             = 0.01
 RiskPercent             = 0.25
 MaxDrawdownDaily        = 2.0
 TSLMode                 = TSL_STEP
-ATRFactor               = 2.0
+ATRFactorSL             = 2.0
+ATRFactorTSL            = 3.0
 ATRFactorPO             = 1.5
-TSLStepATR              = 1.0
+TSLStepATR              = 2.0
 ```
 
 ## 5. Luu y van hanh
