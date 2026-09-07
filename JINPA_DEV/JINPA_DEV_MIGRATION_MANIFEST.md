@@ -144,7 +144,7 @@ Broker prefix/suffix symbols are canonicalized once during EA initialization. Th
 |---|---|---|---|---|---|
 | WATCH boundary | `watch/WatchIntegration.mqh` | Single current-symbol/timeframe context; bootstrap then new-bar updates | Golden PASS | Integrate lifecycle calls into future v2.5 `OnInit/OnTick/OnChartEvent/OnDeinit` | WATCH must remain read-only |
 | Structure types | `watch/structure/StructureTypes.mqh`, `watch/core/WatcherTypes.mqh` | Shared snapshots/events/enums | Compile + golden PASS | Port before Engine/renderer/radar | Do not invent Regime/Phase/Setup semantics |
-| Structure Engine | `watch/structure/PriceStructureEngine.mqh` | Frozen 5/5, ATR filters, lookback 500 | 141-event golden PASS | Port unchanged first; optimize only in later research | Depends on Watcher types/logger |
+| Structure Engine | `watch/structure/PriceStructureEngine.mqh` | Frozen 5/5, ATR filters, lookback 500; Stage 2.10 Break-Origin Core rule | PRE-STAGE-2.10 141-event golden PASS (historical Core semantics); Stage 2.10 targeted golden PASS | Port the corrected Engine unchanged; optimize only in later research | Depends on Watcher types/logger |
 | Structure Journal | `watch/core/WatcherLogger.mqh` | Stable `[JINPA][SWING/CORE/CYCLE/SIDEWAY]` channels | Golden PASS, duplicates 0 | Preserve channel text for regression comparison | Audit channels are disabled by baseline |
 | Renderer | `watch/structure/StructureDebugRenderer.mqh` | Read-only snapshot consumer; prefix-scoped object ownership | Visual/template recovery PASS | Port renderer lifecycle and all owned prefixes | No historical pruning; object count grows |
 | Push | `watch/structure/StructureNotificationManager.mqh` | Event queue, session-local identity dedup, one dispatch per update | Tester suppression validated | Port manager and tester guard together | Live Push not fully runtime validated; no retry/persistence |
@@ -158,6 +158,22 @@ Broker prefix/suffix symbols are canonicalized once during EA initialization. Th
 | Manual UI | `_core/infrastructure/ui_manager.mqh` | Ten CButton objects at X=15/Y=45 with frozen palette | Visual/template PASS | Port geometry, palette, event forwarding, and recovery as one unit | Existing chart-resize behavior persists until recreation |
 | Info display | `_core/infrastructure/info_display.mqh` | Recreates labels during normal updates; validates all ten button objects | Template recovery PASS | Port with UI recovery coordination | Object names must not collide with WATCH prefixes |
 | Template recovery | UI manager, info display, renderer, radar, WatchIntegration | Detect/recreate missing owned objects without EA restart | Real-template visual PASS | Preserve prefix-scoped cleanup and chart-change handling | No timer dependency |
+
+### Stage 2.10 corrected Structure baseline
+
+The original 141-event golden result above is preserved as **PRE-STAGE-2.10 / HISTORICAL CORE SEMANTICS** evidence. Exact parity with that stream is no longer an acceptance requirement because Core reassignment intentionally changed from nearest classified LH/HL selection to the confirmed Break-Origin swing of the final break leg.
+
+Targeted deterministic golden baseline:
+
+| Event | Count |
+|---|---:|
+| SWING | 2 |
+| CORE_BREAK_CANDIDATE | 1 |
+| CYCLE_CHANGED | 1 |
+| CORE_SWING_INITIALIZED | 1 |
+| Duplicates | 0 |
+
+Canonical proof: the pre-patch New Core High was `LH(2) @ 110`; the corrected New Core High is `HH(4) @ 120`. The symmetric LL case, legacy LH and HL cases, failed-break retention, multiple-origin replacement, SwingType preservation, bootstrap/sequential parity, and DEV/v2.5 parity passed. `HH/LH/LL/HL` topology remains independent from Core role.
 
 ## Frozen UI baselines
 

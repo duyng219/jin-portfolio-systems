@@ -2,10 +2,12 @@
 
 ## Freeze identity
 
-- Status: **LIVE CANDIDATE — FROZEN**
-- Release date: `2026-09-06`
-- Git branch before release commit: `main`
-- Git HEAD before release commit: `68995681a6fd627efa82a76fc1caad61a4881404`
+- Status: **LIVE CANDIDATE — RE-FROZEN AFTER STAGE 2.10**
+- Original release date: `2026-09-06`
+- Stage 2.10 re-freeze date: `2026-09-08`
+- Git branch before re-freeze commit: `main`
+- Git HEAD before re-freeze commit: `c8eaacaacb9008eb06f1d8d4f813c81b394e9091`
+- Initial-freeze pre-commit HEAD: `68995681a6fd627efa82a76fc1caad61a4881404`
 - Main source: `JINPA_v2.5.mq5`
 - Property version: `2.50`
 - Visible panel title: `JINPA v2.5`
@@ -15,19 +17,19 @@
 ## Frozen fingerprints
 
 - Production-source fingerprint: `55f237018910755e080eed0806d52317fb1617d87927a86541e90271453ae120`
-- EX5 SHA-256: `029d5b775680a71e53e110418006ce86e46f4c28d0a51cf43284d969a4d82d4a`
-- EX5 size: `349048` bytes
+- EX5 SHA-256: `1530f97a45deec2b4fb8ac6455958e56a3c908d1e8a8b51603f615b1e69a2996`
+- EX5 size: `348248` bytes
 - JINPA_DEV protected main-source SHA-256: `8372781b14a43534ba9e741f5c454e95eacafe33afab1f04ad0b6738da57b71c`
 - JINPA_v2.4 protected main-source SHA-256: `24b4e8ce39f64f50898fd016dfd9270f13ea7ff3c27549c1c1bfac029d49de2d`
 
-The production-source fingerprint is the frozen `JINPA_v2.5.mq5` hash. Documentation added by M9-E is release metadata and does not redefine this behavior-source baseline.
+The production-source fingerprint is the frozen `JINPA_v2.5.mq5` hash. Include-level behavior is additionally governed by the frozen component manifest; Stage 2.10 intentionally changed only the Structure Engine component. Documentation does not redefine either source baseline.
 
 ## Frozen component hash manifest
 
 | Component | SHA-256 |
 |---|---|
 | `_core/infrastructure/magic_number_resolver.mqh` | `6a2fd752d04f168978bd5652c66d523a46f9e2d960b1502559da292dfc5517a9` |
-| `watch/structure/PriceStructureEngine.mqh` | `18d08cc7f4cd678848db748a4bfca9961d13fa0c43c17d3577b4962d55ddabe3` |
+| `watch/structure/PriceStructureEngine.mqh` | `147db186259ee045ba559aeea28ae19307a71d0f796cc9a402b7175a2cc36be2` |
 | `watch/structure/StructureTypes.mqh` | `b65d563f56bf6b833ec5585b5b04b7a8ef6b72093ea1317dbbdf4df2c88f3dc7` |
 | `watch/core/WatcherTypes.mqh` | `baf71d4ec52a10fb5fd358eba3dc21d6930e39de82ca8f3edea4c3b168868d5d` |
 | `watch/core/WatcherLogger.mqh` | `e4e706cfe1d2d91ac88ddbb624579dd527ec8384d31a1b50c362ef07ed8fe2d1` |
@@ -81,6 +83,23 @@ Absent from the active compile graph: MarketRadar, `CMarketRadar`, `JINPA_RADAR_
 - M9-B — Demo execution PASS
 - M9-C — TSL and EXIT PASS with untested partial close/`OUT_BY`
 - M9-D — Push, Daily DD, and live-candidate validation PASS with known limitations
+- Stage 2.10 — Break-Origin Core reassignment PASS; re-frozen
+
+## Stage 2.10 corrected Structure baseline
+
+The pre-Stage-2.10 141/142-event baselines remain historical evidence and are not authoritative for corrected Core reassignment semantics.
+
+Targeted deterministic golden baseline per codebase:
+
+| Event | Count |
+|---|---:|
+| SWING | 2 |
+| CORE_BREAK_CANDIDATE | 1 |
+| CYCLE_CHANGED | 1 |
+| CORE_SWING_INITIALIZED | 1 |
+| Duplicates | 0 |
+
+Canonical first divergence: old New Core High `LH(2) @ 110`; corrected New Core High `HH(4) @ 120`. Symmetric LL, legacy LH/HL, false-break retention, multiple-origin replacement, SwingType preservation, bootstrap/sequential parity, and DEV/v2.5 parity all passed.
 
 ## Runtime validation boundary
 
@@ -96,7 +115,7 @@ Absent from the active compile graph: MarketRadar, `CMarketRadar`, `JINPA_RADAR_
 ## Protected states
 
 - `JINPA_v2.4`: previous stable production reference; unchanged.
-- `JINPA_DEV`: development/R&D line; unchanged by M9-E.
+- `JINPA_DEV`: development/R&D line; Stage 2.10 Engine patch matches v2.5 byte-for-byte.
 - Existing user-owned DEV deletions remain untouched.
 
 ## Known limitations
@@ -127,14 +146,6 @@ Absent from the active compile graph: MarketRadar, `CMarketRadar`, `JINPA_RADAR_
 
 No file was staged, committed, pushed, or tagged by M9-E.
 
-## Recommended release boundary
+## Current re-freeze boundary
 
-Recommended commit subject:
-
-`feat(jinpa): release JINPA v2.5 live candidate`
-
-Recommended optional tag:
-
-`jinpa-v2.5-live-candidate`
-
-Rollback reference remains `JINPA_v2.4`; subsequent Stage 3 development belongs in `JINPA_DEV`.
+Stage 2.10 changes only `watch/structure/PriceStructureEngine.mqh` plus release bookkeeping. Rollback reference remains `JINPA_v2.4`. The next development milestone is Stage 2.11 in `JINPA_DEV`; Stage 3 has not started.

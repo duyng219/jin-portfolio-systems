@@ -36,6 +36,7 @@ private:
    datetime              m_lastNoNewClosedBarAuditTime[];
    datetime              m_sidewayCandidateStartTime[];
    PendingContinuationState m_pendingContinuations[];
+   SwingPoint            m_breakOrigins[];
    bool                  m_auditSnapshotInitialized[];
    string                m_lastAuditCycle[];
    double                m_lastAuditCorePrice[];
@@ -1217,6 +1218,17 @@ private:
       else
          m_lastLowRecordIndex[contextIndex] = recordIndex;
 
+      // A confirmed same-side extreme formed while the two-close Core-break
+      // candidate is active becomes the origin of the final confirmation leg.
+      if(m_states[contextIndex].cycleState.breakCandidate)
+      {
+         const ENUM_SWING_TYPE originType =
+            m_states[contextIndex].cycleState.cycle == MARKET_CYCLE_BULL
+            ? SWING_HIGH : SWING_LOW;
+         if(point.type == originType)
+            m_breakOrigins[contextIndex] = point;
+      }
+
       if(!m_isBootstrapping)
          LogSwing(contextIndex, point);
       HandleInitialCycleDirection(contextIndex, point);
@@ -1878,6 +1890,7 @@ private:
       m_states[contextIndex].cycleState.breakLevel = 0.0;
       m_states[contextIndex].cycleState.brokenCoreLevel = 0.0;
       m_states[contextIndex].cycleState.confirmationCount = 0;
+      ResetSwingPoint(m_breakOrigins[contextIndex]);
    }
 
    void CancelPendingContinuationForCycleChange(const int contextIndex,
@@ -1948,66 +1961,26 @@ private:
       m_brokenCoreHistory[count] = record;
    }
 
-   bool FindNearestConfirmedClassifiedSwing(const int contextIndex,
-                                            const ENUM_SWING_TYPE swingType,
-                                            const ENUM_STRUCTURE_POINT classification,
-                                            const datetime confirmationBarTime,
-                                            SwingPoint &result) const
-   {
-      ResetSwingPoint(result);
-      bool found = false;
-      const int count = ArraySize(m_swingHistory);
-      for(int index = 0; index < count; index++)
-      {
-         if(m_swingHistory[index].contextIndex != contextIndex)
-            continue;
-
-         const SwingPoint candidate = m_swingHistory[index].point;
-         if(!candidate.confirmed || candidate.type != swingType
-            || candidate.classification != classification)
-            continue;
-
-         // Both the pivot and its right-bar confirmation must already exist
-         // when the reversal is confirmed. A later swing can never backfill it.
-         if(candidate.time <= 0 || candidate.time > confirmationBarTime
-            || candidate.confirmationTime <= 0
-            || candidate.confirmationTime > confirmationBarTime)
-            continue;
-
-         if(!found || candidate.time > result.time
-            || (candidate.time == result.time
-                && candidate.confirmationTime > result.confirmationTime))
-         {
-            result = candidate;
-            found = true;
-         }
-      }
-
-      return found;
-   }
-
    void TryInitializeCoreAfterReversal(const int contextIndex,
                                        const datetime confirmationBarTime,
                                        const ENUM_MARKET_CYCLE newCycle,
-                                       const double reversalBreakLevel)
+                                       const double reversalBreakLevel,
+                                       const SwingPoint &breakOrigin)
    {
       if(m_states[contextIndex].coreSwing.initialized)
          return;
 
-      SwingPoint source;
       if(newCycle == MARKET_CYCLE_BULL
-         && FindNearestConfirmedClassifiedSwing(contextIndex, SWING_LOW, STRUCT_HL,
-                                                confirmationBarTime, source))
+         && breakOrigin.confirmed && breakOrigin.type == SWING_LOW)
       {
-         SetCoreLow(contextIndex, source, confirmationBarTime,
-                    "Reversal confirmed | nearest HL", reversalBreakLevel);
+         SetCoreLow(contextIndex, breakOrigin, confirmationBarTime,
+                    "Reversal confirmed | break-origin low", reversalBreakLevel);
       }
       else if(newCycle == MARKET_CYCLE_BEAR
-              && FindNearestConfirmedClassifiedSwing(contextIndex, SWING_HIGH, STRUCT_LH,
-                                                     confirmationBarTime, source))
+              && breakOrigin.confirmed && breakOrigin.type == SWING_HIGH)
       {
-         SetCoreHigh(contextIndex, source, confirmationBarTime,
-                     "Reversal confirmed | nearest LH", reversalBreakLevel);
+         SetCoreHigh(contextIndex, breakOrigin, confirmationBarTime,
+                     "Reversal confirmed | break-origin high", reversalBreakLevel);
       }
    }
 
@@ -2018,6 +1991,7 @@ private:
       const ENUM_MARKET_CYCLE oldCycle = m_states[contextIndex].cycleState.cycle;
       const double brokenCore = m_states[contextIndex].cycleState.brokenCoreLevel;
       const double breakLevel = m_states[contextIndex].cycleState.breakLevel;
+      const SwingPoint breakOrigin = m_breakOrigins[contextIndex];
       CancelPendingContinuationForCycleChange(contextIndex, eventBarTime);
       InvalidateSidewayCandidate(contextIndex, eventBarTime,
                                  "CANDIDATE_CANCELLED", "CYCLE_CHANGE");
@@ -2042,11 +2016,10 @@ private:
                 oldCycle, newCycle, CORE_SWING_NONE,
                 brokenCore, 0.0, breakLevel, "Two closed bars confirmed");
 
-      // Initialize the protective Core for the new cycle from structure that
-      // was already confirmed at reversal time. If no valid HL/LH exists, the
-      // new cycle intentionally remains without an Active Core.
+      // Initialize the protective Core from the confirmed swing extreme that
+      // originates the final reversal leg. Swing topology remains untouched.
       TryInitializeCoreAfterReversal(contextIndex, eventBarTime,
-                                    newCycle, breakLevel);
+                                    newCycle, breakLevel, breakOrigin);
    }
 
    void EvaluateCycleBreak(const int contextIndex,
@@ -2112,6 +2085,16 @@ private:
       m_states[contextIndex].cycleState.breakLevel = breakLevel;
       m_states[contextIndex].cycleState.brokenCoreLevel = coreLevel;
       m_states[contextIndex].cycleState.confirmationCount = 1;
+
+      // Capture causality when the candidate starts. AcceptSwing may replace
+      // this with a newer confirmed origin before the second close confirms.
+      const SwingPoint breakOrigin = cycle == MARKET_CYCLE_BULL
+                                     ? m_states[contextIndex].lastSwingHigh
+                                     : m_states[contextIndex].lastSwingLow;
+      if(breakOrigin.confirmed)
+         m_breakOrigins[contextIndex] = breakOrigin;
+      else
+         ResetSwingPoint(m_breakOrigins[contextIndex]);
 
       EmitEvent(contextIndex, CORE_BREAK_CANDIDATE, closedBar.time,
                 cycle, cycle,
@@ -2339,6 +2322,7 @@ public:
       ArrayResize(m_lastNoNewClosedBarAuditTime, count);
       ArrayResize(m_sidewayCandidateStartTime, count);
       ArrayResize(m_pendingContinuations, count);
+      ArrayResize(m_breakOrigins, count);
       ArrayResize(m_auditSnapshotInitialized, count);
       ArrayResize(m_lastAuditCycle, count);
       ArrayResize(m_lastAuditCorePrice, count);
@@ -2368,6 +2352,7 @@ public:
          m_lastNoNewClosedBarAuditTime[index] = 0;
          m_sidewayCandidateStartTime[index] = 0;
          ResetPendingContinuationState(m_pendingContinuations[index]);
+         ResetSwingPoint(m_breakOrigins[index]);
          m_auditSnapshotInitialized[index] = false;
          m_lastAuditCycle[index] = "";
          m_lastAuditCorePrice[index] = 0.0;

@@ -1,7 +1,9 @@
 # JINPA v2.5
 
-**Status:** LIVE CANDIDATE — FROZEN  
+**Status:** LIVE CANDIDATE — RE-FROZEN AFTER STAGE 2.10
+
 **Release date:** 2026-09-06
+**Re-freeze date:** 2026-09-08
 
 ## 1. Purpose
 
@@ -194,11 +196,28 @@ Production main-source SHA-256:
 
 ## 19. EX5 SHA-256
 
-Final X64 artifact: `349048` bytes  
-SHA-256: `029d5b775680a71e53e110418006ce86e46f4c28d0a51cf43284d969a4d82d4a`
+Final X64 artifact: `348248` bytes
+
+SHA-256: `1530f97a45deec2b4fb8ac6455958e56a3c908d1e8a8b51603f615b1e69a2996`
 
 ## 20. Release status
 
-**LIVE CANDIDATE — FROZEN**
+**LIVE CANDIDATE — RE-FROZEN AFTER STAGE 2.10**
 
 No further feature development is permitted in v2.5. Only critical production fixes may reopen this boundary.
+
+## Post-freeze Structure patch — Stage 2.10
+
+Stage 2.10 corrected Core reassignment after a confirmed Structure break. The previous algorithm selected the nearest confirmed `LH` after BULL → BEAR and the nearest confirmed `HL` after BEAR → BULL. That coupled Core role incorrectly to swing topology.
+
+The corrected rule assigns the new Core from the confirmed Break-Origin swing of the final break leg:
+
+- BULL → BEAR: New Core High is the captured confirmed Swing High, whether `HH` or `LH`.
+- BEAR → BULL: New Core Low is the captured confirmed Swing Low, whether `LL` or `HL`.
+- A newer confirmed same-side extreme replaces the candidate origin before second-close confirmation.
+- A failed break clears the candidate origin without changing the existing Core.
+- Swing topology remains immutable: an `HH` promoted to Core High remains `HH`, and an `LL` promoted to Core Low remains `LL`.
+
+The deterministic Stage 2.10 golden case produced SWING `2`, CORE_BREAK_CANDIDATE `1`, CYCLE_CHANGED `1`, CORE_SWING_INITIALIZED `1`, and duplicates `0`. It verified the canonical `LH(2) @ 110` → `HH(4) @ 120` correction, the symmetric LL case, legacy LH/HL behavior, false-break retention, multiple-origin replacement, SwingType preservation, bootstrap/sequential parity, and DEV/v2.5 ordered-stream parity.
+
+`JINPA_DEV` and v2.5 use byte-identical corrected Structure Engines. No production execution, risk, panel, position lifecycle, renderer, notification, or Daily Drawdown architecture changed in Stage 2.10. Earlier M1–M9 evidence remains historical evidence from before this targeted patch.
