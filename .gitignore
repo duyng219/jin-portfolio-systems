@@ -1,2 +1,3 @@
 # JINLABS .gitignore
 **/*.ex5
+**/.DS_Store
