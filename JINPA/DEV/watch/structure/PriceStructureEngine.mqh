@@ -651,6 +651,23 @@ private:
              && point.price < box.coreHigh.price;
    }
 
+   void ExtendCoreBoxSidewayToClosedBar(const int contextIndex,
+                                        const MqlRates &closedBar)
+   {
+      const CoreBoxState box = m_states[contextIndex].coreBox;
+      SidewayBoxState sideway = m_states[contextIndex].sidewayBox;
+      if(!box.valid || box.lifecycle != CORE_BOX_COMPLETE
+         || m_states[contextIndex].pendingCoreBox.active
+         || !sideway.active || !sideway.sidewayConfirmed
+         || sideway.ownerBoxGeneration != box.generation)
+         return;
+      if(closedBar.time <= sideway.lastUpdateTime)
+         return;
+
+      sideway.lastUpdateTime = closedBar.time;
+      m_states[contextIndex].sidewayBox = sideway;
+   }
+
    void ConfirmCoreBoxSideway(const int contextIndex,
                               const datetime eventBarTime,
                               const ENUM_SIDEWAY_CONFIRMATION_TYPE type,
@@ -724,8 +741,9 @@ private:
       }
 
       const CoreBoxState box = m_states[contextIndex].coreBox;
-      if(!IsInternalCoreBoxSwing(box, point)
-         || m_states[contextIndex].sidewayBox.sidewayConfirmed)
+      if(!IsInternalCoreBoxSwing(box, point))
+         return;
+      if(m_states[contextIndex].sidewayBox.sidewayConfirmed)
          return;
 
       SidewayBoxState sideway = m_states[contextIndex].sidewayBox;
@@ -844,6 +862,7 @@ private:
       m_states[contextIndex].cycleState.cycle = newCycle;
       m_states[contextIndex].cycleState.lastCycleChange = eventBarTime;
       ResetBreakCandidate(contextIndex);
+      ArchiveSidewayBox(contextIndex, eventBarTime, SIDEWAY_BOX_BROKEN);
       ResetCoreBoxSideway(contextIndex,
                            m_states[contextIndex].coreBox.generation);
       SyncLegacyCoreState(contextIndex, eventBarTime);
@@ -2627,6 +2646,8 @@ private:
          const double breakATR = m_useCoreBreakATRBuffer
                                   ? CalculateATR(rates, closedIndex) : 0.0;
          EvaluateCoreBoxBreak(contextIndex, rates[closedIndex], breakATR);
+         ExtendCoreBoxSidewayToClosedBar(contextIndex,
+                                         rates[closedIndex]);
          m_lastProcessedClosedBarTime[contextIndex] = rates[closedIndex].time;
       }
 
@@ -2847,11 +2868,32 @@ public:
                       const datetime closeTime,
                       const double atr = 1.0)
    {
+      LabProbeClosedBar(closePrice, closePrice, closePrice,
+                        closeTime, atr);
+   }
+
+   void LabProbeClosedBar(const double highPrice,
+                          const double lowPrice,
+                          const double closePrice,
+                          const datetime closeTime,
+                          const double atr = 1.0)
+   {
       MqlRates bar;
       ZeroMemory(bar);
       bar.time = closeTime;
+      bar.high = highPrice;
+      bar.low = lowPrice;
       bar.close = closePrice;
       EvaluateCoreBoxBreak(0, bar, atr);
+      ExtendCoreBoxSidewayToClosedBar(0, bar);
+   }
+
+   void LabProbeSidewayHistory(SidewayBoxRecord &records[]) const
+   {
+      const int count = ArraySize(m_sidewayBoxHistory);
+      ArrayResize(records, count);
+      for(int index = 0; index < count; index++)
+         records[index] = m_sidewayBoxHistory[index];
    }
 
    void LabProbeConfiguration(int &swingLeftBars,

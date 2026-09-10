@@ -1418,6 +1418,562 @@ void TestRepairB6RendererDirectionChange()
          "obsolete Low removed; only replacement authoritative High remains");
 }
 
+void TestCase1HigherInternalHigh()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   PriceStructureState before = engine.LabProbeState();
+   const int confirmationCount = EventCount(engine, SIDEWAY_CONFIRMED);
+   engine.LabProbeSwing(SWING_HIGH, 107.0, 1050, 1051);
+   PriceStructureState after = engine.LabProbeState();
+
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   SwingPoint swings[];
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   renderer.Update(before, swings, broken, boxes);
+   renderer.Update(after, swings, broken, boxes);
+   const string suffix = _Symbol + "_" + IntegerToString((int)_Period) + "_1000";
+   const string highName = "JINPA_SIDEWAY_BOX_HIGH_" + suffix;
+   const string lowName = "JINPA_SIDEWAY_BOX_LOW_" + suffix;
+   const bool rendererOk = CountOwnedObjects("JINPA_SIDEWAY_BOX_HIGH_", OBJ_TREND) == 1
+      && CountOwnedObjects("JINPA_SIDEWAY_BOX_LOW_", OBJ_TREND) == 1
+      && SamePrice(ObjectGetDouble(0, highName, OBJPROP_PRICE, 0), 110.0)
+      && SamePrice(ObjectGetDouble(0, lowName, OBJPROP_PRICE, 0), 90.0);
+   renderer.Destroy();
+
+   Check(before.sidewayBox.sidewayConfirmed
+         && SamePrice(before.sidewayBox.boxHigh, 110.0)
+         && SamePrice(before.sidewayBox.boxLow, 90.0)
+         && SamePrice(after.sidewayBox.boxHigh, 110.0)
+         && SamePrice(after.sidewayBox.boxLow, 90.0)
+         && SamePrice(after.coreBox.coreHigh.price, 110.0)
+         && SamePrice(after.coreBox.coreLow.price, 90.0)
+         && after.coreBox.cycle == MARKET_CYCLE_BULL
+         && EventCount(engine, SIDEWAY_CONFIRMED) == confirmationCount
+         && rendererOk,
+         "CASE1_A_HIGHER_INTERNAL_HIGH",
+         "confirmed swing alone does not maintain the closed-bar range");
+}
+
+void TestCase1LowerInternalLow()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   engine.LabProbeSwing(SWING_LOW, 95.0, 1050, 1051);
+   PriceStructureState state = engine.LabProbeState();
+   Check(SamePrice(state.sidewayBox.boxHigh, 110.0)
+         && SamePrice(state.sidewayBox.boxLow, 90.0)
+         && SamePrice(state.coreBox.coreHigh.price, 110.0)
+         && SamePrice(state.coreBox.coreLow.price, 90.0)
+         && EventCount(engine, SIDEWAY_CONFIRMED) == 1,
+         "CASE1_B_LOWER_INTERNAL_LOW",
+         "confirmed swing alone does not maintain the closed-bar range");
+}
+
+void TestCase1AlternatingExpansion()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   engine.LabProbeSwing(SWING_HIGH, 107.0, 1050, 1051);
+   engine.LabProbeSwing(SWING_LOW, 96.0, 1060, 1061);
+   engine.LabProbeSwing(SWING_HIGH, 109.0, 1070, 1071);
+   engine.LabProbeSwing(SWING_LOW, 91.0, 1080, 1081);
+   PriceStructureState state = engine.LabProbeState();
+   Check(SamePrice(state.sidewayBox.boxHigh, 110.0)
+         && SamePrice(state.sidewayBox.boxLow, 90.0)
+         && state.sidewayBox.lastUpdateTime == 1041
+         && state.sidewayBox.sidewayConfirmed
+         && EventCount(engine, SIDEWAY_CONFIRMED) == 1,
+         "CASE1_C_ALTERNATING_EXPANSION",
+         "confirmed swings cannot compete with closed-bar maintenance");
+}
+
+void TestCase1NonExtremeUnchanged()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   const datetime updateTime = engine.LabProbeState().sidewayBox.lastUpdateTime;
+   engine.LabProbeSwing(SWING_HIGH, 104.0, 1050, 1051);
+   engine.LabProbeSwing(SWING_LOW, 99.0, 1060, 1061);
+   PriceStructureState state = engine.LabProbeState();
+   Check(SamePrice(state.sidewayBox.boxHigh, 110.0)
+         && SamePrice(state.sidewayBox.boxLow, 90.0)
+         && state.sidewayBox.lastUpdateTime == updateTime
+         && EventCount(engine, SIDEWAY_CONFIRMED) == 1,
+         "CASE1_D_NON_EXTREME_UNCHANGED",
+         "contained non-extremes do not move boundaries");
+}
+
+void TestCase1FalseBreakHigh()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   engine.LabProbeSwing(SWING_HIGH, 111.0, 1050, 1051);
+   engine.LabProbeClose(111.0, 1060);
+   engine.LabProbeClose(105.0, 1061);
+   PriceStructureState state = engine.LabProbeState();
+   Check(state.coreBox.valid && state.coreBox.lifecycle == CORE_BOX_COMPLETE
+         && SamePrice(state.coreBox.coreHigh.price, 110.0)
+         && SamePrice(state.coreBox.coreLow.price, 90.0)
+         && state.sidewayBox.sidewayConfirmed
+         && SamePrice(state.sidewayBox.boxHigh, 110.0)
+         && SamePrice(state.sidewayBox.boxLow, 90.0)
+         && EventCount(engine, CORE_BREAK_FAILED) == 1
+         && EventCount(engine, SIDEWAY_CONFIRMED) == 1,
+         "CASE1_E_FALSE_BREAK_HIGH",
+         "upper excursion cannot escape Core or release latch");
+}
+
+void TestCase1FalseBreakLow()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   engine.LabProbeSwing(SWING_LOW, 89.0, 1050, 1051);
+   engine.LabProbeClose(89.0, 1060);
+   engine.LabProbeClose(95.0, 1061);
+   PriceStructureState state = engine.LabProbeState();
+   Check(state.coreBox.valid && state.coreBox.lifecycle == CORE_BOX_COMPLETE
+         && SamePrice(state.coreBox.coreHigh.price, 110.0)
+         && SamePrice(state.coreBox.coreLow.price, 90.0)
+         && state.sidewayBox.sidewayConfirmed
+         && SamePrice(state.sidewayBox.boxHigh, 110.0)
+         && SamePrice(state.sidewayBox.boxLow, 90.0)
+         && EventCount(engine, CORE_BREAK_FAILED) == 1
+         && EventCount(engine, SIDEWAY_CONFIRMED) == 1,
+         "CASE1_F_FALSE_BREAK_LOW",
+         "lower excursion cannot escape Core or release latch");
+}
+
+void TestCase1ConfirmedBreakReset()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   engine.LabProbeSwing(SWING_HIGH, 109.0, 1050, 1051);
+   engine.LabProbeSwing(SWING_LOW, 92.0, 1060, 1061);
+   engine.LabProbeClose(111.0, 1070);
+   engine.LabProbeClose(112.0, 1071);
+   PriceStructureState pending = engine.LabProbeState();
+   engine.LabProbeSwing(SWING_HIGH, 120.0, 1080, 1081);
+   PriceStructureState complete = engine.LabProbeState();
+   Check(pending.coreBox.lifecycle == CORE_BOX_PENDING_HIGH
+         && !pending.sidewayBox.sidewayConfirmed
+         && SamePrice(pending.sidewayBox.boxHigh, 0.0)
+         && SamePrice(pending.sidewayBox.boxLow, 0.0)
+         && complete.coreBox.valid && complete.coreBox.generation == 2
+         && !complete.sidewayBox.sidewayConfirmed
+         && SamePrice(complete.sidewayBox.boxHigh, 0.0)
+         && SamePrice(complete.sidewayBox.boxLow, 0.0),
+         "CASE1_G_CONFIRMED_BREAK_RESET",
+         "dynamic range ends at confirmed break and cannot leak");
+}
+
+void TestCase1PendingHighDisabled()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   engine.LabProbeClose(111.0, 1050);
+   engine.LabProbeClose(112.0, 1051);
+   engine.LabProbeSwing(SWING_HIGH, 108.0, 1060, 1061);
+   PriceStructureState state = engine.LabProbeState();
+   Check(state.pendingCoreBox.active
+         && state.coreBox.lifecycle == CORE_BOX_PENDING_HIGH
+         && !state.sidewayBox.sidewayConfirmed
+         && SamePrice(state.sidewayBox.boxHigh, 0.0)
+         && SamePrice(state.sidewayBox.boxLow, 0.0)
+         && state.sidewayBox.internalConfirmedSwingCount == 0,
+         "FIXED_C1_L_PENDING_HIGH_DISABLED",
+         "pending High cannot extend the frozen Sideway");
+}
+
+void TestCase1PendingLowDisabled()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCleanBull(engine);
+   engine.LabProbeClose(89.0, 1050);
+   engine.LabProbeClose(88.0, 1051);
+   engine.LabProbeSwing(SWING_LOW, 92.0, 1060, 1061);
+   PriceStructureState state = engine.LabProbeState();
+   Check(state.pendingCoreBox.active
+         && state.coreBox.lifecycle == CORE_BOX_PENDING_LOW
+         && !state.sidewayBox.sidewayConfirmed
+         && SamePrice(state.sidewayBox.boxHigh, 0.0)
+         && SamePrice(state.sidewayBox.boxLow, 0.0)
+         && state.sidewayBox.internalConfirmedSwingCount == 0,
+         "FIXED_C1_M_PENDING_LOW_DISABLED",
+         "pending Low cannot extend the frozen Sideway");
+}
+
+void FeedCase1Parity(CPriceStructureEngine &engine)
+{
+   FeedCleanBull(engine);
+   engine.LabProbeSwing(SWING_HIGH, 107.0, 1050, 1051);
+   engine.LabProbeSwing(SWING_LOW, 96.0, 1060, 1061);
+   engine.LabProbeSwing(SWING_HIGH, 109.0, 1070, 1071);
+   engine.LabProbeSwing(SWING_LOW, 92.0, 1080, 1081);
+}
+
+void TestCase1BootstrapSequentialParity()
+{
+   CPriceStructureEngine bootstrap;
+   CPriceStructureEngine sequential;
+   bootstrap.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, true);
+   sequential.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedCase1Parity(bootstrap);
+   FeedCase1Parity(sequential);
+   PriceStructureState left = bootstrap.LabProbeState();
+   PriceStructureState right = sequential.LabProbeState();
+   Check(SamePrice(left.sidewayBox.boxHigh, right.sidewayBox.boxHigh)
+         && SamePrice(left.sidewayBox.boxLow, right.sidewayBox.boxLow)
+         && left.sidewayBox.boxHighTime == right.sidewayBox.boxHighTime
+         && left.sidewayBox.boxLowTime == right.sidewayBox.boxLowTime
+         && left.sidewayBox.lastUpdateTime == right.sidewayBox.lastUpdateTime
+         && left.sidewayBox.sidewayConfirmed
+         && right.sidewayBox.sidewayConfirmed
+         && EventCount(bootstrap, SIDEWAY_CONFIRMED) == 1
+         && EventCount(sequential, SIDEWAY_CONFIRMED) == 1
+         && !HasDuplicateEventIdentities(bootstrap)
+         && !HasDuplicateEventIdentities(sequential),
+         "CASE1_J_BOOTSTRAP_SEQUENTIAL_PARITY",
+         "final dynamic range and event uniqueness match");
+}
+
+void BuildClosedBarSideway(CPriceStructureEngine &engine,
+                           const bool bootstrap = false)
+{
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 120.0, 100.0, 1000,
+                             bootstrap);
+   engine.LabProbeSwing(SWING_LOW, 110.0, 1010, 1011);
+   engine.LabProbeSwing(SWING_HIGH, 116.0, 1020, 1021);
+   engine.LabProbeSwing(SWING_LOW, 108.0, 1030, 1031);
+   engine.LabProbeSwing(SWING_HIGH, 115.0, 1040, 1041);
+}
+
+void TestClosedBarHighExpansion()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   PriceStructureState initial = engine.LabProbeState();
+   engine.LabProbeClosedBar(117.0, 109.0, 115.0, 1050);
+   PriceStructureState first = engine.LabProbeState();
+   engine.LabProbeClosedBar(118.0, 110.0, 116.0, 1060);
+   PriceStructureState second = engine.LabProbeState();
+   Check(SamePrice(initial.sidewayBox.boxHigh, 120.0)
+         && SamePrice(initial.sidewayBox.boxLow, 100.0)
+         && SamePrice(first.sidewayBox.boxHigh, 120.0)
+         && SamePrice(first.sidewayBox.boxLow, 100.0)
+         && first.sidewayBox.lastUpdateTime == 1050
+         && SamePrice(second.sidewayBox.boxHigh, 120.0)
+         && SamePrice(second.sidewayBox.boxLow, 100.0)
+         && second.sidewayBox.lastUpdateTime == 1060
+         && EventCount(engine, SIDEWAY_CONFIRMED) == 1,
+         "FIXED_C1_A_INITIAL_LEVELS",
+         "confirmation captures Core levels; closed bars extend time only");
+}
+
+void TestClosedBarLowExpansion()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(115.0, 107.0, 110.0, 1050);
+   PriceStructureState first = engine.LabProbeState();
+   engine.LabProbeClosedBar(114.0, 105.0, 109.0, 1060);
+   PriceStructureState second = engine.LabProbeState();
+   Check(SamePrice(first.sidewayBox.boxHigh, 120.0)
+         && SamePrice(first.sidewayBox.boxLow, 100.0)
+         && first.sidewayBox.lastUpdateTime == 1050
+         && SamePrice(second.sidewayBox.boxHigh, 120.0)
+         && SamePrice(second.sidewayBox.boxLow, 100.0)
+         && second.sidewayBox.lastUpdateTime == 1060,
+         "FIXED_C1_B_CLOSED_BAR_TIME_ONLY",
+         "closed bars advance right endpoint without vertical movement");
+}
+
+void TestClosedBarBothSides()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(118.0, 106.0, 112.0, 1050);
+   PriceStructureState state = engine.LabProbeState();
+   Check(SamePrice(state.sidewayBox.boxHigh, 120.0)
+         && SamePrice(state.sidewayBox.boxLow, 100.0)
+         && state.sidewayBox.lastUpdateTime == 1050,
+         "FIXED_C1_C_INTERNAL_HIGH_FIXED",
+         "internal bar High cannot move SidewayHigh");
+}
+
+void TestClosedBarNoExtreme()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(118.0, 106.0, 112.0, 1050);
+   engine.LabProbeClosedBar(117.0, 107.0, 112.0, 1060);
+   PriceStructureState state = engine.LabProbeState();
+   Check(SamePrice(state.sidewayBox.boxHigh, 120.0)
+         && SamePrice(state.sidewayBox.boxLow, 100.0)
+         && state.sidewayBox.lastUpdateTime == 1060,
+         "FIXED_C1_D_INTERNAL_LOW_FIXED",
+         "internal bar Low cannot move SidewayLow; time still advances");
+}
+
+void TestClosedBarNoSwingRequired()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   PriceStructureState initial = engine.LabProbeState();
+   engine.LabProbeClosedBar(117.0, 109.0, 115.0, 1050);
+   PriceStructureState first = engine.LabProbeState();
+   engine.LabProbeClosedBar(118.5, 110.0, 116.0, 1060);
+   PriceStructureState second = engine.LabProbeState();
+   engine.LabProbeClosedBar(117.0, 106.0, 111.0, 1070);
+   PriceStructureState third = engine.LabProbeState();
+   engine.LabProbeClosedBar(119.0, 108.0, 114.0, 1080);
+   PriceStructureState fourth = engine.LabProbeState();
+   engine.LabProbeClosedBar(116.0, 105.0, 110.0, 1090);
+   PriceStructureState fifth = engine.LabProbeState();
+   Check(SamePrice(first.sidewayBox.boxHigh, 120.0)
+         && SamePrice(second.sidewayBox.boxHigh, 120.0)
+         && SamePrice(third.sidewayBox.boxHigh, 120.0)
+         && SamePrice(fourth.sidewayBox.boxHigh, 120.0)
+         && SamePrice(fifth.sidewayBox.boxHigh, 120.0)
+         && SamePrice(fifth.sidewayBox.boxLow, 100.0)
+         && first.sidewayBox.lastUpdateTime == 1050
+         && second.sidewayBox.lastUpdateTime == 1060
+         && third.sidewayBox.lastUpdateTime == 1070
+         && fourth.sidewayBox.lastUpdateTime == 1080
+         && fifth.sidewayBox.lastUpdateTime == 1090
+         && fifth.lastSwingHigh.time == initial.lastSwingHigh.time
+         && fifth.lastSwingLow.time == initial.lastSwingLow.time
+         && EventCount(engine, SIDEWAY_CONFIRMED) == 1,
+         "FIXED_C1_F_MULTIPLE_CLOSED_BARS",
+         "five-bar delay absent: right edge advances without new swing");
+}
+
+void TestClosedBarFormingIgnored()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   PriceStructureState whileForming = engine.LabProbeState();
+   engine.LabProbeClosedBar(119.0, 109.0, 116.0, 1050);
+   PriceStructureState afterClose = engine.LabProbeState();
+   Check(SamePrice(whileForming.sidewayBox.boxHigh, 120.0)
+         && whileForming.sidewayBox.lastUpdateTime == 1041
+         && SamePrice(afterClose.sidewayBox.boxHigh, 120.0)
+         && SamePrice(afterClose.sidewayBox.boxLow, 100.0)
+         && afterClose.sidewayBox.lastUpdateTime == 1050,
+         "FIXED_C1_E_FORMING_IGNORED",
+         "right endpoint waits until candle enters closed-bar pipeline");
+}
+
+void TestClosedBarFirstBreakCandidate()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(121.0, 109.0, 121.0, 1050);
+   PriceStructureState state = engine.LabProbeState();
+   Check(SamePrice(state.sidewayBox.boxHigh, 120.0)
+         && SamePrice(state.sidewayBox.boxLow, 100.0)
+         && state.sidewayBox.lastUpdateTime == 1050
+         && state.sidewayBox.active
+         && SamePrice(state.coreBox.coreHigh.price, 120.0)
+         && SamePrice(state.coreBox.coreLow.price, 100.0)
+         && state.coreBox.cycle == MARKET_CYCLE_BULL
+         && state.cycleState.breakCandidate,
+         "FIXED_C1_G_FIRST_BREAK_CANDIDATE",
+         "first qualifying close keeps Sideway active and advances its endpoint");
+}
+
+void TestClosedBarCoreLowClamp()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(115.0, 98.0, 101.0, 1050);
+   PriceStructureState state = engine.LabProbeState();
+   Check(SamePrice(state.sidewayBox.boxHigh, 120.0)
+         && SamePrice(state.sidewayBox.boxLow, 100.0)
+         && state.sidewayBox.lastUpdateTime == 1050
+         && SamePrice(state.coreBox.coreHigh.price, 120.0)
+         && SamePrice(state.coreBox.coreLow.price, 100.0)
+         && state.coreBox.cycle == MARKET_CYCLE_BULL
+         && !state.cycleState.breakCandidate,
+         "FIXED_C1_D_LOW_EXCURSION_FIXED",
+         "price excursion cannot move fixed SidewayLow");
+}
+
+void TestClosedBarFalseBreak()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(121.0, 109.0, 121.0, 1050);
+   PriceStructureState candidate = engine.LabProbeState();
+   engine.LabProbeClosedBar(119.0, 107.0, 119.0, 1060);
+   PriceStructureState state = engine.LabProbeState();
+   Check(candidate.cycleState.breakCandidate
+         && state.coreBox.valid && state.coreBox.lifecycle == CORE_BOX_COMPLETE
+         && SamePrice(state.coreBox.coreHigh.price, 120.0)
+         && SamePrice(state.coreBox.coreLow.price, 100.0)
+         && state.coreBox.cycle == MARKET_CYCLE_BULL
+         && state.sidewayBox.sidewayConfirmed
+         && SamePrice(state.sidewayBox.boxHigh, 120.0)
+         && SamePrice(state.sidewayBox.boxLow, 100.0)
+         && state.sidewayBox.lastUpdateTime == 1060
+         && EventCount(engine, CORE_BREAK_FAILED) == 1
+         && EventCount(engine, SIDEWAY_CONFIRMED) == 1,
+         "FIXED_C1_H_FALSE_BREAK",
+         "candidate reclaim retains fixed levels and continuing endpoint");
+}
+
+void TestClosedBarConfirmedBreak()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(121.0, 109.0, 121.0, 1050);
+   engine.LabProbeClosedBar(122.0, 110.0, 122.0, 1060);
+   PriceStructureState state = engine.LabProbeState();
+   SidewayBoxRecord before[];
+   engine.LabProbeSidewayHistory(before);
+   engine.LabProbeClosedBar(119.0, 101.0, 110.0, 1070);
+   SidewayBoxRecord after[];
+   engine.LabProbeSidewayHistory(after);
+   Check(state.pendingCoreBox.active
+         && state.coreBox.lifecycle == CORE_BOX_PENDING_HIGH
+         && !state.sidewayBox.active
+         && !state.sidewayBox.sidewayConfirmed
+         && SamePrice(state.sidewayBox.boxHigh, 0.0)
+         && SamePrice(state.sidewayBox.boxLow, 0.0)
+         && ArraySize(before) == 1 && ArraySize(after) == 1
+         && SamePrice(after[0].boxHigh, 120.0)
+         && SamePrice(after[0].boxLow, 100.0)
+         && after[0].boxStartTime == 1000
+         && after[0].boxEndTime == 1060
+         && after[0].endStatus == SIDEWAY_BOX_BROKEN,
+         "FIXED_C1_I_CONFIRMED_HIGH_BREAK",
+         "old pair freezes at confirming candle and never extends again");
+}
+
+void TestClosedBarPendingHigh()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(121.0, 109.0, 121.0, 1050);
+   engine.LabProbeClosedBar(122.0, 110.0, 122.0, 1060);
+   engine.LabProbeClosedBar(119.0, 101.0, 110.0, 1070);
+   PriceStructureState state = engine.LabProbeState();
+   Check(state.coreBox.lifecycle == CORE_BOX_PENDING_HIGH
+         && !state.sidewayBox.sidewayConfirmed
+         && SamePrice(state.sidewayBox.boxHigh, 0.0)
+         && SamePrice(state.sidewayBox.boxLow, 0.0),
+         "FIXED_C1_L_PENDING_HIGH",
+         "closed bars cannot extend Sideway while High is pending");
+}
+
+void TestClosedBarPendingLow()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(115.0, 99.0, 99.0, 1050);
+   engine.LabProbeClosedBar(114.0, 98.0, 98.0, 1060);
+   SidewayBoxRecord before[];
+   engine.LabProbeSidewayHistory(before);
+   engine.LabProbeClosedBar(119.0, 101.0, 110.0, 1070);
+   PriceStructureState state = engine.LabProbeState();
+   SidewayBoxRecord after[];
+   engine.LabProbeSidewayHistory(after);
+   Check(state.coreBox.lifecycle == CORE_BOX_PENDING_LOW
+         && !state.sidewayBox.sidewayConfirmed
+         && SamePrice(state.sidewayBox.boxHigh, 0.0)
+         && SamePrice(state.sidewayBox.boxLow, 0.0)
+         && ArraySize(before) == 1 && ArraySize(after) == 1
+         && SamePrice(after[0].boxHigh, 120.0)
+         && SamePrice(after[0].boxLow, 100.0)
+         && after[0].boxEndTime == 1060,
+         "FIXED_C1_J_CONFIRMED_LOW_BREAK",
+         "lower break freezes mirror lifecycle at confirming candle");
+}
+
+void FeedClosedBarParity(CPriceStructureEngine &engine)
+{
+   engine.LabProbeClosedBar(117.0, 109.0, 115.0, 1050);
+   engine.LabProbeClosedBar(118.5, 107.0, 114.0, 1060);
+   engine.LabProbeClosedBar(117.0, 106.0, 112.0, 1070);
+}
+
+void TestClosedBarBootstrapSequentialParity()
+{
+   CPriceStructureEngine bootstrap;
+   CPriceStructureEngine sequential;
+   BuildClosedBarSideway(bootstrap, true);
+   BuildClosedBarSideway(sequential, false);
+   FeedClosedBarParity(bootstrap);
+   FeedClosedBarParity(sequential);
+   PriceStructureState left = bootstrap.LabProbeState();
+   PriceStructureState right = sequential.LabProbeState();
+   Check(SamePrice(left.sidewayBox.boxHigh, 120.0)
+         && SamePrice(left.sidewayBox.boxLow, 100.0)
+         && SamePrice(left.sidewayBox.boxHigh, right.sidewayBox.boxHigh)
+         && SamePrice(left.sidewayBox.boxLow, right.sidewayBox.boxLow)
+         && left.sidewayBox.boxHighTime == right.sidewayBox.boxHighTime
+         && left.sidewayBox.boxLowTime == right.sidewayBox.boxLowTime
+         && left.sidewayBox.lastUpdateTime == right.sidewayBox.lastUpdateTime
+         && left.sidewayBox.sidewayConfirmed == right.sidewayBox.sidewayConfirmed
+         && SamePrice(left.coreBox.coreHigh.price, right.coreBox.coreHigh.price)
+         && SamePrice(left.coreBox.coreLow.price, right.coreBox.coreLow.price)
+         && left.coreBox.cycle == right.coreBox.cycle,
+         "FIXED_C1_N_BOOTSTRAP_SEQUENTIAL",
+         "fixed levels, start/right time, latch and Core state match");
+}
+
+void TestFixedSidewayNewLifecycleIdentity()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(121.0, 109.0, 121.0, 1050);
+   engine.LabProbeClosedBar(122.0, 110.0, 122.0, 1060);
+   engine.LabProbeSwing(SWING_HIGH, 130.0, 1080, 1081);
+   engine.LabProbeSwing(SWING_LOW, 115.0, 1090, 1091);
+   engine.LabProbeSwing(SWING_HIGH, 125.0, 1100, 1101);
+   engine.LabProbeSwing(SWING_LOW, 112.0, 1110, 1111);
+   engine.LabProbeSwing(SWING_HIGH, 124.0, 1120, 1121);
+   PriceStructureState state = engine.LabProbeState();
+   SidewayBoxRecord history[];
+   engine.LabProbeSidewayHistory(history);
+
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   SwingPoint swings[];
+   BrokenCoreRecord broken[];
+   renderer.Update(state, swings, broken, history);
+   const bool identityOk = CountOwnedObjects("JINPA_SIDEWAY_BOX_HIGH_",
+                                             OBJ_TREND) == 2
+      && CountOwnedObjects("JINPA_SIDEWAY_BOX_LOW_", OBJ_TREND) == 2;
+   renderer.Destroy();
+
+   Check(ArraySize(history) == 1
+         && history[0].boxStartTime == 1000
+         && history[0].boxEndTime == 1060
+         && SamePrice(history[0].boxHigh, 120.0)
+         && SamePrice(history[0].boxLow, 100.0)
+         && state.sidewayBox.sidewayConfirmed
+         && state.sidewayBox.boxStartTime == 1081
+         && SamePrice(state.sidewayBox.boxHigh, 130.0)
+         && SamePrice(state.sidewayBox.boxLow, 108.0)
+         && identityOk,
+         "FIXED_C1_K_NEW_LIFECYCLE_IDENTITY",
+         "old frozen pair and new active pair use distinct start-time identity");
+}
+
 int OnInit()
 {
    TestBullContinuation();
@@ -1484,11 +2040,45 @@ int OnInit()
    TestRepairB6RendererDirectionChange();
    const int case5Passed = g_passed - beforeCase5Passed;
    const int case5Failed = g_failed - beforeCase5Failed;
+   const int beforeCase1Passed = g_passed;
+   const int beforeCase1Failed = g_failed;
+   TestCase1HigherInternalHigh();
+   TestCase1LowerInternalLow();
+   TestCase1AlternatingExpansion();
+   TestCase1NonExtremeUnchanged();
+   TestCase1FalseBreakHigh();
+   TestCase1FalseBreakLow();
+   TestCase1ConfirmedBreakReset();
+   TestCase1PendingHighDisabled();
+   TestCase1PendingLowDisabled();
+   TestCase1BootstrapSequentialParity();
+   const int case1Passed = g_passed - beforeCase1Passed;
+   const int case1Failed = g_failed - beforeCase1Failed;
+   const int beforeClosedBarPassed = g_passed;
+   const int beforeClosedBarFailed = g_failed;
+   TestClosedBarHighExpansion();
+   TestClosedBarLowExpansion();
+   TestClosedBarBothSides();
+   TestClosedBarNoExtreme();
+   TestClosedBarNoSwingRequired();
+   TestClosedBarFormingIgnored();
+   TestClosedBarFirstBreakCandidate();
+   TestClosedBarCoreLowClamp();
+   TestClosedBarFalseBreak();
+   TestClosedBarConfirmedBreak();
+   TestFixedSidewayNewLifecycleIdentity();
+   TestClosedBarPendingHigh();
+   TestClosedBarPendingLow();
+   TestClosedBarBootstrapSequentialParity();
+   const int closedBarPassed = g_passed - beforeClosedBarPassed;
+   const int closedBarFailed = g_failed - beforeClosedBarFailed;
    Print("[COREBOX_DEV_TEST][SECTIONS] semantic=", semanticPassed,
          "/", semanticFailed,
          " parameter=", parameterPassed, "/", parameterFailed,
          " display=", displayPassed, "/", displayFailed,
-         " case5=", case5Passed, "/", case5Failed);
+         " case5=", case5Passed, "/", case5Failed,
+         " case1_guard=", case1Passed, "/", case1Failed,
+         " case1_fixed=", closedBarPassed, "/", closedBarFailed);
    Print("[COREBOX_DEV_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,
          " trades=0 pending=0 cancels=0 closes=0 push=0");
