@@ -139,11 +139,47 @@ input ENUM_TSL_MODE            TSLMode          = TSL_STEP;       // Trailing St
 input double                              TSLActivationATR = 2.5;            // Breakeven First: kích hoạt sau X ATR lãi
 input double                              TSLStepATR       = 2.5;            // Step: dịch SL tối thiểu X ATR mỗi bước
 
+sinput group                              "──────────── STRUCTURE ENGINE ───────────────"
+input int                                 SwingLeftBars             = 5;     // Confirmed swing left window
+input int                                 SwingRightBars            = 5;     // Confirmed swing right window
+input int                                 StructureATRPeriod         = 14;    // Shared swing-distance/Core-break ATR
+input double                              CoreBreakATRBuffer         = 0.10;  // Core boundary ATR multiplier
+input int                                 CoreBreakConfirmCloses     = 2;     // Consecutive closes beyond boundary
+
+sinput group                              "──────────── STRUCTURE DISPLAY ──────────────"
+input bool                                ShowCoreBox                = true;  // Show Core High + Core Low
+input bool                                ShowStructureSwings        = true;  // Show HH/HL/LH/LL
+
 sinput group                              "────────────────── LOGGING ─────────────────"
 input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;              // Log Level
 
 int OnInit()
 {
+    if(SwingLeftBars < 1 || SwingRightBars < 1
+       || StructureATRPeriod < 1 || CoreBreakATRBuffer < 0.0
+       || CoreBreakConfirmCloses < 1)
+    {
+        Print("[JINPA][DEV][ERROR] Invalid Structure configuration",
+              " | SwingLeftBars=", SwingLeftBars,
+              " | SwingRightBars=", SwingRightBars,
+              " | StructureATRPeriod=", StructureATRPeriod,
+              " | CoreBreakATRBuffer=", DoubleToString(CoreBreakATRBuffer, 4),
+              " | CoreBreakConfirmCloses=", CoreBreakConfirmCloses);
+        return INIT_PARAMETERS_INCORRECT;
+    }
+
+    if(!watchIntegration.ConfigureStructure(SwingLeftBars,
+                                            SwingRightBars,
+                                            StructureATRPeriod,
+                                            CoreBreakATRBuffer,
+                                            CoreBreakConfirmCloses,
+                                            ShowCoreBox,
+                                            ShowStructureSwings))
+    {
+        Print("[JINPA][DEV][ERROR] Structure configuration rejected");
+        return INIT_PARAMETERS_INCORRECT;
+    }
+
     const bool knownSymbol = CMagicNumberResolver::Resolve(_Symbol, MagicNumber,
                                                             CanonicalSymbol);
     if(!knownSymbol)

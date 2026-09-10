@@ -16,6 +16,7 @@ private:
    int                   m_lookbackBars;
    bool                  m_useCoreBreakATRBuffer;
    double                m_coreBreakATRBuffer;
+   int                   m_coreBreakConfirmCloses;
    bool                  m_isBootstrapping;
    bool                  m_enableAuditLog;
    bool                  m_enableCoreBreakAuditLog;
@@ -45,6 +46,7 @@ private:
    StructureSwingRecord  m_swingHistory[];
    BrokenCoreRecord      m_brokenCoreHistory[];
    SidewayBoxRecord      m_sidewayBoxHistory[];
+   StructureEvent        m_eventHistory[];
    StructureEvent        m_pendingEvents[];
 
    int FindContext(const string symbol, const ENUM_TIMEFRAMES timeframe) const
@@ -258,6 +260,17 @@ private:
                     + " → " + JournalCycleText(event.cycleAfter)
                     + " | Confirmed");
       }
+      else if(event.type == CORE_BOX_INITIALIZED
+              || event.type == CORE_BOX_CHANGED
+              || event.type == LEG_1_CONFIRMED
+              || event.type == LEG_2_CONFIRMED
+              || event.type == SIDEWAY_CONFIRMED)
+      {
+         WatcherLog("COREBOX", prefix
+                    + StructureEventTypeToString(event.type)
+                    + " | generation=" + IntegerToString(event.boxGeneration)
+                    + " | " + event.reason);
+      }
    }
 
    void AuditCoreUpdate(const int contextIndex,
@@ -424,7 +437,7 @@ private:
       if(event.type == CORE_BREAK_CANDIDATE)
          confirmationCount = 1;
       else if(event.type == CYCLE_CHANGED)
-         confirmationCount = 2;
+         confirmationCount = m_coreBreakConfirmCloses;
 
       WatcherLog("AUDIT][CYCLE", "\n" + event.symbol + " "
                  + WatcherTimeframeToString(event.timeframe)
@@ -460,6 +473,9 @@ private:
       event.newCoreLevel = newCoreLevel;
       event.breakLevel = breakLevel;
       event.reason = reason;
+      event.boxGeneration = m_states[contextIndex].coreBox.generation;
+      event.sidewayConfirmationType =
+         m_states[contextIndex].sidewayBox.confirmationType;
       const int eventDigits = (int)SymbolInfoInteger(m_symbols[contextIndex], SYMBOL_DIGITS);
       const double identityCoreLevel = eventType == CORE_BREAK_CANDIDATE
                                        ? oldCoreLevel : newCoreLevel;
@@ -491,8 +507,28 @@ private:
       else if(eventType == CYCLE_CHANGED)
          m_states[contextIndex].lastEvent = MarketCycleToString(cycleBefore)
                                             + " -> " + MarketCycleToString(cycleAfter);
+      else if(eventType == CORE_BOX_INITIALIZED)
+         m_states[contextIndex].lastEvent = "CORE_BOX_INITIALIZED";
+      else if(eventType == CORE_BOX_CHANGED)
+         m_states[contextIndex].lastEvent = "CORE_BOX_CHANGED";
+      else if(eventType == CORE_BOX_TRANSITION_STARTED)
+         m_states[contextIndex].lastEvent = "CORE_BOX_TRANSITION_STARTED|"
+            + CoreBoxLifecycleToString(
+                 m_states[contextIndex].coreBox.lifecycle);
+      else if(eventType == LEG_1_CONFIRMED)
+         m_states[contextIndex].lastEvent = "LEG_1_CONFIRMED";
+      else if(eventType == LEG_2_CONFIRMED)
+         m_states[contextIndex].lastEvent = "LEG_2_CONFIRMED";
+      else if(eventType == SIDEWAY_CONFIRMED)
+         m_states[contextIndex].lastEvent = "SIDEWAY_CONFIRMED|"
+            + SidewayConfirmationTypeToString(
+                 m_states[contextIndex].sidewayBox.confirmationType);
       m_states[contextIndex].lastEventTime = eventBarTime;
       AuditCycleEvent(event);
+
+      const int historyEventIndex = ArraySize(m_eventHistory);
+      ArrayResize(m_eventHistory, historyEventIndex + 1);
+      m_eventHistory[historyEventIndex] = event;
 
       if(m_isBootstrapping)
          return;
@@ -501,6 +537,441 @@ private:
       ArrayResize(m_pendingEvents, eventIndex + 1);
       m_pendingEvents[eventIndex] = event;
       LogStructureEvent(event);
+   }
+
+   void SyncLegacyCoreState(const int contextIndex,
+                            const datetime eventBarTime)
+   {
+      const CoreBoxState box = m_states[contextIndex].coreBox;
+      ResetCoreSwingState(m_states[contextIndex].coreSwing);
+      if(box.lifecycle == CORE_BOX_EMPTY)
+         return;
+
+      m_states[contextIndex].coreSwing.initialized = true;
+      const bool hasCoreHigh = box.lifecycle == CORE_BOX_COMPLETE
+                               || box.lifecycle == CORE_BOX_PENDING_LOW;
+      const bool hasCoreLow = box.lifecycle == CORE_BOX_COMPLETE
+                              || box.lifecycle == CORE_BOX_PENDING_HIGH;
+      if(hasCoreHigh)
+      {
+         m_states[contextIndex].coreSwing.coreSwingHigh = box.coreHigh.price;
+         m_states[contextIndex].coreSwing.coreSwingHighTime = box.coreHigh.time;
+         m_states[contextIndex].coreSwing.hasCoreHigh = true;
+      }
+      if(hasCoreLow)
+      {
+         m_states[contextIndex].coreSwing.coreSwingLow = box.coreLow.price;
+         m_states[contextIndex].coreSwing.coreSwingLowTime = box.coreLow.time;
+         m_states[contextIndex].coreSwing.hasCoreLow = true;
+      }
+      m_states[contextIndex].coreSwing.activeCoreType =
+         box.cycle == MARKET_CYCLE_BULL ? CORE_SWING_LOW : CORE_SWING_HIGH;
+      m_states[contextIndex].coreSwing.lastCoreUpdate = eventBarTime;
+   }
+
+   void ResetCoreBoxSideway(const int contextIndex,
+                            const long generation)
+   {
+      ResetSidewayBoxState(m_states[contextIndex].sidewayBox);
+      m_states[contextIndex].sidewayBox.ownerBoxGeneration = generation;
+   }
+
+   bool EstablishCoreBox(const int contextIndex,
+                         const SwingPoint &coreHigh,
+                         const SwingPoint &coreLow,
+                         const ENUM_MARKET_CYCLE cycle,
+                         const datetime eventBarTime,
+                         const bool initialization,
+                         const string reason)
+   {
+      if(!coreHigh.confirmed || !coreLow.confirmed
+         || coreHigh.type != SWING_HIGH || coreLow.type != SWING_LOW
+         || coreHigh.price <= coreLow.price)
+         return false;
+
+      const long oldGeneration = m_states[contextIndex].coreBox.generation;
+      double oldBoundary = 0.0;
+      if(m_states[contextIndex].coreBox.valid)
+         oldBoundary = cycle == MARKET_CYCLE_BULL
+                       ? m_states[contextIndex].coreBox.coreHigh.price
+                       : m_states[contextIndex].coreBox.coreLow.price;
+      m_states[contextIndex].coreBox.valid = true;
+      m_states[contextIndex].coreBox.lifecycle = CORE_BOX_COMPLETE;
+      m_states[contextIndex].coreBox.coreHigh = coreHigh;
+      m_states[contextIndex].coreBox.coreLow = coreLow;
+      m_states[contextIndex].coreBox.generation = oldGeneration + 1;
+      m_states[contextIndex].coreBox.createdTime = eventBarTime;
+      m_states[contextIndex].coreBox.cycle = cycle;
+      m_states[contextIndex].cycleState.cycle = cycle;
+      SyncLegacyCoreState(contextIndex, eventBarTime);
+      ResetCoreBoxSideway(contextIndex,
+                          m_states[contextIndex].coreBox.generation);
+      ResetPendingCoreBoxState(m_states[contextIndex].pendingCoreBox);
+
+      EmitEvent(contextIndex,
+                initialization ? CORE_BOX_INITIALIZED : CORE_BOX_CHANGED,
+                eventBarTime, cycle, cycle, CORE_SWING_NONE,
+                oldBoundary,
+                cycle == MARKET_CYCLE_BULL ? coreHigh.price : coreLow.price,
+                0.0,
+                reason + "|generation="
+                + IntegerToString(m_states[contextIndex].coreBox.generation)
+                + "|coreHigh=" + DoubleToString(coreHigh.price, 8)
+                + "|coreLow=" + DoubleToString(coreLow.price, 8));
+      return true;
+   }
+
+   bool TryInitializeCoreBox(const int contextIndex,
+                             const datetime eventBarTime)
+   {
+      if(m_states[contextIndex].coreBox.valid)
+         return false;
+      const ENUM_MARKET_CYCLE cycle =
+         m_states[contextIndex].cycleState.cycle;
+      if(cycle == MARKET_CYCLE_UNKNOWN
+         || !m_states[contextIndex].lastSwingHigh.confirmed
+         || !m_states[contextIndex].lastSwingLow.confirmed)
+         return false;
+
+      return EstablishCoreBox(contextIndex,
+                              m_states[contextIndex].lastSwingHigh,
+                              m_states[contextIndex].lastSwingLow,
+                              cycle, eventBarTime, true,
+                              "INITIAL_CONFIRMED_TOPOLOGY");
+   }
+
+   bool IsInternalCoreBoxSwing(const CoreBoxState &box,
+                               const SwingPoint &point) const
+   {
+      if(!box.valid || !point.confirmed
+         || point.confirmationTime <= box.createdTime
+         || point.time == box.coreHigh.time || point.time == box.coreLow.time)
+         return false;
+      return point.price > box.coreLow.price
+             && point.price < box.coreHigh.price;
+   }
+
+   void ConfirmCoreBoxSideway(const int contextIndex,
+                              const datetime eventBarTime,
+                              const ENUM_SIDEWAY_CONFIRMATION_TYPE type,
+                              const string reason)
+   {
+      if(m_states[contextIndex].sidewayBox.sidewayConfirmed)
+         return;
+      m_states[contextIndex].sidewayBox.sidewayConfirmed = true;
+      m_states[contextIndex].sidewayBox.active = true;
+      m_states[contextIndex].sidewayBox.status = SIDEWAY_BOX_ACTIVE;
+      m_states[contextIndex].sidewayBox.confirmationType = type;
+      m_states[contextIndex].sidewayBox.confirmedTime = eventBarTime;
+      m_states[contextIndex].sidewayBox.lastUpdateTime = eventBarTime;
+      m_states[contextIndex].sidewayBox.boxHigh =
+         m_states[contextIndex].coreBox.coreHigh.price;
+      m_states[contextIndex].sidewayBox.boxLow =
+         m_states[contextIndex].coreBox.coreLow.price;
+      m_states[contextIndex].sidewayBox.boxHighTime =
+         m_states[contextIndex].coreBox.coreHigh.time;
+      m_states[contextIndex].sidewayBox.boxLowTime =
+         m_states[contextIndex].coreBox.coreLow.time;
+      m_states[contextIndex].sidewayBox.boxStartTime =
+         m_states[contextIndex].coreBox.createdTime;
+      m_states[contextIndex].sidewayBox.ownerCycle =
+         m_states[contextIndex].coreBox.cycle;
+
+      EmitEvent(contextIndex, SIDEWAY_CONFIRMED, eventBarTime,
+                m_states[contextIndex].coreBox.cycle,
+                m_states[contextIndex].coreBox.cycle,
+                CORE_SWING_NONE, 0.0, 0.0, 0.0,
+                reason + "|type=" + SidewayConfirmationTypeToString(type)
+                + "|count=" + IntegerToString(
+                     m_states[contextIndex].sidewayBox.internalConfirmedSwingCount));
+   }
+
+   void EvaluateCoreBoxSwing(const int contextIndex,
+                             const SwingPoint &point)
+   {
+      if(m_states[contextIndex].pendingCoreBox.active)
+      {
+         const PendingCoreBoxState pending =
+            m_states[contextIndex].pendingCoreBox;
+         const bool expansion =
+            (pending.direction == CORE_BREAK_UP
+             && point.type == SWING_HIGH
+             && point.price > pending.brokenBoundary)
+            || (pending.direction == CORE_BREAK_DOWN
+                && point.type == SWING_LOW
+                && point.price < pending.brokenBoundary);
+          if(expansion
+             && point.time >= pending.candidateStartTime
+             && point.confirmationTime >= pending.confirmedBreakTime
+             && pending.breakOrigin.confirmed)
+         {
+            if(pending.direction == CORE_BREAK_UP)
+               EstablishCoreBox(contextIndex, point, pending.breakOrigin,
+                                pending.newCycle, point.confirmationTime,
+                                false, "CONFIRMED_BREAK_UP_EXPANSION");
+            else
+               EstablishCoreBox(contextIndex, pending.breakOrigin, point,
+                                pending.newCycle, point.confirmationTime,
+                                false, "CONFIRMED_BREAK_DOWN_EXPANSION");
+         }
+         return;
+      }
+
+      if(!m_states[contextIndex].coreBox.valid)
+      {
+         TryInitializeCoreBox(contextIndex, point.confirmationTime);
+         return;
+      }
+
+      const CoreBoxState box = m_states[contextIndex].coreBox;
+      if(!IsInternalCoreBoxSwing(box, point)
+         || m_states[contextIndex].sidewayBox.sidewayConfirmed)
+         return;
+
+      SidewayBoxState sideway = m_states[contextIndex].sidewayBox;
+      sideway.internalConfirmedSwingCount++;
+      const bool bull = box.cycle == MARKET_CYCLE_BULL;
+      const ENUM_SWING_TYPE pullbackType = bull ? SWING_LOW : SWING_HIGH;
+      const ENUM_SWING_TYPE pushType = bull ? SWING_HIGH : SWING_LOW;
+
+      if(!sideway.leg1Confirmed && point.type == pullbackType)
+      {
+         sideway.leg1Confirmed = true;
+         sideway.leg1Swing = point;
+         m_states[contextIndex].sidewayBox = sideway;
+         EmitEvent(contextIndex, LEG_1_CONFIRMED, point.confirmationTime,
+                   box.cycle, box.cycle, CORE_SWING_NONE,
+                   0.0, point.price, 0.0,
+                   bull ? "BULL_PULLBACK_LEG_1" : "BEAR_PULLBACK_LEG_1");
+      }
+      else if(sideway.leg1Confirmed && !sideway.leg2Confirmed
+              && point.type == pushType
+              && point.time > sideway.leg1Swing.time)
+      {
+         sideway.oppositeSeenAfterLeg1 = true;
+         m_states[contextIndex].sidewayBox = sideway;
+      }
+      else if(sideway.leg1Confirmed && !sideway.leg2Confirmed
+              && sideway.oppositeSeenAfterLeg1
+              && point.type == pullbackType
+              && point.time > sideway.leg1Swing.time
+              && (bull ? point.price < sideway.leg1Swing.price
+                       : point.price > sideway.leg1Swing.price))
+      {
+         sideway.leg2Confirmed = true;
+         sideway.leg2Swing = point;
+         m_states[contextIndex].sidewayBox = sideway;
+         EmitEvent(contextIndex, LEG_2_CONFIRMED, point.confirmationTime,
+                   box.cycle, box.cycle, CORE_SWING_NONE,
+                   sideway.leg1Swing.price, point.price, 0.0,
+                   bull ? "BULL_PULLBACK_LEG_2" : "BEAR_PULLBACK_LEG_2");
+      }
+      else
+         m_states[contextIndex].sidewayBox = sideway;
+
+      sideway = m_states[contextIndex].sidewayBox;
+      if(sideway.leg2Confirmed && point.type == pushType
+         && point.time > sideway.leg2Swing.time)
+      {
+         ConfirmCoreBoxSideway(contextIndex, point.confirmationTime,
+                               SIDEWAY_CLEAN_2_LEG,
+                               bull ? "BULL_RECOVERY_BELOW_CORE_HIGH"
+                                    : "BEAR_RECOVERY_ABOVE_CORE_LOW");
+      }
+      else if(sideway.internalConfirmedSwingCount >= 6)
+      {
+         ConfirmCoreBoxSideway(contextIndex, point.confirmationTime,
+                               SIDEWAY_NOISY_6_SWING,
+                               "SIX_CONFIRMED_INTERNAL_SWINGS");
+      }
+   }
+
+   void ConfirmCoreBoxBreak(const int contextIndex,
+                            const datetime eventBarTime)
+   {
+      const ENUM_CORE_BREAK_DIRECTION direction =
+         m_states[contextIndex].cycleState.breakDirection;
+      const ENUM_MARKET_CYCLE oldCycle =
+         m_states[contextIndex].coreBox.cycle;
+      const ENUM_MARKET_CYCLE newCycle = direction == CORE_BREAK_UP
+                                         ? MARKET_CYCLE_BULL
+                                         : MARKET_CYCLE_BEAR;
+      const SwingPoint origin = m_breakOrigins[contextIndex];
+      const bool supersedingPending =
+         m_states[contextIndex].pendingCoreBox.active;
+      const ENUM_CORE_BOX_LIFECYCLE supersededLifecycle =
+         m_states[contextIndex].coreBox.lifecycle;
+
+      // Case 5: the confirmed break immediately starts the next Box lifecycle.
+      // The known break-origin boundary becomes authoritative now; the broken
+      // opposite boundary is explicitly absent until a confirmed expansion
+      // swing completes the Box.
+      const CoreBoxState oldBox = m_states[contextIndex].coreBox;
+
+      // A confirmed break of the authoritative boundary supersedes an older
+      // pending transition atomically.  Preserve the completed generation;
+      // the replacement still targets the next actual Box completion.
+      ResetPendingCoreBoxState(m_states[contextIndex].pendingCoreBox);
+      m_states[contextIndex].pendingCoreBox.active = true;
+      m_states[contextIndex].pendingCoreBox.direction = direction;
+      m_states[contextIndex].pendingCoreBox.brokenBoundary =
+         m_states[contextIndex].cycleState.brokenCoreLevel;
+      m_states[contextIndex].pendingCoreBox.candidateStartTime =
+         m_states[contextIndex].cycleState.breakCandidateTime;
+      m_states[contextIndex].pendingCoreBox.confirmedBreakTime = eventBarTime;
+      m_states[contextIndex].pendingCoreBox.breakOrigin = origin;
+      m_states[contextIndex].pendingCoreBox.oldCycle = oldCycle;
+      m_states[contextIndex].pendingCoreBox.newCycle = newCycle;
+      m_states[contextIndex].pendingCoreBox.targetGeneration =
+         oldBox.generation + 1;
+
+      m_states[contextIndex].coreBox.valid = false;
+      m_states[contextIndex].coreBox.createdTime = 0;
+      m_states[contextIndex].coreBox.cycle = newCycle;
+      if(direction == CORE_BREAK_UP)
+      {
+         ResetSwingPoint(m_states[contextIndex].coreBox.coreHigh);
+         m_states[contextIndex].coreBox.coreLow = origin;
+         m_states[contextIndex].coreBox.lifecycle = CORE_BOX_PENDING_HIGH;
+      }
+      else
+      {
+         m_states[contextIndex].coreBox.coreHigh = origin;
+         ResetSwingPoint(m_states[contextIndex].coreBox.coreLow);
+         m_states[contextIndex].coreBox.lifecycle = CORE_BOX_PENDING_LOW;
+      }
+
+      m_states[contextIndex].cycleState.cycle = newCycle;
+      m_states[contextIndex].cycleState.lastCycleChange = eventBarTime;
+      ResetBreakCandidate(contextIndex);
+      ResetCoreBoxSideway(contextIndex,
+                           m_states[contextIndex].coreBox.generation);
+      SyncLegacyCoreState(contextIndex, eventBarTime);
+
+      if(oldCycle != newCycle)
+         EmitEvent(contextIndex, CYCLE_CHANGED, eventBarTime,
+                   oldCycle, newCycle, CORE_SWING_NONE,
+                   m_states[contextIndex].pendingCoreBox.brokenBoundary,
+                   m_states[contextIndex].pendingCoreBox.brokenBoundary,
+                   m_states[contextIndex].pendingCoreBox.brokenBoundary,
+                   "CONFIRMED_CORE_BOX_BOUNDARY_BREAK");
+
+      const ENUM_CORE_SWING_TYPE promotedType = direction == CORE_BREAK_UP
+                                                 ? CORE_SWING_LOW
+                                                 : CORE_SWING_HIGH;
+      const double oldPromotedLevel = direction == CORE_BREAK_UP
+                                      ? oldBox.coreLow.price
+                                      : oldBox.coreHigh.price;
+      EmitEvent(contextIndex, CORE_BOX_TRANSITION_STARTED, eventBarTime,
+                oldCycle, newCycle, promotedType,
+                oldPromotedLevel, origin.price,
+                m_states[contextIndex].pendingCoreBox.brokenBoundary,
+                (supersedingPending
+                 ? "SUPERSEDED_"
+                   + CoreBoxLifecycleToString(supersededLifecycle) + "|"
+                 : "")
+                + (direction == CORE_BREAK_UP
+                 ? "BREAK_ORIGIN_LOW_PROMOTED|pending=CORE_HIGH"
+                 : "BREAK_ORIGIN_HIGH_PROMOTED|pending=CORE_LOW")
+                + "|targetGeneration="
+                + IntegerToString(
+                     m_states[contextIndex].pendingCoreBox.targetGeneration));
+   }
+
+   void EvaluateCoreBoxBreak(const int contextIndex,
+                             const MqlRates &closedBar,
+                             const double atr)
+   {
+      const bool complete = m_states[contextIndex].coreBox.valid
+                            && !m_states[contextIndex].pendingCoreBox.active;
+      const bool pendingHigh = m_states[contextIndex].pendingCoreBox.active
+                               && m_states[contextIndex].coreBox.lifecycle
+                                  == CORE_BOX_PENDING_HIGH
+                               && m_states[contextIndex].coreBox.coreLow.confirmed;
+      const bool pendingLow = m_states[contextIndex].pendingCoreBox.active
+                              && m_states[contextIndex].coreBox.lifecycle
+                                 == CORE_BOX_PENDING_LOW
+                              && m_states[contextIndex].coreBox.coreHigh.confirmed;
+      if((!complete && !pendingHigh && !pendingLow)
+         || (m_useCoreBreakATRBuffer && atr <= 0.0))
+         return;
+
+      const double buffer = m_useCoreBreakATRBuffer
+                            ? atr * m_coreBreakATRBuffer : 0.0;
+      CycleState cycleState = m_states[contextIndex].cycleState;
+      if(cycleState.breakCandidate)
+      {
+         const bool stillBroken = cycleState.breakDirection == CORE_BREAK_UP
+            ? closedBar.close > cycleState.breakLevel
+            : closedBar.close < cycleState.breakLevel;
+         if(stillBroken)
+         {
+            m_states[contextIndex].cycleState.confirmationCount++;
+            if(m_states[contextIndex].cycleState.confirmationCount
+               >= m_coreBreakConfirmCloses)
+               ConfirmCoreBoxBreak(contextIndex, closedBar.time);
+         }
+         else
+         {
+            const double boundary = cycleState.brokenCoreLevel;
+            const ENUM_CORE_SWING_TYPE coreType =
+               cycleState.breakDirection == CORE_BREAK_UP
+               ? CORE_SWING_HIGH : CORE_SWING_LOW;
+            ResetBreakCandidate(contextIndex);
+            EmitEvent(contextIndex, CORE_BREAK_FAILED, closedBar.time,
+                      m_states[contextIndex].coreBox.cycle,
+                      m_states[contextIndex].coreBox.cycle,
+                      coreType, boundary, boundary,
+                      cycleState.breakLevel,
+                      "NEXT_CLOSE_RECLAIMED_CORE_BOX_BOUNDARY");
+         }
+         return;
+      }
+
+      ENUM_CORE_BREAK_DIRECTION direction = CORE_BREAK_NONE;
+      double boundary = 0.0;
+      double threshold = 0.0;
+      if((complete || pendingLow)
+         && closedBar.close
+            > m_states[contextIndex].coreBox.coreHigh.price + buffer)
+      {
+         direction = CORE_BREAK_UP;
+         boundary = m_states[contextIndex].coreBox.coreHigh.price;
+         threshold = boundary + buffer;
+      }
+      else if((complete || pendingHigh)
+              && closedBar.close
+                 < m_states[contextIndex].coreBox.coreLow.price - buffer)
+      {
+         direction = CORE_BREAK_DOWN;
+         boundary = m_states[contextIndex].coreBox.coreLow.price;
+         threshold = boundary - buffer;
+      }
+      if(direction == CORE_BREAK_NONE)
+         return;
+
+      const SwingPoint origin = direction == CORE_BREAK_UP
+                                ? m_states[contextIndex].lastSwingLow
+                                : m_states[contextIndex].lastSwingHigh;
+      if(!origin.confirmed)
+         return;
+      m_breakOrigins[contextIndex] = origin;
+      m_states[contextIndex].cycleState.breakCandidate = true;
+      m_states[contextIndex].cycleState.breakDirection = direction;
+      m_states[contextIndex].cycleState.breakCandidateTime = closedBar.time;
+      m_states[contextIndex].cycleState.breakLevel = threshold;
+      m_states[contextIndex].cycleState.brokenCoreLevel = boundary;
+      m_states[contextIndex].cycleState.confirmationCount = 1;
+      EmitEvent(contextIndex, CORE_BREAK_CANDIDATE, closedBar.time,
+                m_states[contextIndex].coreBox.cycle,
+                m_states[contextIndex].coreBox.cycle,
+                direction == CORE_BREAK_UP ? CORE_SWING_HIGH : CORE_SWING_LOW,
+                boundary, boundary, threshold,
+                direction == CORE_BREAK_UP
+                ? "FIRST_CLOSE_ABOVE_CORE_HIGH"
+                : "FIRST_CLOSE_BELOW_CORE_LOW");
+      if(m_coreBreakConfirmCloses == 1)
+         ConfirmCoreBoxBreak(contextIndex, closedBar.time);
    }
 
    void SetCoreLow(const int contextIndex,
@@ -1223,7 +1694,7 @@ private:
       if(m_states[contextIndex].cycleState.breakCandidate)
       {
          const ENUM_SWING_TYPE originType =
-            m_states[contextIndex].cycleState.cycle == MARKET_CYCLE_BULL
+            m_states[contextIndex].cycleState.breakDirection == CORE_BREAK_DOWN
             ? SWING_HIGH : SWING_LOW;
          if(point.type == originType)
             m_breakOrigins[contextIndex] = point;
@@ -1232,6 +1703,7 @@ private:
       if(!m_isBootstrapping)
          LogSwing(contextIndex, point);
       HandleInitialCycleDirection(contextIndex, point);
+      EvaluateCoreBoxSwing(contextIndex, point);
    }
 
    bool HasActiveCoreForCycle(const int contextIndex) const
@@ -1886,6 +2358,7 @@ private:
    void ResetBreakCandidate(const int contextIndex)
    {
       m_states[contextIndex].cycleState.breakCandidate = false;
+      m_states[contextIndex].cycleState.breakDirection = CORE_BREAK_NONE;
       m_states[contextIndex].cycleState.breakCandidateTime = 0;
       m_states[contextIndex].cycleState.breakLevel = 0.0;
       m_states[contextIndex].cycleState.brokenCoreLevel = 0.0;
@@ -2153,16 +2626,7 @@ private:
 
          const double breakATR = m_useCoreBreakATRBuffer
                                   ? CalculateATR(rates, closedIndex) : 0.0;
-         const bool coreFrozenOrBoxBreak = EvaluateSidewayLifecycle(
-                                             contextIndex, rates, closedIndex,
-                                             rates[closedIndex], breakATR);
-         if(!coreFrozenOrBoxBreak)
-            EvaluateStructuralContinuation(contextIndex, rates, closedIndex,
-                                           rates[closedIndex], breakATR);
-         // While a Sideway box is active, its immutable owner cycle and
-         // protected boundaries outrank internal Core/Cycle break signals.
-         if(!m_states[contextIndex].sidewayBox.active)
-            EvaluateCycleBreak(contextIndex, rates[closedIndex], breakATR);
+         EvaluateCoreBoxBreak(contextIndex, rates[closedIndex], breakATR);
          m_lastProcessedClosedBarTime[contextIndex] = rates[closedIndex].time;
       }
 
@@ -2205,18 +2669,26 @@ private:
       m_lastSeenCurrentBarTime[contextIndex] = rates[copied - 1].time;
       m_dataErrorLogged[contextIndex] = false;
 
-      string coreText = "Core -";
+      string coreText = "Core Box -";
       const int digits = (int)SymbolInfoInteger(m_symbols[contextIndex], SYMBOL_DIGITS);
-      if(m_states[contextIndex].cycleState.cycle == MARKET_CYCLE_BULL
-         && m_states[contextIndex].coreSwing.hasCoreLow)
-         coreText = "Core low "
-                    + DoubleToString(m_states[contextIndex].coreSwing.coreSwingLow,
-                                     digits);
-      else if(m_states[contextIndex].cycleState.cycle == MARKET_CYCLE_BEAR
-              && m_states[contextIndex].coreSwing.hasCoreHigh)
-         coreText = "Core high "
-                    + DoubleToString(m_states[contextIndex].coreSwing.coreSwingHigh,
-                                     digits);
+      if(m_states[contextIndex].coreBox.valid)
+         coreText = "Core Box H="
+                    + DoubleToString(m_states[contextIndex].coreBox.coreHigh.price,
+                                     digits)
+                    + " L="
+                    + DoubleToString(m_states[contextIndex].coreBox.coreLow.price,
+                                     digits)
+                     + " G="
+                     + IntegerToString(m_states[contextIndex].coreBox.generation);
+      else if(m_states[contextIndex].pendingCoreBox.active)
+      {
+         coreText = "Core Box "
+                    + CoreBoxLifecycleToString(
+                         m_states[contextIndex].coreBox.lifecycle)
+                    + " G="
+                    + IntegerToString(
+                         m_states[contextIndex].pendingCoreBox.targetGeneration);
+      }
 
       WatcherLog("INIT", m_symbols[contextIndex] + " "
                  + WatcherTimeframeToString(m_timeframes[contextIndex])
@@ -2265,6 +2737,161 @@ private:
    }
 
 public:
+   bool LabProbeInitialize(const ENUM_MARKET_CYCLE cycle,
+                           const double coreHighPrice,
+                           const double coreLowPrice,
+                           const datetime baseTime,
+                           const bool bootstrapMode)
+   {
+      if(cycle == MARKET_CYCLE_UNKNOWN
+         || coreHighPrice <= coreLowPrice || baseTime <= 2)
+         return false;
+
+      ArrayResize(m_symbols, 1);
+      ArrayResize(m_timeframes, 1);
+      ArrayResize(m_states, 1);
+      ArrayResize(m_lastSeenCurrentBarTime, 1);
+      ArrayResize(m_lastProcessedClosedBarTime, 1);
+      ArrayResize(m_lastCandidateTime, 1);
+      ArrayResize(m_lastCandidateEventIdentity, 1);
+      ArrayResize(m_dataErrorLogged, 1);
+      ArrayResize(m_swingCounts, 1);
+      ArrayResize(m_lastHighRecordIndex, 1);
+      ArrayResize(m_lastLowRecordIndex, 1);
+      ArrayResize(m_lastBullContinuationReferenceTime, 1);
+      ArrayResize(m_lastBearContinuationReferenceTime, 1);
+      ArrayResize(m_lastNoNewClosedBarAuditTime, 1);
+      ArrayResize(m_sidewayCandidateStartTime, 1);
+      ArrayResize(m_pendingContinuations, 1);
+      ArrayResize(m_breakOrigins, 1);
+      ArrayResize(m_auditSnapshotInitialized, 1);
+      ArrayResize(m_lastAuditCycle, 1);
+      ArrayResize(m_lastAuditCorePrice, 1);
+      ArrayResize(m_lastAuditHasCore, 1);
+      ArrayResize(m_lastAuditStructure, 1);
+      ArrayResize(m_swingHistory, 0);
+      ArrayResize(m_brokenCoreHistory, 0);
+      ArrayResize(m_sidewayBoxHistory, 0);
+      ArrayResize(m_eventHistory, 0);
+      ArrayResize(m_pendingEvents, 0);
+
+      m_symbols[0] = _Symbol;
+      m_timeframes[0] = (ENUM_TIMEFRAMES)_Period;
+      ResetPriceStructureState(m_states[0]);
+      m_lastSeenCurrentBarTime[0] = 0;
+      m_lastProcessedClosedBarTime[0] = 0;
+      m_lastCandidateTime[0] = 0;
+      m_lastCandidateEventIdentity[0] = "";
+      m_dataErrorLogged[0] = false;
+      m_swingCounts[0] = 0;
+      m_lastHighRecordIndex[0] = -1;
+      m_lastLowRecordIndex[0] = -1;
+      m_lastBullContinuationReferenceTime[0] = 0;
+      m_lastBearContinuationReferenceTime[0] = 0;
+      m_lastNoNewClosedBarAuditTime[0] = 0;
+      m_sidewayCandidateStartTime[0] = 0;
+      ResetPendingContinuationState(m_pendingContinuations[0]);
+      ResetSwingPoint(m_breakOrigins[0]);
+      m_auditSnapshotInitialized[0] = false;
+      m_lastAuditCycle[0] = "";
+      m_lastAuditCorePrice[0] = 0.0;
+      m_lastAuditHasCore[0] = false;
+      m_lastAuditStructure[0] = "";
+      m_isBootstrapping = bootstrapMode;
+
+      SwingPoint high;
+      SwingPoint low;
+      ResetSwingPoint(high);
+      ResetSwingPoint(low);
+      high.time = baseTime - 2;
+      high.price = coreHighPrice;
+      high.type = SWING_HIGH;
+      high.classification = cycle == MARKET_CYCLE_BULL ? STRUCT_HH : STRUCT_LH;
+      high.confirmationTime = baseTime;
+      high.confirmed = true;
+      low.time = baseTime - 1;
+      low.price = coreLowPrice;
+      low.type = SWING_LOW;
+      low.classification = cycle == MARKET_CYCLE_BULL ? STRUCT_HL : STRUCT_LL;
+      low.confirmationTime = baseTime;
+      low.confirmed = true;
+      m_states[0].lastSwingHigh = high;
+      m_states[0].lastSwingLow = low;
+      m_states[0].cycleState.cycle = cycle;
+      m_lastHighRecordIndex[0] = AppendSwing(0, high);
+      m_lastLowRecordIndex[0] = AppendSwing(0, low);
+      m_states[0].initialized = true;
+      return EstablishCoreBox(0, high, low, cycle, baseTime, true,
+                              "LAB_PROBE_INITIALIZATION");
+   }
+
+   void LabProbeSetBootstrapMode(const bool bootstrapMode)
+   {
+      m_isBootstrapping = bootstrapMode;
+   }
+
+   void LabProbeSwing(const ENUM_SWING_TYPE swingType,
+                      const double price,
+                      const datetime pivotTime,
+                      const datetime confirmationTime)
+   {
+      MqlRates rate;
+      ZeroMemory(rate);
+      rate.time = pivotTime;
+      rate.high = price;
+      rate.low = price;
+      AcceptSwing(0, swingType, rate, 0, confirmationTime);
+   }
+
+   void LabProbeClose(const double closePrice,
+                      const datetime closeTime,
+                      const double atr = 1.0)
+   {
+      MqlRates bar;
+      ZeroMemory(bar);
+      bar.time = closeTime;
+      bar.close = closePrice;
+      EvaluateCoreBoxBreak(0, bar, atr);
+   }
+
+   void LabProbeConfiguration(int &swingLeftBars,
+                              int &swingRightBars,
+                              int &atrPeriod,
+                              double &coreBreakATRBuffer,
+                              int &coreBreakConfirmCloses) const
+   {
+      swingLeftBars = m_swingLeftBars;
+      swingRightBars = m_swingRightBars;
+      atrPeriod = m_atrPeriod;
+      coreBreakATRBuffer = m_coreBreakATRBuffer;
+      coreBreakConfirmCloses = m_coreBreakConfirmCloses;
+   }
+
+   double LabProbeCalculateATR(const MqlRates &rates[],
+                               const int endIndex) const
+   {
+      return CalculateATR(rates, endIndex);
+   }
+
+   int LabProbeProcessRates(const MqlRates &rates[],
+                            const bool bootstrapMode)
+   {
+      return ProcessRates(0, rates, ArraySize(rates), bootstrapMode);
+   }
+
+   PriceStructureState LabProbeState(void) const
+   {
+      return m_states[0];
+   }
+
+   void LabProbeEventHistory(StructureEvent &events[]) const
+   {
+      const int count = ArraySize(m_eventHistory);
+      ArrayResize(events, count);
+      for(int index = 0; index < count; index++)
+         events[index] = m_eventHistory[index];
+   }
+
    CPriceStructureEngine()
    {
       m_swingLeftBars = 3;
@@ -2275,6 +2902,7 @@ public:
       m_lookbackBars = 300;
       m_useCoreBreakATRBuffer = true;
       m_coreBreakATRBuffer = 0.10;
+      m_coreBreakConfirmCloses = 2;
       m_isBootstrapping = false;
       m_enableAuditLog = false;
       m_enableCoreBreakAuditLog = false;
@@ -2286,9 +2914,10 @@ public:
                   const double minDistanceATR,
                   const int atrPeriod,
                   const int lookbackBars,
-                   const bool useCoreBreakATRBuffer,
-                   const double coreBreakATRBuffer,
-                   const bool enableAuditLog,
+                    const bool useCoreBreakATRBuffer,
+                    const double coreBreakATRBuffer,
+                    const int coreBreakConfirmCloses,
+                    const bool enableAuditLog,
                    const bool enableCoreBreakAuditLog)
    {
       m_swingLeftBars = swingLeftBars;
@@ -2299,6 +2928,7 @@ public:
       m_lookbackBars = lookbackBars;
       m_useCoreBreakATRBuffer = useCoreBreakATRBuffer;
       m_coreBreakATRBuffer = coreBreakATRBuffer;
+      m_coreBreakConfirmCloses = coreBreakConfirmCloses;
       m_enableAuditLog = enableAuditLog;
       m_enableCoreBreakAuditLog = enableCoreBreakAuditLog;
    }
@@ -2331,6 +2961,7 @@ public:
       ArrayResize(m_swingHistory, 0);
       ArrayResize(m_brokenCoreHistory, 0);
       ArrayResize(m_sidewayBoxHistory, 0);
+      ArrayResize(m_eventHistory, 0);
       ArrayResize(m_pendingEvents, 0);
 
       m_isBootstrapping = true;

@@ -35,9 +35,11 @@ private:
     int             m_watchStructureLookbackBars;
     bool            m_watchUseCoreBreakATRBuffer;
     double          m_watchCoreBreakATRBuffer;
+    int             m_watchCoreBreakConfirmCloses;
     bool            m_watchEnableStructureAuditLog;
     bool            m_watchEnableCoreBreakAuditLog;
-    bool            m_watchShowStructureDebug;
+    bool            m_watchShowCoreBox;
+    bool            m_watchShowStructureSwings;
     bool            m_watchNotifyCoreSwingChange;
     bool            m_watchNotifyCoreBreakCandidate;
     bool            m_watchNotifyCycleChange;
@@ -48,6 +50,20 @@ private:
 public:
                     CWatchIntegration(void);
 
+    bool            ConfigureStructure(const int swingLeftBars,
+                                       const int swingRightBars,
+                                       const int structureATRPeriod,
+                                       const double coreBreakATRBuffer,
+                                       const int coreBreakConfirmCloses,
+                                       const bool showCoreBox,
+                                       const bool showStructureSwings);
+    void            GetStructureConfiguration(int &swingLeftBars,
+                                              int &swingRightBars,
+                                              int &structureATRPeriod,
+                                              double &coreBreakATRBuffer,
+                                              int &coreBreakConfirmCloses,
+                                              bool &showCoreBox,
+                                              bool &showStructureSwings) const;
     bool            Initialize(const string symbol, const ENUM_TIMEFRAMES timeframe);
     void            ProcessTick(void);
     void            OnChartChange(void);
@@ -65,14 +81,57 @@ CWatchIntegration::CWatchIntegration(void)
     m_watchStructureLookbackBars     = 500;
     m_watchUseCoreBreakATRBuffer     = true;
     m_watchCoreBreakATRBuffer        = 0.10;
+    m_watchCoreBreakConfirmCloses    = 2;
     m_watchEnableStructureAuditLog   = false;
     m_watchEnableCoreBreakAuditLog   = false;
-    m_watchShowStructureDebug        = true;
+    m_watchShowCoreBox               = true;
+    m_watchShowStructureSwings       = true;
     m_watchNotifyCoreSwingChange     = true;
     m_watchNotifyCoreBreakCandidate  = true;
     m_watchNotifyCycleChange         = true;
 
     ResetContext();
+}
+
+bool CWatchIntegration::ConfigureStructure(const int swingLeftBars,
+                                           const int swingRightBars,
+                                           const int structureATRPeriod,
+                                           const double coreBreakATRBuffer,
+                                           const int coreBreakConfirmCloses,
+                                           const bool showCoreBox,
+                                           const bool showStructureSwings)
+{
+    if(swingLeftBars < 1 || swingRightBars < 1
+       || structureATRPeriod < 1 || coreBreakATRBuffer < 0.0
+       || coreBreakConfirmCloses < 1)
+        return false;
+
+    m_watchSwingLeftBars          = swingLeftBars;
+    m_watchSwingRightBars         = swingRightBars;
+    m_watchATRPeriod              = structureATRPeriod;
+    m_watchCoreBreakATRBuffer     = coreBreakATRBuffer;
+    m_watchCoreBreakConfirmCloses = coreBreakConfirmCloses;
+    m_watchShowCoreBox            = showCoreBox;
+    m_watchShowStructureSwings    = showStructureSwings;
+    return true;
+}
+
+void CWatchIntegration::GetStructureConfiguration(
+    int &swingLeftBars,
+    int &swingRightBars,
+    int &structureATRPeriod,
+    double &coreBreakATRBuffer,
+    int &coreBreakConfirmCloses,
+    bool &showCoreBox,
+    bool &showStructureSwings) const
+{
+    swingLeftBars = m_watchSwingLeftBars;
+    swingRightBars = m_watchSwingRightBars;
+    structureATRPeriod = m_watchATRPeriod;
+    coreBreakATRBuffer = m_watchCoreBreakATRBuffer;
+    coreBreakConfirmCloses = m_watchCoreBreakConfirmCloses;
+    showCoreBox = m_watchShowCoreBox;
+    showStructureSwings = m_watchShowStructureSwings;
 }
 
 void CWatchIntegration::ResetContext(void)
@@ -140,6 +199,7 @@ bool CWatchIntegration::Initialize(const string symbol, const ENUM_TIMEFRAMES ti
     if(m_watchSwingLeftBars < 1 || m_watchSwingRightBars < 1
        || m_watchATRPeriod < 1 || m_watchMinSwingDistanceATR < 0.0
        || m_watchCoreBreakATRBuffer < 0.0
+       || m_watchCoreBreakConfirmCloses < 1
        || m_watchStructureLookbackBars < minimumLookback)
         return false;
 
@@ -159,6 +219,7 @@ bool CWatchIntegration::Initialize(const string symbol, const ENUM_TIMEFRAMES ti
                                 m_watchStructureLookbackBars,
                                 m_watchUseCoreBreakATRBuffer,
                                 m_watchCoreBreakATRBuffer,
+                                m_watchCoreBreakConfirmCloses,
                                 m_watchEnableStructureAuditLog,
                                 m_watchEnableCoreBreakAuditLog);
 
@@ -176,7 +237,8 @@ bool CWatchIntegration::Initialize(const string symbol, const ENUM_TIMEFRAMES ti
         m_watchNotifyCycleChange,
         m_watchEnableStructureAuditLog);
 
-    m_structureRenderer.Configure(m_watchShowStructureDebug);
+    m_structureRenderer.Configure(m_watchShowCoreBox,
+                                  m_watchShowStructureSwings);
     m_structureRenderer.Destroy();
     UpdateStructureRenderer();
 

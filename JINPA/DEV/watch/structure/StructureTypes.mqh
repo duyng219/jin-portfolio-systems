@@ -41,6 +41,28 @@ enum ENUM_MARKET_CYCLE
    MARKET_CYCLE_BEAR
 };
 
+enum ENUM_CORE_BREAK_DIRECTION
+{
+   CORE_BREAK_NONE = 0,
+   CORE_BREAK_UP,
+   CORE_BREAK_DOWN
+};
+
+enum ENUM_CORE_BOX_LIFECYCLE
+{
+   CORE_BOX_EMPTY = 0,
+   CORE_BOX_COMPLETE,
+   CORE_BOX_PENDING_HIGH,
+   CORE_BOX_PENDING_LOW
+};
+
+enum ENUM_SIDEWAY_CONFIRMATION_TYPE
+{
+   SIDEWAY_CONFIRMATION_NONE = 0,
+   SIDEWAY_CLEAN_2_LEG,
+   SIDEWAY_NOISY_6_SWING
+};
+
 enum ENUM_SIDEWAY_BOX_STATUS
 {
    SIDEWAY_BOX_NONE = 0,
@@ -64,7 +86,13 @@ enum ENUM_STRUCTURE_EVENT_TYPE
    CORE_SWING_CHANGED,
    CORE_BREAK_CANDIDATE,
    CORE_BREAK_FAILED,
-   CYCLE_CHANGED
+   CYCLE_CHANGED,
+   CORE_BOX_INITIALIZED,
+   CORE_BOX_CHANGED,
+   LEG_1_CONFIRMED,
+   LEG_2_CONFIRMED,
+   SIDEWAY_CONFIRMED,
+   CORE_BOX_TRANSITION_STARTED
 };
 
 struct SwingPoint
@@ -79,6 +107,32 @@ struct SwingPoint
    datetime             originSwingTime;
    double               originSwingPrice;
    bool                 confirmed;
+};
+
+// LAB authority.  SwingPoint.classification is never rewritten when the
+// point also owns a Core role.
+struct CoreBoxState
+{
+   bool                 valid;
+   ENUM_CORE_BOX_LIFECYCLE lifecycle;
+   SwingPoint           coreHigh;
+   SwingPoint           coreLow;
+   long                 generation;
+   datetime             createdTime;
+   ENUM_MARKET_CYCLE    cycle;
+};
+
+struct PendingCoreBoxState
+{
+   bool                       active;
+   ENUM_CORE_BREAK_DIRECTION  direction;
+   double                     brokenBoundary;
+   datetime                   candidateStartTime;
+   datetime                   confirmedBreakTime;
+   SwingPoint                 breakOrigin;
+   ENUM_MARKET_CYCLE          oldCycle;
+   ENUM_MARKET_CYCLE          newCycle;
+   long                       targetGeneration;
 };
 
 struct CoreSwingState
@@ -126,12 +180,26 @@ struct SidewayBoxState
    datetime             lastUpdateTime;
    ENUM_MARKET_CYCLE    ownerCycle;
    double               activeCoreAtEntry;
+
+   // Core Box LAB lifecycle state.  The legacy fields above are retained so
+   // the full DEV clone remains source-compatible; these fields are the LAB
+   // authority for Sideway detection.
+   bool                 sidewayConfirmed;
+   ENUM_SIDEWAY_CONFIRMATION_TYPE confirmationType;
+   int                  internalConfirmedSwingCount;
+   bool                 leg1Confirmed;
+   bool                 leg2Confirmed;
+   bool                 oppositeSeenAfterLeg1;
+   SwingPoint           leg1Swing;
+   SwingPoint           leg2Swing;
+   long                 ownerBoxGeneration;
 };
 
 struct CycleState
 {
    ENUM_MARKET_CYCLE cycle;
    bool              breakCandidate;
+   ENUM_CORE_BREAK_DIRECTION breakDirection;
    datetime          breakCandidateTime;
    double            breakLevel;
    double            brokenCoreLevel;
@@ -147,6 +215,8 @@ struct PriceStructureState
    SwingPoint          previousSwingLow;
 
    CoreSwingState      coreSwing;
+   CoreBoxState        coreBox;
+   PendingCoreBoxState pendingCoreBox;
    CycleState          cycleState;
    SidewayBoxState     sidewayBox;
 
@@ -175,6 +245,8 @@ struct StructureEvent
    double                    breakLevel;
    string                    reason;
    string                    identity;
+   long                      boxGeneration;
+   ENUM_SIDEWAY_CONFIRMATION_TYPE sidewayConfirmationType;
 };
 
 struct StructureSwingRecord
@@ -253,6 +325,17 @@ string CoreSwingTypeToString(const ENUM_CORE_SWING_TYPE coreType)
    }
 }
 
+string CoreBoxLifecycleToString(const ENUM_CORE_BOX_LIFECYCLE lifecycle)
+{
+   switch(lifecycle)
+   {
+      case CORE_BOX_COMPLETE:     return "COMPLETE";
+      case CORE_BOX_PENDING_HIGH: return "PENDING_HIGH";
+      case CORE_BOX_PENDING_LOW:  return "PENDING_LOW";
+      default:                    return "EMPTY";
+   }
+}
+
 string StructureEventTypeToString(const ENUM_STRUCTURE_EVENT_TYPE eventType)
 {
    switch(eventType)
@@ -262,8 +345,25 @@ string StructureEventTypeToString(const ENUM_STRUCTURE_EVENT_TYPE eventType)
       case CORE_BREAK_CANDIDATE:   return "CORE_BREAK_CANDIDATE";
       case CORE_BREAK_FAILED:      return "CORE_BREAK_FAILED";
       case CYCLE_CHANGED:          return "CYCLE_CHANGED";
+      case CORE_BOX_INITIALIZED:   return "CORE_BOX_INITIALIZED";
+      case CORE_BOX_CHANGED:       return "CORE_BOX_CHANGED";
+      case LEG_1_CONFIRMED:        return "LEG_1_CONFIRMED";
+      case LEG_2_CONFIRMED:        return "LEG_2_CONFIRMED";
+      case SIDEWAY_CONFIRMED:      return "SIDEWAY_CONFIRMED";
+      case CORE_BOX_TRANSITION_STARTED:
+         return "CORE_BOX_TRANSITION_STARTED";
       default:                     return "NONE";
    }
+}
+
+string SidewayConfirmationTypeToString(
+   const ENUM_SIDEWAY_CONFIRMATION_TYPE confirmationType)
+{
+   if(confirmationType == SIDEWAY_CLEAN_2_LEG)
+      return "CLEAN_2_LEG";
+   if(confirmationType == SIDEWAY_NOISY_6_SWING)
+      return "NOISY_6_SWING";
+   return "NONE";
 }
 
 void ResetSwingPoint(SwingPoint &point)
@@ -291,6 +391,30 @@ void ResetCoreSwingState(CoreSwingState &state)
    state.hasCoreLow        = false;
    state.activeCoreType    = CORE_SWING_NONE;
    state.lastCoreUpdate    = 0;
+}
+
+void ResetCoreBoxState(CoreBoxState &state)
+{
+   state.valid = false;
+   state.lifecycle = CORE_BOX_EMPTY;
+   ResetSwingPoint(state.coreHigh);
+   ResetSwingPoint(state.coreLow);
+   state.generation = 0;
+   state.createdTime = 0;
+   state.cycle = MARKET_CYCLE_UNKNOWN;
+}
+
+void ResetPendingCoreBoxState(PendingCoreBoxState &state)
+{
+   state.active = false;
+   state.direction = CORE_BREAK_NONE;
+   state.brokenBoundary = 0.0;
+   state.candidateStartTime = 0;
+   state.confirmedBreakTime = 0;
+   ResetSwingPoint(state.breakOrigin);
+   state.oldCycle = MARKET_CYCLE_UNKNOWN;
+   state.newCycle = MARKET_CYCLE_UNKNOWN;
+   state.targetGeneration = 0;
 }
 
 void ResetSidewayBoxState(SidewayBoxState &state)
@@ -325,6 +449,15 @@ void ResetSidewayBoxState(SidewayBoxState &state)
    state.lastUpdateTime    = 0;
    state.ownerCycle        = MARKET_CYCLE_UNKNOWN;
    state.activeCoreAtEntry = 0.0;
+   state.sidewayConfirmed = false;
+   state.confirmationType = SIDEWAY_CONFIRMATION_NONE;
+   state.internalConfirmedSwingCount = 0;
+   state.leg1Confirmed = false;
+   state.leg2Confirmed = false;
+   state.oppositeSeenAfterLeg1 = false;
+   ResetSwingPoint(state.leg1Swing);
+   ResetSwingPoint(state.leg2Swing);
+   state.ownerBoxGeneration = 0;
 }
 
 void ResetPendingContinuationState(PendingContinuationState &state)
@@ -344,6 +477,7 @@ void ResetCycleState(CycleState &state)
 {
    state.cycle             = MARKET_CYCLE_UNKNOWN;
    state.breakCandidate    = false;
+   state.breakDirection    = CORE_BREAK_NONE;
    state.breakCandidateTime = 0;
    state.breakLevel        = 0.0;
    state.brokenCoreLevel   = 0.0;
@@ -359,6 +493,8 @@ void ResetPriceStructureState(PriceStructureState &state)
    ResetSwingPoint(state.previousSwingLow);
 
    ResetCoreSwingState(state.coreSwing);
+   ResetCoreBoxState(state.coreBox);
+   ResetPendingCoreBoxState(state.pendingCoreBox);
    ResetCycleState(state.cycleState);
    ResetSidewayBoxState(state.sidewayBox);
    state.highStructure       = "-";

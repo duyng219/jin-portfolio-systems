@@ -8,17 +8,22 @@ class CStructureDebugRenderer
 {
 private:
    const string m_prefix;
+   const string m_swingPrefix;
    const string m_brokenCorePrefix;
    const string m_sidewayHighPrefix;
    const string m_sidewayLowPrefix;
    long         m_chartId;
    bool         m_enabled;
-   ENUM_CORE_SWING_TYPE m_activeCoreType;
-   double       m_activeCorePrice;
+   bool         m_showCoreBox;
+   bool         m_showStructureSwings;
+   double       m_activeCoreHigh;
+   double       m_activeCoreLow;
+   long         m_activeGeneration;
+   ENUM_CORE_BOX_LIFECYCLE m_activeLifecycle;
 
    string SwingObjectName(const SwingPoint &point) const
    {
-      return m_prefix + StructurePointToString(point.classification)
+      return m_swingPrefix + StructurePointToString(point.classification)
              + "_" + IntegerToString((long)point.time);
    }
 
@@ -294,19 +299,37 @@ private:
 
 public:
    CStructureDebugRenderer() : m_prefix("JINPA_STRUCT_"),
+                               m_swingPrefix("JINPA_SWING_"),
                                m_brokenCorePrefix("JINPA_BROKEN_CORE_"),
                                m_sidewayHighPrefix("JINPA_SIDEWAY_BOX_HIGH_"),
                                m_sidewayLowPrefix("JINPA_SIDEWAY_BOX_LOW_")
    {
       m_chartId = 0;
       m_enabled = false;
-      m_activeCoreType = CORE_SWING_NONE;
-      m_activeCorePrice = 0.0;
+      m_showCoreBox = true;
+      m_showStructureSwings = true;
+      m_activeCoreHigh = 0.0;
+      m_activeCoreLow = 0.0;
+      m_activeGeneration = 0;
+      m_activeLifecycle = CORE_BOX_EMPTY;
    }
 
-   void Configure(const bool enabled)
+   void Configure(const bool showCoreBox,
+                  const bool showStructureSwings)
    {
-      m_enabled = enabled;
+      m_showCoreBox = showCoreBox;
+      m_showStructureSwings = showStructureSwings;
+      m_enabled = showCoreBox || showStructureSwings;
+
+      if(!m_showCoreBox)
+      {
+         ObjectDelete(m_chartId, m_prefix + "CORE_HIGH");
+         ObjectDelete(m_chartId, m_prefix + "CORE_LOW");
+         ObjectDelete(m_chartId, m_prefix + "CORE_HIGH_LABEL");
+         ObjectDelete(m_chartId, m_prefix + "CORE_LOW_LABEL");
+      }
+      if(!m_showStructureSwings)
+         ObjectsDeleteAll(m_chartId, m_swingPrefix);
    }
 
    void RefreshActiveCoreLabelPosition()
@@ -315,14 +338,14 @@ public:
          return;
 
       const color coreColor = C'255,165,0';
-      const double coreHigh = m_activeCoreType == CORE_SWING_HIGH
-                              ? m_activeCorePrice : 0.0;
-      const double coreLow = m_activeCoreType == CORE_SWING_LOW
-                             ? m_activeCorePrice : 0.0;
-      UpdateCoreScreenLabel(m_prefix + "CORE_HIGH_LABEL", coreHigh,
-                            coreColor, "core-high", true);
-      UpdateCoreScreenLabel(m_prefix + "CORE_LOW_LABEL", coreLow,
-                            coreColor, "core-low", false);
+      const string generation = " G" + IntegerToString(m_activeGeneration);
+      const string transition =
+         m_activeLifecycle == CORE_BOX_PENDING_HIGH ? " | Pending High"
+         : m_activeLifecycle == CORE_BOX_PENDING_LOW ? " | Pending Low" : "";
+      UpdateCoreScreenLabel(m_prefix + "CORE_HIGH_LABEL", m_activeCoreHigh,
+                            coreColor, "Core High" + generation + transition, true);
+      UpdateCoreScreenLabel(m_prefix + "CORE_LOW_LABEL", m_activeCoreLow,
+                            coreColor, "Core Low" + generation + transition, false);
       ChartRedraw(m_chartId);
    }
 
@@ -334,9 +357,14 @@ public:
       if(!m_enabled)
          return;
 
-      const int count = ArraySize(swings);
-      for(int index = 0; index < count; index++)
-         DrawSwing(swings[index]);
+      if(m_showStructureSwings)
+      {
+         const int count = ArraySize(swings);
+         for(int index = 0; index < count; index++)
+            DrawSwing(swings[index]);
+      }
+      else
+         ObjectsDeleteAll(m_chartId, m_swingPrefix);
 
       const int brokenCount = ArraySize(brokenCores);
       for(int index = 0; index < brokenCount; index++)
@@ -363,41 +391,43 @@ public:
          DrawSidewayBoundary(activeBox, false);
       }
 
-      double coreHigh = 0.0;
-      double coreLow = 0.0;
-      if(state.cycleState.cycle == MARKET_CYCLE_BULL
-         && state.coreSwing.activeCoreType == CORE_SWING_LOW
-         && state.coreSwing.hasCoreLow)
-      {
-         coreLow = state.coreSwing.coreSwingLow;
-      }
-      else if(state.cycleState.cycle == MARKET_CYCLE_BEAR
-              && state.coreSwing.activeCoreType == CORE_SWING_HIGH
-              && state.coreSwing.hasCoreHigh)
-      {
-         coreHigh = state.coreSwing.coreSwingHigh;
-      }
+      const bool hasCoreHigh = state.coreBox.lifecycle == CORE_BOX_COMPLETE
+                               || state.coreBox.lifecycle == CORE_BOX_PENDING_LOW;
+      const bool hasCoreLow = state.coreBox.lifecycle == CORE_BOX_COMPLETE
+                              || state.coreBox.lifecycle == CORE_BOX_PENDING_HIGH;
+      const double coreHigh = m_showCoreBox && hasCoreHigh
+                               ? state.coreBox.coreHigh.price : 0.0;
+      const double coreLow = m_showCoreBox && hasCoreLow
+                              ? state.coreBox.coreLow.price : 0.0;
       const color coreColor = C'255,165,0';
 
+      // Stable names plus one explicit redraw make the two queued price
+      // changes one logical generation update; neither object carries a
+      // generation-specific name that could leave stale pairs behind.
       UpdateCoreLine(m_prefix + "CORE_HIGH", coreHigh,
-                     coreColor, "JINPA CORE HIGH");
+                     coreColor, "JINPA COREBOX | Core High");
       UpdateCoreLine(m_prefix + "CORE_LOW", coreLow,
-                     coreColor, "JINPA CORE LOW");
-      m_activeCoreType = coreHigh > 0.0 ? CORE_SWING_HIGH
-                                        : (coreLow > 0.0
-                                           ? CORE_SWING_LOW : CORE_SWING_NONE);
-      m_activeCorePrice = coreHigh > 0.0 ? coreHigh : coreLow;
+                     coreColor, "JINPA COREBOX | Core Low");
+      m_activeCoreHigh = coreHigh;
+      m_activeCoreLow = coreLow;
+      m_activeGeneration = state.pendingCoreBox.active
+                           ? state.pendingCoreBox.targetGeneration
+                           : state.coreBox.generation;
+      m_activeLifecycle = state.coreBox.lifecycle;
       RefreshActiveCoreLabelPosition();
    }
 
    void Destroy()
    {
       ObjectsDeleteAll(m_chartId, m_prefix);
+      ObjectsDeleteAll(m_chartId, m_swingPrefix);
       ObjectsDeleteAll(m_chartId, m_brokenCorePrefix);
       ObjectsDeleteAll(m_chartId, m_sidewayHighPrefix);
       ObjectsDeleteAll(m_chartId, m_sidewayLowPrefix);
-      m_activeCoreType = CORE_SWING_NONE;
-      m_activeCorePrice = 0.0;
+      m_activeCoreHigh = 0.0;
+      m_activeCoreLow = 0.0;
+      m_activeGeneration = 0;
+      m_activeLifecycle = CORE_BOX_EMPTY;
       ChartRedraw(m_chartId);
    }
 };
