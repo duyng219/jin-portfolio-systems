@@ -39,9 +39,7 @@ private:
     bool            m_watchEnableStructureAuditLog;
     bool            m_watchEnableCoreBreakAuditLog;
     bool            m_watchShowStructureSwings;
-    bool            m_watchNotifyCoreSwingChange;
-    bool            m_watchNotifyCoreBreakCandidate;
-    bool            m_watchNotifyCycleChange;
+    bool            m_watchEnableStructureNotifications;
 
     void            ResetContext(void);
     void            UpdateStructureRenderer(void);
@@ -82,9 +80,7 @@ CWatchIntegration::CWatchIntegration(void)
     m_watchEnableStructureAuditLog   = false;
     m_watchEnableCoreBreakAuditLog   = false;
     m_watchShowStructureSwings       = true;
-    m_watchNotifyCoreSwingChange     = true;
-    m_watchNotifyCoreBreakCandidate  = true;
-    m_watchNotifyCycleChange         = true;
+    m_watchEnableStructureNotifications = true;
 
     ResetContext();
 }
@@ -224,9 +220,7 @@ bool CWatchIntegration::Initialize(const string symbol, const ENUM_TIMEFRAMES ti
     }
 
     m_structureNotificationManager.Configure(
-        m_watchNotifyCoreSwingChange,
-        m_watchNotifyCoreBreakCandidate,
-        m_watchNotifyCycleChange,
+        m_watchEnableStructureNotifications,
         m_watchEnableStructureAuditLog);
 
     m_structureRenderer.Configure(m_watchShowStructureSwings);

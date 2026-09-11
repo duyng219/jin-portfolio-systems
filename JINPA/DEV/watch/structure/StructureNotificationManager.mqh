@@ -8,12 +8,11 @@
 class CStructureNotificationManager
 {
 private:
-   bool           m_notifyCoreSwingChange;
-   bool           m_notifyCoreBreakCandidate;
-   bool           m_notifyCycleChange;
+   bool           m_enabled;
    bool           m_enableAuditLog;
    StructureEvent m_queue[];
    string         m_knownIdentities[];
+   int            m_realSendAttempts;
 
    bool IsKnownIdentity(const string identity) const
    {
@@ -28,90 +27,74 @@ private:
 
    bool ShouldNotify(const StructureEvent &event) const
    {
-      if(event.type == CORE_SWING_CHANGED)
-         return m_notifyCoreSwingChange;
-      if(event.type == CORE_BREAK_CANDIDATE)
-         return m_notifyCoreBreakCandidate;
+      if(!m_enabled)
+         return false;
       if(event.type == CYCLE_CHANGED)
-         return m_notifyCycleChange;
-      return false;
-   }
-
-   string FormatPrice(const string symbol, const double price) const
-   {
-      const int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
-      return DoubleToString(price, digits);
+         return event.cycleBefore != MARKET_CYCLE_UNKNOWN
+                && event.cycleAfter != MARKET_CYCLE_UNKNOWN
+                && event.cycleBefore != event.cycleAfter;
+      return event.type == CORE_BREAK_CANDIDATE
+             || event.type == CORE_BOX_TRANSITION_STARTED
+             || event.type == LEG_1_CONFIRMED
+             || event.type == LEG_2_CONFIRMED
+             || event.type == CORE_BREAK_FAILED
+             || event.type == SIDEWAY_CONFIRMED;
    }
 
    string FormatCycle(const ENUM_MARKET_CYCLE cycle) const
    {
       if(cycle == MARKET_CYCLE_BULL)
-         return "Bull ↑";
+         return "BULL";
       if(cycle == MARKET_CYCLE_BEAR)
-         return "Bear ↓";
-      return "Unknown";
+         return "BEAR";
+      return "UNKNOWN";
    }
 
    string FormatCoreType(const ENUM_CORE_SWING_TYPE coreType) const
    {
       if(coreType == CORE_SWING_LOW)
-         return "Core low";
+         return "CORE LOW";
       if(coreType == CORE_SWING_HIGH)
-         return "Core high";
-      return "Core";
-   }
-
-   string FormatBrokenCoreType(const ENUM_MARKET_CYCLE oldCycle) const
-   {
-      if(oldCycle == MARKET_CYCLE_BULL)
-         return "core low";
-      if(oldCycle == MARKET_CYCLE_BEAR)
-         return "core high";
-      return "core";
-   }
-
-   string FormatCoreUpdateDetail(const ENUM_CORE_SWING_TYPE coreType,
-                                 const string fallback) const
-   {
-      if(coreType == CORE_SWING_LOW)
-         return "Break high confirmed";
-      if(coreType == CORE_SWING_HIGH)
-         return "Break low confirmed";
-      return fallback;
+         return "CORE HIGH";
+      return "CORE";
    }
 
    string BuildMessage(const StructureEvent &event) const
    {
-      const string heading = "JINPA WATCH | " + event.symbol + " "
+      const string heading = "JINPA | " + event.symbol + " "
                              + WatcherTimeframeToString(event.timeframe) + "\n";
 
-      if(event.type == CORE_SWING_CHANGED)
-      {
-         return heading + "Core updated\n"
-                + FormatCycle(event.cycleAfter) + " | "
-                + FormatCoreType(event.coreType) + " "
-                + FormatPrice(event.symbol, event.oldCoreLevel) + " → "
-                + FormatPrice(event.symbol, event.newCoreLevel) + "\n"
-                + FormatCoreUpdateDetail(event.coreType, event.reason);
-      }
-
       if(event.type == CORE_BREAK_CANDIDATE)
-      {
-         return heading + "Core break candidate\n"
-                + FormatCycle(event.cycleBefore) + " | "
-                + FormatCoreType(event.coreType) + " "
-                + FormatPrice(event.symbol, event.oldCoreLevel) + "\n"
-                + "Waiting confirmation";
-      }
+         return heading + "BREAK CANDIDATE | "
+                + FormatCoreType(event.coreType) + " | "
+                + FormatCycle(event.cycleBefore);
+
+      if(event.type == CORE_BOX_TRANSITION_STARTED)
+         return heading + "CORE UPDATED | "
+                + FormatCoreType(event.coreType) + " | "
+                + FormatCycle(event.cycleAfter);
 
       if(event.type == CYCLE_CHANGED)
-      {
-         return heading + "Cycle change\n"
+         return heading + "CYCLE CHANGED | "
                 + FormatCycle(event.cycleBefore) + " → "
-                + FormatCycle(event.cycleAfter) + "\n"
-                + "Broken " + FormatBrokenCoreType(event.cycleBefore) + " "
-                + FormatPrice(event.symbol, event.oldCoreLevel);
-      }
+                + FormatCycle(event.cycleAfter);
+
+      if(event.type == LEG_1_CONFIRMED)
+         return heading + "LEG 1 CONFIRMED | "
+                + FormatCycle(event.cycleAfter);
+
+      if(event.type == LEG_2_CONFIRMED)
+         return heading + "LEG 2 CONFIRMED | "
+                + FormatCycle(event.cycleAfter);
+
+      if(event.type == CORE_BREAK_FAILED)
+         return heading + "FALSE BREAK | "
+                + FormatCoreType(event.coreType) + " | "
+                + FormatCycle(event.cycleAfter);
+
+      if(event.type == SIDEWAY_CONFIRMED)
+         return heading + "SIDEWAY CONFIRMED | "
+                + FormatCycle(event.cycleAfter);
 
       return "";
    }
@@ -127,21 +110,17 @@ private:
 public:
    CStructureNotificationManager()
    {
-      m_notifyCoreSwingChange = true;
-      m_notifyCoreBreakCandidate = true;
-      m_notifyCycleChange = true;
+      m_enabled = true;
       m_enableAuditLog = false;
+      m_realSendAttempts = 0;
    }
 
-   void Configure(const bool notifyCoreSwingChange,
-                  const bool notifyCoreBreakCandidate,
-                  const bool notifyCycleChange,
+   void Configure(const bool enabled,
                   const bool enableAuditLog)
    {
-      m_notifyCoreSwingChange = notifyCoreSwingChange;
-      m_notifyCoreBreakCandidate = notifyCoreBreakCandidate;
-      m_notifyCycleChange = notifyCycleChange;
+      m_enabled = enabled;
       m_enableAuditLog = enableAuditLog;
+      m_realSendAttempts = 0;
       ArrayResize(m_queue, 0);
       ArrayResize(m_knownIdentities, 0);
    }
@@ -179,7 +158,14 @@ public:
       if(message == "")
          return;
 
+      // Integration already suppresses enqueue/dispatch in Strategy Tester.
+      // Keep a second guard here so direct manager tests can never reach the
+      // terminal Push API either.
+      if((bool)MQLInfoInteger(MQL_TESTER))
+         return;
+
       ResetLastError();
+      m_realSendAttempts++;
       if(SendNotification(message))
       {
          if(m_enableAuditLog)
@@ -200,6 +186,42 @@ public:
                     + StructureEventTypeToString(event.type)
                     + "\nSendNotification: FAILED"
                     + "\nGetLastError: " + IntegerToString(errorCode));
+      }
+   }
+
+   bool LabProbeEligible(const StructureEvent &event) const
+   {
+      return ShouldNotify(event);
+   }
+
+   string LabProbeBuildMessage(const StructureEvent &event) const
+   {
+      return BuildMessage(event);
+   }
+
+   int LabProbeQueueSize() const
+   {
+      return ArraySize(m_queue);
+   }
+
+   int LabProbeKnownIdentityCount() const
+   {
+      return ArraySize(m_knownIdentities);
+   }
+
+   int LabProbeRealSendAttempts() const
+   {
+      return m_realSendAttempts;
+   }
+
+   void LabProbeDrainMessages(string &messages[])
+   {
+      const int count = ArraySize(m_queue);
+      ArrayResize(messages, count);
+      for(int index = 0; index < count; index++)
+      {
+         messages[index] = BuildMessage(m_queue[0]);
+         RemoveFirstQueuedEvent();
       }
    }
 };

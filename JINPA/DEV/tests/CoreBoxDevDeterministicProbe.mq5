@@ -2765,6 +2765,403 @@ void TestCase3LBootstrapSequential()
    renderer.Destroy();
 }
 
+StructureEvent MakeNotificationEvent(
+   const ENUM_STRUCTURE_EVENT_TYPE type,
+   const string identity,
+   const string symbol,
+   const ENUM_TIMEFRAMES timeframe,
+   const ENUM_MARKET_CYCLE cycleBefore,
+   const ENUM_MARKET_CYCLE cycleAfter,
+   const ENUM_CORE_SWING_TYPE coreType,
+   const datetime eventTime)
+{
+   StructureEvent event;
+   event.type = type;
+   event.symbol = symbol;
+   event.timeframe = timeframe;
+   event.eventBarTime = eventTime;
+   event.cycleBefore = cycleBefore;
+   event.cycleAfter = cycleAfter;
+   event.coreType = coreType;
+   event.oldCoreLevel = 100.0;
+   event.newCoreLevel = 101.0;
+   event.breakLevel = 99.0;
+   event.reason = "CASE4_PROBE";
+   event.identity = identity;
+   event.boxGeneration = 2;
+   event.sidewayConfirmationType = SIDEWAY_CLEAN_2_LEG;
+   return event;
+}
+
+int NotificationMessageCount(const string &messages[],
+                             const string label)
+{
+   int count = 0;
+   for(int index = 0; index < ArraySize(messages); index++)
+      if(StringFind(messages[index], label) >= 0)
+         count++;
+   return count;
+}
+
+void EnqueuePendingEngineEvents(CPriceStructureEngine &engine,
+                                CStructureNotificationManager &manager)
+{
+   StructureEvent events[];
+   engine.ConsumeEvents(events);
+   for(int index = 0; index < ArraySize(events); index++)
+      manager.Enqueue(events[index]);
+}
+
+void TestNotificationABreakCandidate()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   StructureEvent event = MakeNotificationEvent(
+      CORE_BREAK_CANDIDATE, "N-A", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BULL, CORE_SWING_LOW, 1000);
+   manager.Enqueue(event);
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(ArraySize(messages) == 1
+         && messages[0] == "JINPA | XAUUSD H1\n"
+                           "BREAK CANDIDATE | CORE LOW | BULL",
+         "N_A_BREAK_CANDIDATE", "one compact symbol/TF/Core/Cycle message");
+}
+
+void TestNotificationBCoreUpdated()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   StructureEvent discarded[];
+   engine.ConsumeEvents(discarded);
+   engine.LabProbeSwing(SWING_LOW, 95.0, 1010, 1011);
+   engine.ConsumeEvents(discarded);
+   engine.LabProbeClose(111.0, 1020);
+   engine.LabProbeClose(112.0, 1021);
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   EnqueuePendingEngineEvents(engine, manager);
+   engine.LabProbeSwing(SWING_HIGH, 120.0, 1030, 1031);
+   EnqueuePendingEngineEvents(engine, manager);
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(NotificationMessageCount(messages, "CORE UPDATED") == 1
+         && NotificationMessageCount(messages, "CORE_BOX_CHANGED") == 0
+         && NotificationMessageCount(messages,
+                                      "CORE UPDATED | CORE LOW | BULL") == 1,
+         "N_B_CORE_UPDATED",
+         "transition promotion maps once; completion noise is ignored");
+}
+
+void TestNotificationCCycleChanged()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   StructureEvent event = MakeNotificationEvent(
+      CYCLE_CHANGED, "N-C", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BEAR, CORE_SWING_NONE, 1000);
+   manager.Enqueue(event);
+   manager.Enqueue(MakeNotificationEvent(
+      CYCLE_CHANGED, "N-C-CONTINUATION", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BULL, CORE_SWING_NONE, 1001));
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(ArraySize(messages) == 1
+         && StringFind(messages[0],
+                       "CYCLE CHANGED | BULL → BEAR") >= 0,
+         "N_C_CYCLE_CHANGED",
+         "actual reversal formats once; Bull-to-Bull is ineligible");
+}
+
+void TestNotificationDLeg1()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   manager.Enqueue(MakeNotificationEvent(
+      LEG_1_CONFIRMED, "N-D", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BULL, CORE_SWING_NONE, 1000));
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(ArraySize(messages) == 1
+         && StringFind(messages[0], "LEG 1 CONFIRMED | BULL") >= 0,
+         "N_D_LEG_1", "one event-driven Leg 1 notification");
+}
+
+void TestNotificationELeg2()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   manager.Enqueue(MakeNotificationEvent(
+      LEG_2_CONFIRMED, "N-E", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BEAR, MARKET_CYCLE_BEAR, CORE_SWING_NONE, 1000));
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(ArraySize(messages) == 1
+         && StringFind(messages[0], "LEG 2 CONFIRMED | BEAR") >= 0,
+         "N_E_LEG_2", "one event-driven Leg 2 notification");
+}
+
+void TestNotificationFFalseBreak()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   manager.Enqueue(MakeNotificationEvent(
+      CORE_BREAK_FAILED, "N-F", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BULL, CORE_SWING_LOW, 1000));
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(ArraySize(messages) == 1
+         && StringFind(messages[0],
+                       "FALSE BREAK | CORE LOW | BULL") >= 0,
+         "N_F_FALSE_BREAK", "candidate failure maps without a new detector");
+}
+
+void TestNotificationGSideway()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   manager.Enqueue(MakeNotificationEvent(
+      SIDEWAY_CONFIRMED, "N-G", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BEAR, MARKET_CYCLE_BEAR, CORE_SWING_NONE, 1000));
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(ArraySize(messages) == 1
+         && StringFind(messages[0], "SIDEWAY CONFIRMED | BEAR") >= 0,
+         "N_G_SIDEWAY_CONFIRMED", "one semantic Sideway notification");
+}
+
+void TestNotificationHConfirmedBreakNotFalseBreak()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   StructureEvent discarded[];
+   engine.ConsumeEvents(discarded);
+   BeginDownTransition(engine);
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   EnqueuePendingEngineEvents(engine, manager);
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(NotificationMessageCount(messages, "BREAK CANDIDATE") == 1
+         && NotificationMessageCount(messages, "FALSE BREAK") == 0,
+         "N_H_CONFIRMED_BREAK_NOT_FALSE_BREAK",
+         "confirmed transition never fabricates candidate failure");
+}
+
+void TestNotificationIFirstCandidateDuplicate()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   StructureEvent event = MakeNotificationEvent(
+      CORE_BREAK_CANDIDATE, "N-I", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BULL, CORE_SWING_LOW, 1000);
+   manager.Enqueue(event);
+   manager.Enqueue(event);
+   manager.Enqueue(event);
+   Check(manager.LabProbeQueueSize() == 1
+         && manager.LabProbeKnownIdentityCount() == 1,
+         "N_I_FIRST_CANDIDATE_DUPLICATE",
+         "same semantic identity is queued once");
+}
+
+void TestNotificationJLeg1DuplicateState()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   StructureEvent discarded[];
+   engine.ConsumeEvents(discarded);
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   engine.LabProbeSwing(SWING_LOW, 100.0, 1010, 1011);
+   EnqueuePendingEngineEvents(engine, manager);
+   engine.LabProbeClosedBar(108.0, 96.0, 102.0, 1012);
+   engine.LabProbeClosedBar(107.0, 97.0, 103.0, 1013);
+   EnqueuePendingEngineEvents(engine, manager);
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(NotificationMessageCount(messages, "LEG 1 CONFIRMED") == 1,
+         "N_J_LEG_1_DUPLICATE_STATE",
+         "later bars with active Leg 1 emit no repeated event");
+}
+
+void TestNotificationKLeg2DuplicateState()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   StructureEvent discarded[];
+   engine.ConsumeEvents(discarded);
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   engine.LabProbeSwing(SWING_LOW, 100.0, 1010, 1011);
+   engine.LabProbeSwing(SWING_HIGH, 105.0, 1020, 1021);
+   engine.LabProbeSwing(SWING_LOW, 98.0, 1030, 1031);
+   EnqueuePendingEngineEvents(engine, manager);
+   engine.LabProbeClosedBar(106.0, 96.0, 102.0, 1032);
+   engine.LabProbeClosedBar(105.0, 97.0, 103.0, 1033);
+   EnqueuePendingEngineEvents(engine, manager);
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(NotificationMessageCount(messages, "LEG 2 CONFIRMED") == 1,
+         "N_K_LEG_2_DUPLICATE_STATE",
+         "later bars with active Leg 2 emit no repeated event");
+}
+
+void TestNotificationLSidewayDuplicateState()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   StructureEvent discarded[];
+   engine.ConsumeEvents(discarded);
+   FeedCleanBull(engine);
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   EnqueuePendingEngineEvents(engine, manager);
+   string initial[];
+   manager.LabProbeDrainMessages(initial);
+   engine.LabProbeClosedBar(108.0, 96.0, 102.0, 1050);
+   engine.LabProbeClosedBar(107.0, 97.0, 103.0, 1060);
+   EnqueuePendingEngineEvents(engine, manager);
+   Check(NotificationMessageCount(initial, "SIDEWAY CONFIRMED") == 1
+         && manager.LabProbeQueueSize() == 0,
+         "N_L_SIDEWAY_DUPLICATE_STATE",
+         "closed-bar right-edge updates emit no notification");
+}
+
+void TestNotificationMBootstrap()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, true);
+   FeedCleanBull(engine);
+   engine.LabProbeClose(111.0, 1050);
+   engine.LabProbeClose(105.0, 1051);
+   StructureEvent pending[];
+   engine.ConsumeEvents(pending);
+   Check(ArraySize(pending) == 0,
+         "N_M_BOOTSTRAP", "historical reconstruction exposes zero live events");
+}
+
+void TestNotificationNTesterSuppression()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   manager.Enqueue(MakeNotificationEvent(
+      CORE_BREAK_CANDIDATE, "N-N", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BULL, CORE_SWING_LOW, 1000));
+   manager.DispatchNext();
+   Check((bool)MQLInfoInteger(MQL_TESTER)
+         && manager.LabProbeQueueSize() == 0
+         && manager.LabProbeRealSendAttempts() == 0,
+         "N_N_TESTER_SUPPRESSION",
+         "direct dispatch is consumed without calling SendNotification");
+}
+
+void TestNotificationOSameBarDistinctEvents()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   manager.Enqueue(MakeNotificationEvent(
+      CYCLE_CHANGED, "N-O-CYCLE", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BEAR, CORE_SWING_NONE, 1021));
+   manager.Enqueue(MakeNotificationEvent(
+      CORE_BOX_TRANSITION_STARTED, "N-O-CORE", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BEAR, CORE_SWING_HIGH, 1021));
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   Check(ArraySize(messages) == 2
+         && StringFind(messages[0], "CYCLE CHANGED") >= 0
+         && StringFind(messages[1], "CORE UPDATED") >= 0,
+         "N_O_SAME_BAR_DISTINCT_EVENTS",
+         "FIFO retains both distinct identities from one closed bar");
+}
+
+void TestNotificationPEventOrder()
+{
+   const ENUM_STRUCTURE_EVENT_TYPE types[] =
+   {
+      CORE_BREAK_CANDIDATE, CORE_BOX_TRANSITION_STARTED, CYCLE_CHANGED,
+      LEG_1_CONFIRMED, LEG_2_CONFIRMED, CORE_BREAK_FAILED,
+      SIDEWAY_CONFIRMED
+   };
+   const string labels[] =
+   {
+      "BREAK CANDIDATE", "CORE UPDATED", "CYCLE CHANGED",
+      "LEG 1 CONFIRMED", "LEG 2 CONFIRMED", "FALSE BREAK",
+      "SIDEWAY CONFIRMED"
+   };
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   for(int index = 0; index < 7; index++)
+      manager.Enqueue(MakeNotificationEvent(
+         types[index], "N-P-" + IntegerToString(index), "XAUUSD", PERIOD_H1,
+         index == 2 ? MARKET_CYCLE_BULL : MARKET_CYCLE_BEAR,
+         MARKET_CYCLE_BEAR,
+         index == 0 ? CORE_SWING_HIGH : index == 1 ? CORE_SWING_HIGH
+         : index == 5 ? CORE_SWING_HIGH : CORE_SWING_NONE,
+         1000 + index));
+   string messages[];
+   manager.LabProbeDrainMessages(messages);
+   bool ordered = ArraySize(messages) == 7;
+   for(int index = 0; ordered && index < 7; index++)
+      ordered = StringFind(messages[index], labels[index]) >= 0;
+   Check(ordered, "N_P_EVENT_ORDER", "notification FIFO matches enqueue order");
+}
+
+void TestNotificationQSessionDedup()
+{
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   StructureEvent xau = MakeNotificationEvent(
+      CORE_BREAK_CANDIDATE, "XAUUSD|60|candidate|1000", "XAUUSD", PERIOD_H1,
+      MARKET_CYCLE_BULL, MARKET_CYCLE_BULL, CORE_SWING_LOW, 1000);
+   StructureEvent eur = MakeNotificationEvent(
+      CORE_BREAK_CANDIDATE, "EURUSD|120|candidate|1000", "EURUSD", PERIOD_H2,
+      MARKET_CYCLE_BEAR, MARKET_CYCLE_BEAR, CORE_SWING_HIGH, 1000);
+   manager.Enqueue(xau);
+   manager.Enqueue(xau);
+   manager.Enqueue(eur);
+   Check(manager.LabProbeQueueSize() == 2
+         && manager.LabProbeKnownIdentityCount() == 2,
+         "N_Q_SESSION_DEDUP",
+         "duplicate suppressed; symbol/timeframe identities stay independent");
+}
+
+void TestNotificationRFormatting()
+{
+   const ENUM_STRUCTURE_EVENT_TYPE types[] =
+   {
+      CORE_BREAK_CANDIDATE, CORE_BOX_TRANSITION_STARTED, CYCLE_CHANGED,
+      LEG_1_CONFIRMED, LEG_2_CONFIRMED, CORE_BREAK_FAILED,
+      SIDEWAY_CONFIRMED
+   };
+   const string bodies[] =
+   {
+      "BREAK CANDIDATE | CORE LOW | BULL",
+      "CORE UPDATED | CORE LOW | BULL",
+      "CYCLE CHANGED | BULL → BEAR",
+      "LEG 1 CONFIRMED | BULL",
+      "LEG 2 CONFIRMED | BULL",
+      "FALSE BREAK | CORE LOW | BULL",
+      "SIDEWAY CONFIRMED | BULL"
+   };
+   CStructureNotificationManager manager;
+   manager.Configure(true, false);
+   bool exact = true;
+   for(int index = 0; exact && index < 7; index++)
+   {
+      StructureEvent event = MakeNotificationEvent(
+         types[index], "N-R-" + IntegerToString(index), "XAUUSD", PERIOD_H1,
+         MARKET_CYCLE_BULL,
+         index == 2 ? MARKET_CYCLE_BEAR : MARKET_CYCLE_BULL,
+         index == 0 || index == 1 || index == 5
+         ? CORE_SWING_LOW : CORE_SWING_NONE,
+         1000 + index);
+      exact = manager.LabProbeEligible(event)
+              && manager.LabProbeBuildMessage(event)
+                 == "JINPA | XAUUSD H1\n" + bodies[index];
+   }
+   Check(exact, "N_R_FORMATTING", "all seven labels and compact bodies exact");
+}
+
 int OnInit()
 {
    TestBullContinuation();
@@ -2907,6 +3304,28 @@ int OnInit()
    TestCase3LBootstrapSequential();
    const int case3Passed = g_passed - beforeCase3Passed;
    const int case3Failed = g_failed - beforeCase3Failed;
+   const int beforeNotificationPassed = g_passed;
+   const int beforeNotificationFailed = g_failed;
+   TestNotificationABreakCandidate();
+   TestNotificationBCoreUpdated();
+   TestNotificationCCycleChanged();
+   TestNotificationDLeg1();
+   TestNotificationELeg2();
+   TestNotificationFFalseBreak();
+   TestNotificationGSideway();
+   TestNotificationHConfirmedBreakNotFalseBreak();
+   TestNotificationIFirstCandidateDuplicate();
+   TestNotificationJLeg1DuplicateState();
+   TestNotificationKLeg2DuplicateState();
+   TestNotificationLSidewayDuplicateState();
+   TestNotificationMBootstrap();
+   TestNotificationNTesterSuppression();
+   TestNotificationOSameBarDistinctEvents();
+   TestNotificationPEventOrder();
+   TestNotificationQSessionDedup();
+   TestNotificationRFormatting();
+   const int notificationPassed = g_passed - beforeNotificationPassed;
+   const int notificationFailed = g_failed - beforeNotificationFailed;
    Print("[COREBOX_DEV_TEST][SECTIONS] semantic=", semanticPassed,
          "/", semanticFailed,
          " parameter=", parameterPassed, "/", parameterFailed,
@@ -2916,7 +3335,8 @@ int OnInit()
          " case1_fixed=", closedBarPassed, "/", closedBarFailed,
          " left_edge=", leftEdgePassed, "/", leftEdgeFailed,
          " broken_core=", brokenCorePassed, "/", brokenCoreFailed,
-         " case3=", case3Passed, "/", case3Failed);
+         " case3=", case3Passed, "/", case3Failed,
+         " case4_notify=", notificationPassed, "/", notificationFailed);
    Print("[COREBOX_DEV_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,
          " trades=0 pending=0 cancels=0 closes=0 push=0");
