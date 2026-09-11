@@ -13,8 +13,6 @@ private:
    const string m_sidewayHighPrefix;
    const string m_sidewayLowPrefix;
    long         m_chartId;
-   bool         m_enabled;
-   bool         m_showCoreBox;
    bool         m_showStructureSwings;
    double       m_activeCoreHigh;
    double       m_activeCoreLow;
@@ -307,8 +305,6 @@ public:
                                m_sidewayLowPrefix("JINPA_SIDEWAY_BOX_LOW_")
    {
       m_chartId = 0;
-      m_enabled = false;
-      m_showCoreBox = true;
       m_showStructureSwings = true;
       m_activeCoreHigh = 0.0;
       m_activeCoreLow = 0.0;
@@ -316,29 +312,15 @@ public:
       m_activeLifecycle = CORE_BOX_EMPTY;
    }
 
-   void Configure(const bool showCoreBox,
-                  const bool showStructureSwings)
+   void Configure(const bool showStructureSwings)
    {
-      m_showCoreBox = showCoreBox;
       m_showStructureSwings = showStructureSwings;
-      m_enabled = showCoreBox || showStructureSwings;
-
-      if(!m_showCoreBox)
-      {
-         ObjectDelete(m_chartId, m_prefix + "CORE_HIGH");
-         ObjectDelete(m_chartId, m_prefix + "CORE_LOW");
-         ObjectDelete(m_chartId, m_prefix + "CORE_HIGH_LABEL");
-         ObjectDelete(m_chartId, m_prefix + "CORE_LOW_LABEL");
-      }
       if(!m_showStructureSwings)
          ObjectsDeleteAll(m_chartId, m_swingPrefix);
    }
 
    void RefreshActiveCoreLabelPosition()
    {
-      if(!m_enabled)
-         return;
-
       const color coreColor = C'255,165,0';
       const string generation = " G" + IntegerToString(m_activeGeneration);
       const string transition =
@@ -356,9 +338,6 @@ public:
                const BrokenCoreRecord &brokenCores[],
                const SidewayBoxRecord &sidewayBoxes[])
    {
-      if(!m_enabled)
-         return;
-
       if(m_showStructureSwings)
       {
          const int count = ArraySize(swings);
@@ -395,19 +374,29 @@ public:
          DrawSidewayBoundary(activeBox, false);
       }
 
-      const bool hasCoreHigh = state.coreBox.lifecycle == CORE_BOX_COMPLETE
-                               || state.coreBox.lifecycle == CORE_BOX_PENDING_LOW;
-      const bool hasCoreLow = state.coreBox.lifecycle == CORE_BOX_COMPLETE
-                              || state.coreBox.lifecycle == CORE_BOX_PENDING_HIGH;
-      const double coreHigh = m_showCoreBox && hasCoreHigh
-                               ? state.coreBox.coreHigh.price : 0.0;
-      const double coreLow = m_showCoreBox && hasCoreLow
-                              ? state.coreBox.coreLow.price : 0.0;
+      // The Engine owns both Core boundaries.  The chart owns one protected
+      // boundary only: Bull protects Low; Bear protects High.  Lifecycle is
+      // checked as well so empty or inconsistent snapshots clear stale UI.
+      const bool bullProtected = state.initialized
+                                 && state.coreBox.cycle == MARKET_CYCLE_BULL
+                                 && (state.coreBox.lifecycle == CORE_BOX_COMPLETE
+                                     || state.coreBox.lifecycle
+                                        == CORE_BOX_PENDING_HIGH)
+                                 && state.coreBox.coreLow.confirmed;
+      const bool bearProtected = state.initialized
+                                 && state.coreBox.cycle == MARKET_CYCLE_BEAR
+                                 && (state.coreBox.lifecycle == CORE_BOX_COMPLETE
+                                     || state.coreBox.lifecycle
+                                        == CORE_BOX_PENDING_LOW)
+                                 && state.coreBox.coreHigh.confirmed;
+      const double coreHigh = bearProtected
+                              ? state.coreBox.coreHigh.price : 0.0;
+      const double coreLow = bullProtected
+                             ? state.coreBox.coreLow.price : 0.0;
       const color coreColor = C'255,165,0';
 
-      // Stable names plus one explicit redraw make the two queued price
-      // changes one logical generation update; neither object carries a
-      // generation-specific name that could leave stale pairs behind.
+      // Stable names plus zero-price deletion remove the formerly protected
+      // side in the same refresh without touching finite Broken Core history.
       UpdateCoreLine(m_prefix + "CORE_HIGH", coreHigh,
                      coreColor, "JINPA COREBOX | Core High");
       UpdateCoreLine(m_prefix + "CORE_LOW", coreLow,

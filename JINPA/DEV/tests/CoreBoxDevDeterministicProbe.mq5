@@ -278,7 +278,7 @@ void TestDualRendererContract()
    CPriceStructureEngine engine;
    engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, true);
+   renderer.Configure(true);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
@@ -304,17 +304,16 @@ void TestDualRendererContract()
       if(StringFind(ObjectName(0, index, 0, OBJ_HLINE),
                     "JINPA_STRUCT_CORE_") == 0)
          ownedLineCount++;
-   const bool rendererOk = ObjectFind(0, highName) >= 0
+   const bool rendererOk = ObjectFind(0, highName) < 0
       && ObjectFind(0, lowName) >= 0
-      && ownedLineCount == 2
-      && SamePrice(ObjectGetDouble(0, highName, OBJPROP_PRICE), 120.0)
+      && ownedLineCount == 1
       && SamePrice(ObjectGetDouble(0, lowName, OBJPROP_PRICE), 95.0);
    Check(before.coreBox.valid
          && SamePrice(unchanged.coreBox.coreHigh.price, 110.0)
          && SamePrice(unchanged.coreBox.coreLow.price, 90.0)
          && changed.coreBox.generation == 2
          && rendererOk,
-         "TEST_13_DUAL_RENDERER", "exactly two stable lines, atomic new generation");
+         "TEST_13_DUAL_RENDERER", "Engine stays dual; chart shows protected Bull Low only");
    renderer.Destroy();
 }
 
@@ -392,26 +391,24 @@ void TestWatchConfigurationAndValidation()
    int atrPeriod = 0;
    double buffer = 0.0;
    int closes = 0;
-   bool showCore = false;
    bool showSwings = false;
    watch.GetStructureConfiguration(left, right, atrPeriod, buffer, closes,
-                                   showCore, showSwings);
+                                   showSwings);
    const bool defaults = left == 5 && right == 5 && atrPeriod == 14
                          && SamePrice(buffer, 0.10) && closes == 2
-                         && showCore && showSwings;
-   const bool accepted = watch.ConfigureStructure(4, 3, 10, 0.25, 3,
-                                                   false, true);
+                         && showSwings;
+   const bool accepted = watch.ConfigureStructure(4, 3, 10, 0.25, 3, false);
    watch.GetStructureConfiguration(left, right, atrPeriod, buffer, closes,
-                                   showCore, showSwings);
+                                   showSwings);
    const bool routed = left == 4 && right == 3 && atrPeriod == 10
                        && SamePrice(buffer, 0.25) && closes == 3
-                       && !showCore && showSwings;
+                       && !showSwings;
    const bool invalidRejected =
-      !watch.ConfigureStructure(0, 3, 10, 0.25, 3, true, true)
-      && !watch.ConfigureStructure(3, 0, 10, 0.25, 3, true, true)
-      && !watch.ConfigureStructure(3, 3, 0, 0.25, 3, true, true)
-      && !watch.ConfigureStructure(3, 3, 10, -0.01, 3, true, true)
-      && !watch.ConfigureStructure(3, 3, 10, 0.25, 0, true, true);
+      !watch.ConfigureStructure(0, 3, 10, 0.25, 3, true)
+      && !watch.ConfigureStructure(3, 0, 10, 0.25, 3, true)
+      && !watch.ConfigureStructure(3, 3, 0, 0.25, 3, true)
+      && !watch.ConfigureStructure(3, 3, 10, -0.01, 3, true)
+      && !watch.ConfigureStructure(3, 3, 10, 0.25, 0, true);
    Check(defaults && accepted && routed && invalidRejected,
          "CONFIG_02_WATCH_ROUTING_VALIDATION",
          "defaults/routing valid; invalid values rejected");
@@ -517,8 +514,8 @@ int CountOwnedObjectsAny(const string prefix)
    return count;
 }
 
-void TestDisplayCombination(const bool showCore,
-                            const bool showSwings,
+void TestDisplayCombination(const bool showSwings,
+                            const bool repeatRefresh,
                             const string testName)
 {
    CPriceStructureEngine engine;
@@ -559,9 +556,11 @@ void TestDisplayCombination(const bool showCore,
    SidewayBoxRecord boxes[];
 
    CStructureDebugRenderer renderer;
-   renderer.Configure(showCore, showSwings);
+   renderer.Configure(showSwings);
    renderer.Destroy();
    renderer.Update(before, swings, broken, boxes);
+   if(repeatRefresh)
+      renderer.Update(before, swings, broken, boxes);
    const int coreLines = CountOwnedObjects(
       "JINPA_STRUCT_CORE_", OBJ_HLINE);
    const int swingLabels = CountOwnedObjects(
@@ -612,12 +611,14 @@ void TestDisplayCombination(const bool showCore,
                              && before.lastSwingHigh.time == after.lastSwingHigh.time
                              && before.lastSwingLow.time == after.lastSwingLow.time
                              && eventParity;
-   Check(coreLines == (showCore ? 2 : 0)
+   Check(coreLines == 1
+          && ObjectFind(0, "JINPA_STRUCT_CORE_HIGH") < 0
+          && ObjectFind(0, "JINPA_STRUCT_CORE_LOW") >= 0
           && swingLabels == (showSwings ? 4 : 0)
-          && (showCore || allCoreObjects == 0)
+          && allCoreObjects >= 1 && allCoreObjects <= 2
           && allSwingObjects == (showSwings ? 4 : 0)
           && goldenState && stateParity,
-         testName, "visual inventory only; structural state/events identical");
+         testName, "protected Core is automatic; swing option is independent");
    renderer.Destroy();
 }
 
@@ -1014,7 +1015,7 @@ void TestCase5RendererPendingHigh()
    BeginUpTransition(engine);
    PriceStructureState state = engine.LabProbeState();
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
@@ -1038,7 +1039,7 @@ void TestCase5RendererPendingLow()
    BeginDownTransition(engine);
    PriceStructureState state = engine.LabProbeState();
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
@@ -1055,29 +1056,31 @@ void TestCase5RendererPendingLow()
          "only promoted High rendered; no fabricated Low");
 }
 
-void TestCase5DisplayOff()
+void TestCase5AutomaticProtectedDisplay()
 {
    CPriceStructureEngine engine;
    engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
    BeginUpTransition(engine);
    PriceStructureState before = engine.LabProbeState();
    CStructureDebugRenderer renderer;
-   renderer.Configure(false, true);
+   renderer.Configure(true);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
    SidewayBoxRecord boxes[];
    renderer.Update(before, swings, broken, boxes);
    PriceStructureState after = engine.LabProbeState();
-   const bool noCoreObjects = CountOwnedObjectsAny(
-      "JINPA_STRUCT_CORE_") == 0;
+   const bool protectedCoreOnly = ObjectFind(0, "JINPA_STRUCT_CORE_LOW") >= 0
+                                  && ObjectFind(0, "JINPA_STRUCT_CORE_HIGH") < 0
+                                  && CountOwnedObjects(
+                                     "JINPA_STRUCT_CORE_", OBJ_HLINE) == 1;
    renderer.Destroy();
-   Check(noCoreObjects
+   Check(protectedCoreOnly
          && before.coreBox.lifecycle == after.coreBox.lifecycle
          && before.coreBox.generation == after.coreBox.generation
          && before.pendingCoreBox.active == after.pendingCoreBox.active,
-         "CASE5_17_DISPLAY_OFF",
-         "zero Core visuals; transition state unchanged");
+         "CASE5_17_AUTOMATIC_PROTECTED_DISPLAY",
+         "protected Core stays visible; transition state unchanged");
 }
 
 void BuildCase5OHLC(MqlRates &rates[])
@@ -1388,7 +1391,7 @@ void TestRepairB6RendererDirectionChange()
    CPriceStructureEngine engine;
    BuildPendingHighRecovery(engine);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
@@ -1429,7 +1432,7 @@ void TestCase1HigherInternalHigh()
    PriceStructureState after = engine.LabProbeState();
 
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
@@ -1950,7 +1953,7 @@ void TestFixedSidewayNewLifecycleIdentity()
    engine.LabProbeSidewayHistory(history);
 
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
@@ -2037,7 +2040,7 @@ void TestLeftEdgeBHighEarlierThanLow()
    PriceStructureState state;
    BuildLeftEdgeState(state, 800, 900, 1000, 1500, 2000);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    RenderLeftEdgeState(state, renderer);
    const string highName = LeftEdgeObjectName(true, 1000);
@@ -2055,7 +2058,7 @@ void TestLeftEdgeCLowEarlierThanHigh()
    PriceStructureState state;
    BuildLeftEdgeState(state, 900, 800, 1000, 1500, 2000);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    RenderLeftEdgeState(state, renderer);
    const string highName = LeftEdgeObjectName(true, 1000);
@@ -2073,7 +2076,7 @@ void TestLeftEdgeDLateConfirmationDoesNotMoveLeft()
    PriceStructureState state;
    BuildLeftEdgeState(state, 700, 800, 1000, 1900, 2000);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    RenderLeftEdgeState(state, renderer);
    const string highName = LeftEdgeObjectName(true, 1000);
@@ -2092,7 +2095,7 @@ void TestLeftEdgeELifecycleIdentitySeparated()
    PriceStructureState state;
    BuildLeftEdgeState(state, 800, 900, 1000, 1500, 2000);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    RenderLeftEdgeState(state, renderer);
    const string highName = LeftEdgeObjectName(true, 1000);
@@ -2112,7 +2115,7 @@ void TestLeftEdgeFRightUpdatesPreserveLeft()
    CPriceStructureEngine engine;
    BuildClosedBarSideway(engine);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    RenderLeftEdgeState(engine.LabProbeState(), renderer);
    for(int index = 0; index < 5; index++)
@@ -2142,7 +2145,7 @@ void TestLeftEdgeGConfirmedBreakPreservesGeometry()
    SidewayBoxRecord history[];
    engine.LabProbeSidewayHistory(history);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
@@ -2175,7 +2178,7 @@ void TestLeftEdgeHNewLifecycleIndependent()
    SidewayBoxRecord history[];
    engine.LabProbeSidewayHistory(history);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    BrokenCoreRecord broken[];
@@ -2376,7 +2379,7 @@ void TestBrokenCoreIRendererGeometry()
    BrokenCoreRecord records[];
    engine.LabProbeBrokenCoreHistory(records);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    SidewayBoxRecord sideway[];
@@ -2403,7 +2406,7 @@ void TestBrokenCoreJDuplicateRefresh()
    BrokenCoreRecord records[];
    engine.LabProbeBrokenCoreHistory(records);
    CStructureDebugRenderer renderer;
-   renderer.Configure(true, false);
+   renderer.Configure(false);
    renderer.Destroy();
    SwingPoint swings[];
    SidewayBoxRecord sideway[];
@@ -2447,6 +2450,321 @@ void TestBrokenCoreKBootstrapSequentialParity()
          "identical history yields identical semantic archive records");
 }
 
+void SeedCase3CoreObjects()
+{
+   const string highLine = "JINPA_STRUCT_CORE_HIGH";
+   const string lowLine = "JINPA_STRUCT_CORE_LOW";
+   const string highLabel = "JINPA_STRUCT_CORE_HIGH_LABEL";
+   const string lowLabel = "JINPA_STRUCT_CORE_LOW_LABEL";
+   if(ObjectFind(0, highLine) < 0)
+      ObjectCreate(0, highLine, OBJ_HLINE, 0, 0, 1.0);
+   if(ObjectFind(0, lowLine) < 0)
+      ObjectCreate(0, lowLine, OBJ_HLINE, 0, 0, 1.0);
+   if(ObjectFind(0, highLabel) < 0)
+      ObjectCreate(0, highLabel, OBJ_LABEL, 0, 0, 0);
+   if(ObjectFind(0, lowLabel) < 0)
+      ObjectCreate(0, lowLabel, OBJ_LABEL, 0, 0, 0);
+}
+
+bool Case3ProtectedVisual(const bool bull, const double expectedPrice)
+{
+   const string visibleLine = bull ? "JINPA_STRUCT_CORE_LOW"
+                                   : "JINPA_STRUCT_CORE_HIGH";
+   const string hiddenLine = bull ? "JINPA_STRUCT_CORE_HIGH"
+                                  : "JINPA_STRUCT_CORE_LOW";
+   const string visibleLabel = visibleLine + "_LABEL";
+   const string hiddenLabel = hiddenLine + "_LABEL";
+   return ObjectFind(0, visibleLine) >= 0
+          && ObjectFind(0, hiddenLine) < 0
+          && ObjectFind(0, visibleLabel) >= 0
+          && ObjectFind(0, hiddenLabel) < 0
+          && CountOwnedObjects("JINPA_STRUCT_CORE_", OBJ_HLINE) == 1
+          && SamePrice(ObjectGetDouble(0, visibleLine, OBJPROP_PRICE),
+                       expectedPrice)
+          && (color)ObjectGetInteger(0, visibleLine, OBJPROP_COLOR)
+             == C'255,165,0';
+}
+
+void RenderCase3(CStructureDebugRenderer &renderer,
+                 const PriceStructureState &state,
+                 const BrokenCoreRecord &broken[],
+                 const SidewayBoxRecord &boxes[])
+{
+   SwingPoint swings[];
+   renderer.Update(state, swings, broken, boxes);
+}
+
+void TestCase3ABullComplete()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   PriceStructureState state = engine.LabProbeState();
+   RenderCase3(renderer, state, broken, boxes);
+   Check(state.coreBox.valid
+         && SamePrice(state.coreBox.coreHigh.price, 110.0)
+         && SamePrice(state.coreBox.coreLow.price, 90.0)
+         && Case3ProtectedVisual(true, 90.0),
+         "C3_A_BULL_COMPLETE",
+         "dual Engine Core retained; orange Low line/label only");
+   renderer.Destroy();
+}
+
+void TestCase3BBearComplete()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   PriceStructureState state = engine.LabProbeState();
+   RenderCase3(renderer, state, broken, boxes);
+   Check(state.coreBox.valid && Case3ProtectedVisual(false, 110.0),
+         "C3_B_BEAR_COMPLETE", "orange High line/label only");
+   renderer.Destroy();
+}
+
+void TestCase3CBullPendingHigh()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   BeginUpTransition(engine);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   PriceStructureState state = engine.LabProbeState();
+   RenderCase3(renderer, state, broken, boxes);
+   Check(state.coreBox.lifecycle == CORE_BOX_PENDING_HIGH
+         && Case3ProtectedVisual(true, 95.0),
+         "C3_C_BULL_PENDING_HIGH", "authoritative Low remains visible");
+   renderer.Destroy();
+}
+
+void TestCase3DBearPendingLow()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   BeginDownTransition(engine);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   PriceStructureState state = engine.LabProbeState();
+   RenderCase3(renderer, state, broken, boxes);
+   Check(state.coreBox.lifecycle == CORE_BOX_PENDING_LOW
+         && Case3ProtectedVisual(false, 105.0),
+         "C3_D_BEAR_PENDING_LOW", "authoritative High remains visible");
+   renderer.Destroy();
+}
+
+void TestCase3EBullToBear()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   BrokenCoreRecord none[];
+   SidewayBoxRecord boxes[];
+   RenderCase3(renderer, engine.LabProbeState(), none, boxes);
+   const bool before = Case3ProtectedVisual(true, 90.0);
+   BeginDownTransition(engine);
+   BrokenCoreRecord broken[];
+   engine.LabProbeBrokenCoreHistory(broken);
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, engine.LabProbeState(), broken, boxes);
+   Check(before && Case3ProtectedVisual(false, 105.0)
+         && CountOwnedObjects("JINPA_BROKEN_CORE_", OBJ_TREND) == 1,
+         "C3_E_BULL_TO_BEAR",
+         "stale orange Low removed; High active; white Low retained");
+   renderer.Destroy();
+}
+
+void TestCase3FBearToBull()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   BrokenCoreRecord none[];
+   SidewayBoxRecord boxes[];
+   RenderCase3(renderer, engine.LabProbeState(), none, boxes);
+   const bool before = Case3ProtectedVisual(false, 110.0);
+   BeginUpTransition(engine);
+   BrokenCoreRecord broken[];
+   engine.LabProbeBrokenCoreHistory(broken);
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, engine.LabProbeState(), broken, boxes);
+   Check(before && Case3ProtectedVisual(true, 95.0)
+         && CountOwnedObjects("JINPA_BROKEN_CORE_", OBJ_TREND) == 1,
+         "C3_F_BEAR_TO_BULL",
+         "stale orange High removed; Low active; white High retained");
+   renderer.Destroy();
+}
+
+void TestCase3GNoValidCore()
+{
+   PriceStructureState state;
+   ResetPriceStructureState(state);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   RenderCase3(renderer, state, broken, boxes);
+   Check(CountOwnedObjectsAny("JINPA_STRUCT_CORE_") == 0,
+         "C3_G_NO_VALID_CORE", "empty snapshot clears lines and labels");
+   renderer.Destroy();
+}
+
+void TestCase3HExactlyOneActiveCore()
+{
+   CPriceStructureEngine engine;
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   bool allHealthy = true;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, engine.LabProbeState(), broken, boxes);
+   allHealthy = allHealthy && Case3ProtectedVisual(true, 90.0);
+   BeginUpTransition(engine);
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, engine.LabProbeState(), broken, boxes);
+   allHealthy = allHealthy && Case3ProtectedVisual(true, 95.0);
+   renderer.Destroy();
+   engine.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, engine.LabProbeState(), broken, boxes);
+   allHealthy = allHealthy && Case3ProtectedVisual(false, 110.0);
+   BeginDownTransition(engine);
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, engine.LabProbeState(), broken, boxes);
+   allHealthy = allHealthy && Case3ProtectedVisual(false, 105.0);
+   Check(allHealthy, "C3_H_EXACTLY_ONE_ACTIVE_CORE",
+         "Bull/Bear COMPLETE and PENDING fixtures each own one orange line");
+   renderer.Destroy();
+}
+
+void TestCase3ISidewayCoexistence()
+{
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   CPriceStructureEngine bull;
+   BuildClosedBarSideway(bull);
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, bull.LabProbeState(), broken, boxes);
+   bool coexist = Case3ProtectedVisual(true, 100.0)
+                  && CountOwnedObjects("JINPA_SIDEWAY_BOX_HIGH_", OBJ_TREND) == 1
+                  && CountOwnedObjects("JINPA_SIDEWAY_BOX_LOW_", OBJ_TREND) == 1;
+   renderer.Destroy();
+   CPriceStructureEngine bear;
+   bear.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   bear.LabProbeSwing(SWING_HIGH, 100.0, 1010, 1011);
+   bear.LabProbeSwing(SWING_LOW, 95.0, 1020, 1021);
+   bear.LabProbeSwing(SWING_HIGH, 102.0, 1030, 1031);
+   bear.LabProbeSwing(SWING_LOW, 96.0, 1040, 1041);
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, bear.LabProbeState(), broken, boxes);
+   coexist = coexist && Case3ProtectedVisual(false, 110.0)
+             && CountOwnedObjects("JINPA_SIDEWAY_BOX_HIGH_", OBJ_TREND) == 1
+             && CountOwnedObjects("JINPA_SIDEWAY_BOX_LOW_", OBJ_TREND) == 1;
+   Check(coexist, "C3_I_SIDEWAY_COEXISTENCE",
+         "Bull/Bear green ranges coexist with the protected orange side");
+   renderer.Destroy();
+}
+
+void TestCase3JBrokenCoreCoexistence()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedTwoCycleReversals(engine);
+   BrokenCoreRecord broken[];
+   engine.LabProbeBrokenCoreHistory(broken);
+   SidewayBoxRecord boxes[];
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, engine.LabProbeState(), broken, boxes);
+   Check(ArraySize(broken) == 2
+         && CountOwnedObjects("JINPA_BROKEN_CORE_", OBJ_TREND) == 2
+         && Case3ProtectedVisual(true, 95.0),
+         "C3_J_BROKEN_CORE_COEXISTENCE",
+         "two white reversals coexist with one current orange Low");
+   renderer.Destroy();
+}
+
+void TestCase3KMultipleRefresh()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   BeginDownTransition(engine);
+   BrokenCoreRecord broken[];
+   engine.LabProbeBrokenCoreHistory(broken);
+   SidewayBoxRecord boxes[];
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   for(int index = 0; index < 5; index++)
+      RenderCase3(renderer, engine.LabProbeState(), broken, boxes);
+   Check(Case3ProtectedVisual(false, 105.0)
+         && CountOwnedObjects("JINPA_BROKEN_CORE_", OBJ_TREND) == 0,
+         "C3_K_MULTIPLE_REFRESH",
+         "five refreshes retain one High and no stale/duplicate Core object");
+   renderer.Destroy();
+}
+
+void TestCase3LBootstrapSequential()
+{
+   CPriceStructureEngine bootstrap;
+   CPriceStructureEngine sequential;
+   bootstrap.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, true);
+   sequential.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   BeginUpTransition(bootstrap);
+   BeginUpTransition(sequential);
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord boxes[];
+   CStructureDebugRenderer renderer;
+   renderer.Configure(false);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, bootstrap.LabProbeState(), broken, boxes);
+   const bool left = Case3ProtectedVisual(true, 95.0);
+   renderer.Destroy();
+   SeedCase3CoreObjects();
+   RenderCase3(renderer, sequential.LabProbeState(), broken, boxes);
+   const bool right = Case3ProtectedVisual(true, 95.0);
+   Check(left && right
+         && SameCase5StateAndEvents(bootstrap, sequential),
+         "C3_L_BOOTSTRAP_SEQUENTIAL",
+         "same semantic state selects the same protected visible side");
+   renderer.Destroy();
+}
+
 int OnInit()
 {
    TestBullContinuation();
@@ -2474,10 +2792,10 @@ int OnInit()
    TestConfirmClosesSmoke();
    const int parameterPassed = g_passed - semanticPassed;
    const int parameterFailed = g_failed - semanticFailed;
-   TestDisplayCombination(true, true, "DISPLAY_A_CORE_ON_SWINGS_ON");
-   TestDisplayCombination(true, false, "DISPLAY_B_CORE_ON_SWINGS_OFF");
-   TestDisplayCombination(false, true, "DISPLAY_C_CORE_OFF_SWINGS_ON");
-   TestDisplayCombination(false, false, "DISPLAY_D_CORE_OFF_SWINGS_OFF");
+   TestDisplayCombination(true, false, "DISPLAY_A_PROTECTED_CORE_SWINGS_ON");
+   TestDisplayCombination(false, false, "DISPLAY_B_PROTECTED_CORE_SWINGS_OFF");
+   TestDisplayCombination(true, true, "DISPLAY_C_REPEAT_SWINGS_ON");
+   TestDisplayCombination(false, true, "DISPLAY_D_REPEAT_SWINGS_OFF");
    const int displayPassed = g_passed - semanticPassed - parameterPassed;
    const int displayFailed = g_failed - semanticFailed - parameterFailed;
    const int beforeCase5Passed = g_passed;
@@ -2498,7 +2816,7 @@ int OnInit()
    TestCase5EventDuplicateAudit();
    TestCase5RendererPendingHigh();
    TestCase5RendererPendingLow();
-   TestCase5DisplayOff();
+   TestCase5AutomaticProtectedDisplay();
    TestCase5BootstrapSequentialParity();
    TestRepairA1CandidatePivotCompletes();
    TestRepairA2OldPivotRejected();
@@ -2573,6 +2891,22 @@ int OnInit()
    TestBrokenCoreKBootstrapSequentialParity();
    const int brokenCorePassed = g_passed - beforeBrokenCorePassed;
    const int brokenCoreFailed = g_failed - beforeBrokenCoreFailed;
+   const int beforeCase3Passed = g_passed;
+   const int beforeCase3Failed = g_failed;
+   TestCase3ABullComplete();
+   TestCase3BBearComplete();
+   TestCase3CBullPendingHigh();
+   TestCase3DBearPendingLow();
+   TestCase3EBullToBear();
+   TestCase3FBearToBull();
+   TestCase3GNoValidCore();
+   TestCase3HExactlyOneActiveCore();
+   TestCase3ISidewayCoexistence();
+   TestCase3JBrokenCoreCoexistence();
+   TestCase3KMultipleRefresh();
+   TestCase3LBootstrapSequential();
+   const int case3Passed = g_passed - beforeCase3Passed;
+   const int case3Failed = g_failed - beforeCase3Failed;
    Print("[COREBOX_DEV_TEST][SECTIONS] semantic=", semanticPassed,
          "/", semanticFailed,
          " parameter=", parameterPassed, "/", parameterFailed,
@@ -2581,7 +2915,8 @@ int OnInit()
          " case1_guard=", case1Passed, "/", case1Failed,
          " case1_fixed=", closedBarPassed, "/", closedBarFailed,
          " left_edge=", leftEdgePassed, "/", leftEdgeFailed,
-         " broken_core=", brokenCorePassed, "/", brokenCoreFailed);
+         " broken_core=", brokenCorePassed, "/", brokenCoreFailed,
+         " case3=", case3Passed, "/", case3Failed);
    Print("[COREBOX_DEV_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,
          " trades=0 pending=0 cancels=0 closes=0 push=0");

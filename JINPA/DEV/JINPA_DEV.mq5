@@ -147,7 +147,6 @@ input double                              CoreBreakATRBuffer         = 0.10;  //
 input int                                 CoreBreakConfirmCloses     = 2;     // Consecutive closes beyond boundary
 
 sinput group                              "──────────── STRUCTURE DISPLAY ──────────────"
-input bool                                ShowCoreBox                = true;  // Show Core High + Core Low
 input bool                                ShowStructureSwings        = true;  // Show HH/HL/LH/LL
 
 sinput group                              "────────────────── LOGGING ─────────────────"
@@ -173,7 +172,6 @@ int OnInit()
                                             StructureATRPeriod,
                                             CoreBreakATRBuffer,
                                             CoreBreakConfirmCloses,
-                                            ShowCoreBox,
                                             ShowStructureSwings))
     {
         Print("[JINPA][DEV][ERROR] Structure configuration rejected");
