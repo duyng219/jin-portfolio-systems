@@ -825,6 +825,7 @@ private:
       // opposite boundary is explicitly absent until a confirmed expansion
       // swing completes the Box.
       const CoreBoxState oldBox = m_states[contextIndex].coreBox;
+      ArchiveBrokenCore(contextIndex, eventBarTime, oldCycle, newCycle);
 
       // A confirmed break of the authoritative boundary supersedes an older
       // pending transition atomically.  Preserve the completed generation;
@@ -2407,9 +2408,7 @@ private:
                           const ENUM_MARKET_CYCLE oldCycle,
                           const ENUM_MARKET_CYCLE newCycle)
    {
-      // The active state is reconstructed during bootstrap, while historical
-      // broken segments are intentionally runtime-only in v1.0.
-      if(m_isBootstrapping || oldCycle == newCycle)
+      if(oldCycle == newCycle)
          return;
 
       BrokenCoreRecord record;
@@ -2422,19 +2421,18 @@ private:
       record.oldCycle = oldCycle;
       record.newCycle = newCycle;
 
-      if(oldCycle == MARKET_CYCLE_BULL
-         && m_states[contextIndex].coreSwing.hasCoreLow)
+      const CoreBoxState oldBox = m_states[contextIndex].coreBox;
+      if(oldCycle == MARKET_CYCLE_BULL && oldBox.coreLow.confirmed)
       {
          record.coreType = CORE_SWING_LOW;
-         record.price = m_states[contextIndex].coreSwing.coreSwingLow;
-         record.originTime = m_states[contextIndex].coreSwing.coreSwingLowTime;
+         record.price = oldBox.coreLow.price;
+         record.originTime = oldBox.coreLow.time;
       }
-      else if(oldCycle == MARKET_CYCLE_BEAR
-              && m_states[contextIndex].coreSwing.hasCoreHigh)
+      else if(oldCycle == MARKET_CYCLE_BEAR && oldBox.coreHigh.confirmed)
       {
          record.coreType = CORE_SWING_HIGH;
-         record.price = m_states[contextIndex].coreSwing.coreSwingHigh;
-         record.originTime = m_states[contextIndex].coreSwing.coreSwingHighTime;
+         record.price = oldBox.coreHigh.price;
+         record.originTime = oldBox.coreHigh.time;
       }
 
       if(record.coreType == CORE_SWING_NONE || record.price <= 0.0
@@ -2896,6 +2894,14 @@ public:
       ArrayResize(records, count);
       for(int index = 0; index < count; index++)
          records[index] = m_sidewayBoxHistory[index];
+   }
+
+   void LabProbeBrokenCoreHistory(BrokenCoreRecord &records[]) const
+   {
+      const int count = ArraySize(m_brokenCoreHistory);
+      ArrayResize(records, count);
+      for(int index = 0; index < count; index++)
+         records[index] = m_brokenCoreHistory[index];
    }
 
    void LabProbeConfiguration(int &swingLeftBars,

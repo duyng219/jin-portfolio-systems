@@ -2220,6 +2220,233 @@ void TestLeftEdgeIBootstrapSequentialParity()
          "prices, separate starts, right time and lifecycle status match");
 }
 
+string BrokenCoreObjectNameForTest(const BrokenCoreRecord &record)
+{
+   return "JINPA_BROKEN_CORE_" + record.symbol + "_"
+          + IntegerToString((int)record.timeframe) + "_"
+          + IntegerToString((long)record.originTime) + "_"
+          + IntegerToString((long)record.confirmationBreakTime);
+}
+
+void FeedTwoCycleReversals(CPriceStructureEngine &engine)
+{
+   BeginDownTransition(engine);
+   engine.LabProbeSwing(SWING_LOW, 80.0, 1030, 1031);
+   BeginUpTransition(engine, 95.0, 1040);
+}
+
+void TestBrokenCoreABullToBear()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   BeginDownTransition(engine);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   Check(ArraySize(records) == 1
+         && records[0].coreType == CORE_SWING_LOW
+         && SamePrice(records[0].price, 90.0)
+         && records[0].originTime == 999
+         && records[0].confirmationBreakTime == 1021
+         && records[0].oldCycle == MARKET_CYCLE_BULL
+         && records[0].newCycle == MARKET_CYCLE_BEAR,
+         "BROKEN_CORE_A_BULL_TO_BEAR",
+         "old authoritative CoreLow archived at confirmed reversal");
+}
+
+void TestBrokenCoreBBearToBull()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   BeginUpTransition(engine);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   Check(ArraySize(records) == 1
+         && records[0].coreType == CORE_SWING_HIGH
+         && SamePrice(records[0].price, 110.0)
+         && records[0].originTime == 998
+         && records[0].confirmationBreakTime == 1021
+         && records[0].oldCycle == MARKET_CYCLE_BEAR
+         && records[0].newCycle == MARKET_CYCLE_BULL,
+         "BROKEN_CORE_B_BEAR_TO_BULL",
+         "old authoritative CoreHigh archived at confirmed reversal");
+}
+
+void TestBrokenCoreCFirstCandidate()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   engine.LabProbeClose(89.0, 1020);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   Check(ArraySize(records) == 0
+         && engine.LabProbeState().cycleState.breakCandidate,
+         "BROKEN_CORE_C_FIRST_CANDIDATE",
+         "first qualifying close creates no historical record");
+}
+
+void TestBrokenCoreDFalseBreak()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   engine.LabProbeClose(89.0, 1020);
+   engine.LabProbeClose(95.0, 1021);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   Check(ArraySize(records) == 0
+         && EventCount(engine, CORE_BREAK_FAILED) == 1
+         && engine.LabProbeState().cycleState.cycle == MARKET_CYCLE_BULL,
+         "BROKEN_CORE_D_FALSE_BREAK",
+         "reclaimed candidate creates no historical record");
+}
+
+void TestBrokenCoreEBullContinuation()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   BeginUpTransition(engine);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   Check(ArraySize(records) == 0
+         && engine.LabProbeState().cycleState.cycle == MARKET_CYCLE_BULL,
+         "BROKEN_CORE_E_BULL_CONTINUATION",
+         "Bull-to-Bull break is not a Case-2 archive trigger");
+}
+
+void TestBrokenCoreFBearContinuation()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BEAR, 110.0, 90.0, 1000, false);
+   BeginDownTransition(engine);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   Check(ArraySize(records) == 0
+         && engine.LabProbeState().cycleState.cycle == MARKET_CYCLE_BEAR,
+         "BROKEN_CORE_F_BEAR_CONTINUATION",
+         "Bear-to-Bear break is not a Case-2 archive trigger");
+}
+
+void TestBrokenCoreGImmutability()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   BeginDownTransition(engine);
+   BrokenCoreRecord before[];
+   engine.LabProbeBrokenCoreHistory(before);
+   engine.LabProbeClose(100.0, 1030);
+   engine.LabProbeClose(101.0, 1040);
+   engine.LabProbeClose(102.0, 1050);
+   BrokenCoreRecord after[];
+   engine.LabProbeBrokenCoreHistory(after);
+   Check(ArraySize(before) == 1 && ArraySize(after) == 1
+         && before[0].originTime == after[0].originTime
+         && before[0].confirmationBreakTime
+            == after[0].confirmationBreakTime
+         && SamePrice(before[0].price, after[0].price)
+         && after[0].originTime == 999
+         && after[0].confirmationBreakTime == 1021,
+         "BROKEN_CORE_G_IMMUTABILITY",
+         "later bars cannot move or overwrite historical coordinates");
+}
+
+void TestBrokenCoreHMultipleReversals()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedTwoCycleReversals(engine);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   Check(ArraySize(records) == 2
+         && records[0].coreType == CORE_SWING_LOW
+         && SamePrice(records[0].price, 90.0)
+         && records[0].originTime == 999
+         && records[0].confirmationBreakTime == 1021
+         && records[1].coreType == CORE_SWING_HIGH
+         && SamePrice(records[1].price, 105.0)
+         && records[1].originTime == 1010
+         && records[1].confirmationBreakTime == 1051,
+         "BROKEN_CORE_H_MULTIPLE_REVERSALS",
+         "Bull-Bear-Bull retains two independent chronological records");
+}
+
+void TestBrokenCoreIRendererGeometry()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   BeginDownTransition(engine);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   SwingPoint swings[];
+   SidewayBoxRecord sideway[];
+   renderer.Update(engine.LabProbeState(), swings, records, sideway);
+   const string name = BrokenCoreObjectNameForTest(records[0]);
+   Check(ObjectFind(0, name) >= 0
+         && ObjectPointTime(name, 0) == 999
+         && ObjectPointTime(name, 1) == 1021
+         && SamePrice(ObjectGetDouble(0, name, OBJPROP_PRICE, 0), 90.0)
+         && SamePrice(ObjectGetDouble(0, name, OBJPROP_PRICE, 1), 90.0)
+         && (color)ObjectGetInteger(0, name, OBJPROP_COLOR) == clrWhite
+         && !ObjectGetInteger(0, name, OBJPROP_RAY_LEFT)
+         && !ObjectGetInteger(0, name, OBJPROP_RAY_RIGHT),
+         "BROKEN_CORE_I_RENDERER_GEOMETRY",
+         "white finite line exactly matches archived start, end and price");
+   renderer.Destroy();
+}
+
+void TestBrokenCoreJDuplicateRefresh()
+{
+   CPriceStructureEngine engine;
+   engine.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   BeginDownTransition(engine);
+   BrokenCoreRecord records[];
+   engine.LabProbeBrokenCoreHistory(records);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   SwingPoint swings[];
+   SidewayBoxRecord sideway[];
+   renderer.Update(engine.LabProbeState(), swings, records, sideway);
+   renderer.Update(engine.LabProbeState(), swings, records, sideway);
+   renderer.Update(engine.LabProbeState(), swings, records, sideway);
+   const string name = BrokenCoreObjectNameForTest(records[0]);
+   Check(CountOwnedObjects("JINPA_BROKEN_CORE_", OBJ_TREND) == 1
+         && ObjectPointTime(name, 0) == 999
+         && ObjectPointTime(name, 1) == 1021,
+         "BROKEN_CORE_J_DUPLICATE_REFRESH",
+         "repeated snapshot rendering retains one stable historical object");
+   renderer.Destroy();
+}
+
+void TestBrokenCoreKBootstrapSequentialParity()
+{
+   CPriceStructureEngine bootstrap;
+   CPriceStructureEngine sequential;
+   bootstrap.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, true);
+   sequential.LabProbeInitialize(MARKET_CYCLE_BULL, 110.0, 90.0, 1000, false);
+   FeedTwoCycleReversals(bootstrap);
+   FeedTwoCycleReversals(sequential);
+   BrokenCoreRecord left[];
+   BrokenCoreRecord right[];
+   bootstrap.LabProbeBrokenCoreHistory(left);
+   sequential.LabProbeBrokenCoreHistory(right);
+   bool parity = ArraySize(left) == 2 && ArraySize(right) == 2;
+   for(int index = 0; parity && index < ArraySize(left); index++)
+      parity = left[index].symbol == right[index].symbol
+               && left[index].timeframe == right[index].timeframe
+               && left[index].coreType == right[index].coreType
+               && SamePrice(left[index].price, right[index].price)
+               && left[index].originTime == right[index].originTime
+               && left[index].confirmationBreakTime
+                  == right[index].confirmationBreakTime
+               && left[index].oldCycle == right[index].oldCycle
+               && left[index].newCycle == right[index].newCycle;
+   Check(parity,
+         "BROKEN_CORE_K_BOOTSTRAP_SEQUENTIAL",
+         "identical history yields identical semantic archive records");
+}
+
 int OnInit()
 {
    TestBullContinuation();
@@ -2331,6 +2558,21 @@ int OnInit()
    TestLeftEdgeIBootstrapSequentialParity();
    const int leftEdgePassed = g_passed - beforeLeftEdgePassed;
    const int leftEdgeFailed = g_failed - beforeLeftEdgeFailed;
+   const int beforeBrokenCorePassed = g_passed;
+   const int beforeBrokenCoreFailed = g_failed;
+   TestBrokenCoreABullToBear();
+   TestBrokenCoreBBearToBull();
+   TestBrokenCoreCFirstCandidate();
+   TestBrokenCoreDFalseBreak();
+   TestBrokenCoreEBullContinuation();
+   TestBrokenCoreFBearContinuation();
+   TestBrokenCoreGImmutability();
+   TestBrokenCoreHMultipleReversals();
+   TestBrokenCoreIRendererGeometry();
+   TestBrokenCoreJDuplicateRefresh();
+   TestBrokenCoreKBootstrapSequentialParity();
+   const int brokenCorePassed = g_passed - beforeBrokenCorePassed;
+   const int brokenCoreFailed = g_failed - beforeBrokenCoreFailed;
    Print("[COREBOX_DEV_TEST][SECTIONS] semantic=", semanticPassed,
          "/", semanticFailed,
          " parameter=", parameterPassed, "/", parameterFailed,
@@ -2338,7 +2580,8 @@ int OnInit()
          " case5=", case5Passed, "/", case5Failed,
          " case1_guard=", case1Passed, "/", case1Failed,
          " case1_fixed=", closedBarPassed, "/", closedBarFailed,
-         " left_edge=", leftEdgePassed, "/", leftEdgeFailed);
+         " left_edge=", leftEdgePassed, "/", leftEdgeFailed,
+         " broken_core=", brokenCorePassed, "/", brokenCoreFailed);
    Print("[COREBOX_DEV_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,
          " trades=0 pending=0 cancels=0 closes=0 push=0");
