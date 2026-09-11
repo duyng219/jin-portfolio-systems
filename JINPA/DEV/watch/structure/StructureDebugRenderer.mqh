@@ -128,8 +128,10 @@ private:
                             const bool isHigh)
    {
       const double price = isHigh ? record.boxHigh : record.boxLow;
-      if(price <= 0.0 || record.boxStartTime <= 0
-         || record.boxEndTime <= record.boxStartTime)
+      const datetime leftTime = isHigh ? record.boxHighTime
+                                       : record.boxLowTime;
+      if(price <= 0.0 || leftTime <= 0 || record.boxStartTime <= 0
+         || record.boxEndTime <= leftTime)
          return false;
 
       const string name = SidewayObjectName(record, isHigh);
@@ -137,7 +139,7 @@ private:
       {
          ResetLastError();
          if(!ObjectCreate(m_chartId, name, OBJ_TREND, 0,
-                          record.boxStartTime, price,
+                          leftTime, price,
                           record.boxEndTime, price))
          {
             WatcherLogError("Sideway boundary object failed: " + name
@@ -146,7 +148,7 @@ private:
          }
       }
 
-      ObjectMove(m_chartId, name, 0, record.boxStartTime, price);
+      ObjectMove(m_chartId, name, 0, leftTime, price);
       ObjectMove(m_chartId, name, 1, record.boxEndTime, price);
       ObjectSetInteger(m_chartId, name, OBJPROP_COLOR, clrGreen);
       ObjectSetInteger(m_chartId, name, OBJPROP_STYLE, STYLE_SOLID);
@@ -383,7 +385,9 @@ public:
          activeBox.symbol = _Symbol;
          activeBox.timeframe = (ENUM_TIMEFRAMES)_Period;
          activeBox.boxHigh = state.sidewayBox.boxHigh;
+         activeBox.boxHighTime = state.sidewayBox.boxHighTime;
          activeBox.boxLow = state.sidewayBox.boxLow;
+         activeBox.boxLowTime = state.sidewayBox.boxLowTime;
          activeBox.boxStartTime = state.sidewayBox.boxStartTime;
          activeBox.boxEndTime = state.sidewayBox.lastUpdateTime;
          activeBox.endStatus = SIDEWAY_BOX_ACTIVE;

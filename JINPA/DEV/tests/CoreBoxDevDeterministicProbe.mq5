@@ -1974,6 +1974,252 @@ void TestFixedSidewayNewLifecycleIdentity()
          "old frozen pair and new active pair use distinct start-time identity");
 }
 
+void BuildLeftEdgeState(PriceStructureState &state,
+                        const datetime highTime,
+                        const datetime lowTime,
+                        const datetime lifecycleTime,
+                        const datetime confirmationTime,
+                        const datetime rightTime)
+{
+   ResetPriceStructureState(state);
+   state.initialized = true;
+   state.sidewayBox.active = true;
+   state.sidewayBox.sidewayConfirmed = true;
+   state.sidewayBox.status = SIDEWAY_BOX_ACTIVE;
+   state.sidewayBox.boxHigh = 120.0;
+   state.sidewayBox.boxHighTime = highTime;
+   state.sidewayBox.boxLow = 100.0;
+   state.sidewayBox.boxLowTime = lowTime;
+   state.sidewayBox.boxStartTime = lifecycleTime;
+   state.sidewayBox.confirmedTime = confirmationTime;
+   state.sidewayBox.lastUpdateTime = rightTime;
+}
+
+string LeftEdgeObjectName(const bool isHigh,
+                          const datetime lifecycleTime)
+{
+   return (isHigh ? "JINPA_SIDEWAY_BOX_HIGH_"
+                  : "JINPA_SIDEWAY_BOX_LOW_")
+          + _Symbol + "_" + IntegerToString((int)_Period) + "_"
+          + IntegerToString((long)lifecycleTime);
+}
+
+datetime ObjectPointTime(const string name, const int point)
+{
+   return (datetime)ObjectGetInteger(0, name, OBJPROP_TIME, point);
+}
+
+void RenderLeftEdgeState(const PriceStructureState &state,
+                         CStructureDebugRenderer &renderer)
+{
+   SwingPoint swings[];
+   BrokenCoreRecord broken[];
+   SidewayBoxRecord history[];
+   renderer.Update(state, swings, broken, history);
+}
+
+void TestLeftEdgeAStateUsesOwnCoreTimes()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   PriceStructureState state = engine.LabProbeState();
+   Check(state.sidewayBox.boxHighTime == 998
+         && state.sidewayBox.boxLowTime == 999
+         && state.sidewayBox.boxHighTime != state.sidewayBox.boxLowTime
+         && SamePrice(state.sidewayBox.boxHigh, 120.0)
+         && SamePrice(state.sidewayBox.boxLow, 100.0),
+         "LEFT_EDGE_A_OWN_CORE_TIMES",
+         "confirmed Sideway retains distinct authoritative Core swing times");
+}
+
+void TestLeftEdgeBHighEarlierThanLow()
+{
+   PriceStructureState state;
+   BuildLeftEdgeState(state, 800, 900, 1000, 1500, 2000);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   RenderLeftEdgeState(state, renderer);
+   const string highName = LeftEdgeObjectName(true, 1000);
+   const string lowName = LeftEdgeObjectName(false, 1000);
+   Check(ObjectPointTime(highName, 0) == 800
+         && ObjectPointTime(lowName, 0) == 900
+         && ObjectPointTime(highName, 0) < ObjectPointTime(lowName, 0),
+         "LEFT_EDGE_B_HIGH_EARLIER",
+         "High geometry begins at earlier CoreHigh swing");
+   renderer.Destroy();
+}
+
+void TestLeftEdgeCLowEarlierThanHigh()
+{
+   PriceStructureState state;
+   BuildLeftEdgeState(state, 900, 800, 1000, 1500, 2000);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   RenderLeftEdgeState(state, renderer);
+   const string highName = LeftEdgeObjectName(true, 1000);
+   const string lowName = LeftEdgeObjectName(false, 1000);
+   Check(ObjectPointTime(highName, 0) == 900
+         && ObjectPointTime(lowName, 0) == 800
+         && ObjectPointTime(lowName, 0) < ObjectPointTime(highName, 0),
+         "LEFT_EDGE_C_LOW_EARLIER",
+         "Low geometry begins at earlier CoreLow swing");
+   renderer.Destroy();
+}
+
+void TestLeftEdgeDLateConfirmationDoesNotMoveLeft()
+{
+   PriceStructureState state;
+   BuildLeftEdgeState(state, 700, 800, 1000, 1900, 2000);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   RenderLeftEdgeState(state, renderer);
+   const string highName = LeftEdgeObjectName(true, 1000);
+   const string lowName = LeftEdgeObjectName(false, 1000);
+   Check(ObjectPointTime(highName, 0) == 700
+         && ObjectPointTime(lowName, 0) == 800
+         && ObjectPointTime(highName, 0) != state.sidewayBox.confirmedTime
+         && ObjectPointTime(lowName, 0) != state.sidewayBox.confirmedTime,
+         "LEFT_EDGE_D_CONFIRMATION_INDEPENDENT",
+         "late Sideway confirmation does not move either left endpoint");
+   renderer.Destroy();
+}
+
+void TestLeftEdgeELifecycleIdentitySeparated()
+{
+   PriceStructureState state;
+   BuildLeftEdgeState(state, 800, 900, 1000, 1500, 2000);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   RenderLeftEdgeState(state, renderer);
+   const string highName = LeftEdgeObjectName(true, 1000);
+   const string lowName = LeftEdgeObjectName(false, 1000);
+   Check(ObjectFind(0, highName) >= 0 && ObjectFind(0, lowName) >= 0
+         && ObjectPointTime(highName, 0) != 1000
+         && ObjectPointTime(lowName, 0) != 1000
+         && CountOwnedObjects("JINPA_SIDEWAY_BOX_HIGH_", OBJ_TREND) == 1
+         && CountOwnedObjects("JINPA_SIDEWAY_BOX_LOW_", OBJ_TREND) == 1,
+         "LEFT_EDGE_E_IDENTITY_GEOMETRY_SEPARATED",
+         "boxStartTime names the lifecycle but does not define line geometry");
+   renderer.Destroy();
+}
+
+void TestLeftEdgeFRightUpdatesPreserveLeft()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   RenderLeftEdgeState(engine.LabProbeState(), renderer);
+   for(int index = 0; index < 5; index++)
+   {
+      const datetime barTime = 1050 + index * 10;
+      engine.LabProbeClosedBar(118.0, 105.0, 112.0, barTime);
+      RenderLeftEdgeState(engine.LabProbeState(), renderer);
+   }
+   const string highName = LeftEdgeObjectName(true, 1000);
+   const string lowName = LeftEdgeObjectName(false, 1000);
+   Check(ObjectPointTime(highName, 0) == 998
+         && ObjectPointTime(lowName, 0) == 999
+         && ObjectPointTime(highName, 1) == 1090
+         && ObjectPointTime(lowName, 1) == 1090,
+         "LEFT_EDGE_F_RIGHT_UPDATES",
+         "five closed bars move point 1 only; both point 0 times remain fixed");
+   renderer.Destroy();
+}
+
+void TestLeftEdgeGConfirmedBreakPreservesGeometry()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(121.0, 109.0, 121.0, 1050);
+   engine.LabProbeClosedBar(122.0, 110.0, 122.0, 1060);
+   engine.LabProbeClosedBar(119.0, 101.0, 110.0, 1070);
+   SidewayBoxRecord history[];
+   engine.LabProbeSidewayHistory(history);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   SwingPoint swings[];
+   BrokenCoreRecord broken[];
+   renderer.Update(engine.LabProbeState(), swings, broken, history);
+   const string highName = LeftEdgeObjectName(true, 1000);
+   const string lowName = LeftEdgeObjectName(false, 1000);
+   Check(ArraySize(history) == 1
+         && history[0].boxHighTime == 998
+         && history[0].boxLowTime == 999
+         && ObjectPointTime(highName, 0) == 998
+         && ObjectPointTime(lowName, 0) == 999
+         && ObjectPointTime(highName, 1) == 1060
+         && ObjectPointTime(lowName, 1) == 1060,
+         "LEFT_EDGE_G_BREAK_FREEZE",
+         "archive preserves both Core swing starts and common frozen endpoint");
+   renderer.Destroy();
+}
+
+void TestLeftEdgeHNewLifecycleIndependent()
+{
+   CPriceStructureEngine engine;
+   BuildClosedBarSideway(engine);
+   engine.LabProbeClosedBar(121.0, 109.0, 121.0, 1050);
+   engine.LabProbeClosedBar(122.0, 110.0, 122.0, 1060);
+   engine.LabProbeSwing(SWING_HIGH, 130.0, 1080, 1081);
+   engine.LabProbeSwing(SWING_LOW, 115.0, 1090, 1091);
+   engine.LabProbeSwing(SWING_HIGH, 125.0, 1100, 1101);
+   engine.LabProbeSwing(SWING_LOW, 112.0, 1110, 1111);
+   engine.LabProbeSwing(SWING_HIGH, 124.0, 1120, 1121);
+   SidewayBoxRecord history[];
+   engine.LabProbeSidewayHistory(history);
+   CStructureDebugRenderer renderer;
+   renderer.Configure(true, false);
+   renderer.Destroy();
+   SwingPoint swings[];
+   BrokenCoreRecord broken[];
+   renderer.Update(engine.LabProbeState(), swings, broken, history);
+   const string oldHigh = LeftEdgeObjectName(true, 1000);
+   const string oldLow = LeftEdgeObjectName(false, 1000);
+   const string newHigh = LeftEdgeObjectName(true, 1081);
+   const string newLow = LeftEdgeObjectName(false, 1081);
+   Check(ObjectPointTime(oldHigh, 0) == 998
+         && ObjectPointTime(oldLow, 0) == 999
+         && ObjectPointTime(oldHigh, 1) == 1060
+         && ObjectPointTime(oldLow, 1) == 1060
+         && ObjectPointTime(newHigh, 0) == 1080
+         && ObjectPointTime(newLow, 0) == 1030
+         && CountOwnedObjects("JINPA_SIDEWAY_BOX_HIGH_", OBJ_TREND) == 2
+         && CountOwnedObjects("JINPA_SIDEWAY_BOX_LOW_", OBJ_TREND) == 2,
+         "LEFT_EDGE_H_NEW_LIFECYCLE",
+         "new lifecycle uses new Core swing geometry without moving history");
+   renderer.Destroy();
+}
+
+void TestLeftEdgeIBootstrapSequentialParity()
+{
+   CPriceStructureEngine bootstrap;
+   CPriceStructureEngine sequential;
+   BuildClosedBarSideway(bootstrap, true);
+   BuildClosedBarSideway(sequential, false);
+   FeedClosedBarParity(bootstrap);
+   FeedClosedBarParity(sequential);
+   PriceStructureState left = bootstrap.LabProbeState();
+   PriceStructureState right = sequential.LabProbeState();
+   Check(SamePrice(left.sidewayBox.boxHigh, right.sidewayBox.boxHigh)
+         && SamePrice(left.sidewayBox.boxLow, right.sidewayBox.boxLow)
+         && left.sidewayBox.boxHighTime == right.sidewayBox.boxHighTime
+         && left.sidewayBox.boxLowTime == right.sidewayBox.boxLowTime
+         && left.sidewayBox.boxStartTime == right.sidewayBox.boxStartTime
+         && left.sidewayBox.lastUpdateTime == right.sidewayBox.lastUpdateTime
+         && left.sidewayBox.active == right.sidewayBox.active
+         && left.sidewayBox.sidewayConfirmed
+            == right.sidewayBox.sidewayConfirmed,
+         "LEFT_EDGE_I_BOOTSTRAP_SEQUENTIAL",
+         "prices, separate starts, right time and lifecycle status match");
+}
+
 int OnInit()
 {
    TestBullContinuation();
@@ -2072,13 +2318,27 @@ int OnInit()
    TestClosedBarBootstrapSequentialParity();
    const int closedBarPassed = g_passed - beforeClosedBarPassed;
    const int closedBarFailed = g_failed - beforeClosedBarFailed;
+   const int beforeLeftEdgePassed = g_passed;
+   const int beforeLeftEdgeFailed = g_failed;
+   TestLeftEdgeAStateUsesOwnCoreTimes();
+   TestLeftEdgeBHighEarlierThanLow();
+   TestLeftEdgeCLowEarlierThanHigh();
+   TestLeftEdgeDLateConfirmationDoesNotMoveLeft();
+   TestLeftEdgeELifecycleIdentitySeparated();
+   TestLeftEdgeFRightUpdatesPreserveLeft();
+   TestLeftEdgeGConfirmedBreakPreservesGeometry();
+   TestLeftEdgeHNewLifecycleIndependent();
+   TestLeftEdgeIBootstrapSequentialParity();
+   const int leftEdgePassed = g_passed - beforeLeftEdgePassed;
+   const int leftEdgeFailed = g_failed - beforeLeftEdgeFailed;
    Print("[COREBOX_DEV_TEST][SECTIONS] semantic=", semanticPassed,
          "/", semanticFailed,
          " parameter=", parameterPassed, "/", parameterFailed,
          " display=", displayPassed, "/", displayFailed,
          " case5=", case5Passed, "/", case5Failed,
          " case1_guard=", case1Passed, "/", case1Failed,
-         " case1_fixed=", closedBarPassed, "/", closedBarFailed);
+         " case1_fixed=", closedBarPassed, "/", closedBarFailed,
+         " left_edge=", leftEdgePassed, "/", leftEdgeFailed);
    Print("[COREBOX_DEV_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,
          " trades=0 pending=0 cancels=0 closes=0 push=0");

@@ -1964,7 +1964,9 @@ private:
       record.symbol = m_symbols[contextIndex];
       record.timeframe = m_timeframes[contextIndex];
       record.boxHigh = box.boxHigh;
+      record.boxHighTime = box.boxHighTime;
       record.boxLow = box.boxLow;
+      record.boxLowTime = box.boxLowTime;
       record.boxStartTime = box.boxStartTime;
       record.boxEndTime = endTime;
       record.endStatus = endStatus;

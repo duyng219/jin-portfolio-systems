@@ -272,7 +272,9 @@ struct SidewayBoxRecord
    string                  symbol;
    ENUM_TIMEFRAMES         timeframe;
    double                  boxHigh;
+   datetime                boxHighTime;
    double                  boxLow;
+   datetime                boxLowTime;
    datetime                boxStartTime;
    datetime                boxEndTime;
    ENUM_SIDEWAY_BOX_STATUS endStatus;
