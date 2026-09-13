@@ -1,6 +1,6 @@
 #property strict
 #property version "1.00"
-#property description "JINPA DEV CoreBox deterministic non-trading probe"
+#property description "JINPA v3.1 DEV CoreBox deterministic non-trading probe"
 
 #include "../watch/WatchIntegration.mqh"
 

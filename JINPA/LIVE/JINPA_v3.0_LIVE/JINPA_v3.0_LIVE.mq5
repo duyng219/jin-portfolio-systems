@@ -1,36 +1,41 @@
 //+------------------------------------------------------------------+
-//|                                                   JINPA_DEV.mq5 |
+//|                                            JINPA_v3.0_LIVE.mq5 |
 //|                                       Copyright 2026, Duy Nguyen |
 //|                                             https://duyquant.dev |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Duy Nguyen"
 #property link      "https://duyquant.dev"
-#property version   "1.00"
-#property description "JINPA DEV - Development / Research / Backtest"
+#property version   "3.00"
+#property description "JINPA v3.0 LIVE - Manual Trading Assistant"
 #property description ""
-#property description "Price Action based manual trading with one-click order entry and ATR risk management"
+#property description "Price Action based manual trading with CAppDialog panel — comment auto-assign per setup"
 #property strict
 
 //+------ INCLUDES ------+//
 #include <Trade/Trade.mqh>
-#include "_core/framework_manager.mqh"
+#include "_core/managers/indicators_manager.mqh"
+#include "_core/managers/bar_manager.mqh"
+#include "_core/managers/risk_manager.mqh"
+#include "_core/managers/drawdown_manager.mqh"
+#include "_core/managers/position_manager.mqh"
+#include "_core/infrastructure/info_display.mqh"
 #include "_core/infrastructure/magic_number_resolver.mqh"
+#include "_panel/panel_main.mqh"
 #include "watch/WatchIntegration.mqh"
 
 //+------ GLOBAL OBJECTS ------+//
-CTrade                           trade;                              // MT5 built-in trade object (dùng cho tất cả orders)
-CRiskManager               RM;                                 // Tính lot size
-CPositionManager         PM;                                // SL/TP, Trailing Stop
-CBar                               Bar;                                // Bar OHLCV data
-CiATR                             ATR;                               // ATR indicator
-CiMA                              MA;                                // Moving Average indicator
-CUIManager                  uiManager;                     // 10 buttons trên chart
-CDrawdownManager    drawdownManager;       // Theo dõi drawdown ngày/tháng
-COrderExecutor             orderExecutor;               // Bridge UI → orders
-CInfoDisplay                  infoDisplay;                    // Stats display
-CWatchIntegration        watchIntegration;           // Read-only WATCH boundary
-ulong                    MagicNumber = 0;             // Resolved once per EA instance
-string                   CanonicalSymbol = "UNKNOWN";
+CTrade           trade;
+CRiskManager     RM;
+CPositionManager PM;
+CBar             Bar;
+CiATR            ATR;
+CiMA             MA;
+CDrawdownManager drawdownManager;
+CInfoDisplay     infoDisplay;
+CJINPAPanel      g_panel;
+ulong            MagicNumber = 0;             // Resolved once per EA instance
+string           CanonicalSymbol = "UNKNOWN";
+CWatchIntegration watchIntegration;
 
 int VolumeDigitsForSymbol(const string symbol)
 {
@@ -112,32 +117,33 @@ void LogExitDeal(const ulong dealTicket)
 
 //+------ TRADING SETTINGS ------+//
 sinput group                              "────────────── BASIC SETTINGS ──────────────"
+input double                              DisplayVirtualCapital     = 10000;  // Display Virtual Capital - 0 = Account Equity only
 input int                                    slPointsValue                      = 0;      // Stop Loss Points - 0 = Use ATR
 input ushort                              POExpirationMinutes       = 360;    // Pending Order Expiration (minutes)
 input double                             MaxDrawdownDaily           = 0;      // Max Daily Drawdown (%) - 0 = Disabled
 
 sinput group                              "────────────── RISK MANAGEMENT ────────────"
 input ENUM_MONEY_MANAGEMENT    MoneyManagement      = MM_EQUITY_RISK_PERCENT; // Risk Method
-input double                              RiskPercent                      = 0.5;   // Risk per Trade (%) - 0.1 to 5
-input double                              FixedVolume                    = 0.01;  // Fixed Lot Size (when using fixed MM)
-input double                              MinLotPerEquitySteps      = 500;   // Equity per Lot (e.g. 500 USD = 0.01 lot)
+input double                              RiskPercent                      = 0.5;   // Risk per Trade (%)
+input double                              FixedVolume                    = 0.01;  // Fixed Lot Size
+input double                              MinLotPerEquitySteps      = 500;   // Equity per Lot
 
 sinput group                              "────────────── MOVING AVERAGE ─────────────"
-input int                                       MAPeriod             = 21;          // Period
-input ENUM_MA_METHOD         MAMethod          = MODE_EMA;    // Type
-input int                                       MAShift                = 0;           // Shift
-input ENUM_APPLIED_PRICE       MAPrice               = PRICE_CLOSE; // Applied Price
+input int                                       MAPeriod             = 21;
+input ENUM_MA_METHOD         MAMethod          = MODE_EMA;
+input int                                       MAShift                = 0;
+input ENUM_APPLIED_PRICE       MAPrice               = PRICE_CLOSE;
 
 sinput group                              "─────────────── ATR SETTINGS ──────────────"
-input int                                       ATRPeriod                     = 14;  // Period
+input int                                       ATRPeriod                     = 14;
 input double                                ATRFactorSL                 = 2.5;   // Factor for initial Stop Loss
 input double                                ATRFactorTSL                = 3.5;   // Factor for Trailing Stop distance
-input double                                ATRFactorPO                 = 2.5;   // Factor (for Pending Order)
+input double                                ATRFactorPO                 = 2.5;   // Factor (Pending Order offset)
 
 sinput group                              "──────────── TRAILING STOP ─────────────────"
-input ENUM_TSL_MODE            TSLMode          = TSL_STEP;       // Trailing Stop Mode
-input double                              TSLActivationATR = 2.5;            // Breakeven First: kích hoạt sau X ATR lãi
-input double                              TSLStepATR       = 2.5;            // Step: dịch SL tối thiểu X ATR mỗi bước
+input ENUM_TSL_MODE            TSLMode          = TSL_STEP;
+input double                              TSLActivationATR = 2.5;
+input double                              TSLStepATR       = 2.5;   // Minimum ATR move between TSL updates
 
 sinput group                              "──────────── STRUCTURE ENGINE ───────────────"
 input int                                 SwingLeftBars             = 5;     // Confirmed swing left window
@@ -148,9 +154,10 @@ input int                                 CoreBreakConfirmCloses     = 2;     //
 
 sinput group                              "──────────── STRUCTURE DISPLAY ──────────────"
 input bool                                ShowStructureSwings        = true;  // Show HH/HL/LH/LL
+input bool                                ShowWatchPanel             = false; // Show WATCH Market Radar panel
 
 sinput group                              "────────────────── LOGGING ─────────────────"
-input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;              // Log Level
+input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;
 
 int OnInit()
 {
@@ -158,7 +165,7 @@ int OnInit()
        || StructureATRPeriod < 1 || CoreBreakATRBuffer < 0.0
        || CoreBreakConfirmCloses < 1)
     {
-        Print("[JINPA][DEV][ERROR] Invalid Structure configuration",
+        Print("[JINPA][v3.0 LIVE][ERROR] Invalid Structure configuration",
               " | SwingLeftBars=", SwingLeftBars,
               " | SwingRightBars=", SwingRightBars,
               " | StructureATRPeriod=", StructureATRPeriod,
@@ -174,7 +181,7 @@ int OnInit()
                                             CoreBreakConfirmCloses,
                                             ShowStructureSwings))
     {
-        Print("[JINPA][DEV][ERROR] Structure configuration rejected");
+        Print("[JINPA][v3.0 LIVE][ERROR] Structure configuration rejected");
         return INIT_PARAMETERS_INCORRECT;
     }
 
@@ -184,10 +191,7 @@ int OnInit()
         Print("[JINPA][WARN] Unknown symbol ", _Symbol,
               " | using fallback Magic ", MagicNumber);
 
-    // Set magic number trên CTrade — áp dụng cho tất cả orders
     trade.SetExpertMagicNumber(MagicNumber);
-    // Tester defaults CTrade to LOG_LEVEL_ALL. Keep its failures, but let
-    // COrderExecutor own the single concise success summary.
     trade.LogLevel(LOG_LEVEL_ERRORS);
 
     if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))
@@ -208,13 +212,6 @@ int OnInit()
         return INIT_FAILED;
     }
 
-    Print("Symbol — Min Vol: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN),
-          " | Max Vol: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX),
-          " | Step: ", SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP));
-
-    uiManager.Initialize();
-    Sleep(100);
-
     if(MA.Init(_Symbol, _Period, MAPeriod, MAShift, MAMethod, MAPrice) == -1)
     {
         Alert("MA indicator initialization failed!");
@@ -227,48 +224,74 @@ int OnInit()
         return INIT_FAILED;
     }
 
-    SOrderExecutorParams params;
-    params.magicNumber          = MagicNumber;
-    params.moneyManagement      = MoneyManagement;
-    params.minLotPerEquitySteps = MinLotPerEquitySteps;
-    params.riskPercent          = RiskPercent;
-    params.fixedVolume          = FixedVolume;
-    params.poExpirationMinutes  = POExpirationMinutes;
-    params.logLevel             = LogLevel;
+    int chartW = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+    int chartH = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
+    SetUIScaleOverride(GetChartAwareUIScale(chartW, chartH));
 
-    orderExecutor.Initialize(_Symbol, &RM, &PM, &trade, &uiManager, params);
+    // ── Tính vị trí và kích thước panel ────────────────────────────
+    // panelX: khoảng cách từ cạnh trái chart đến cạnh trái panel (px)
+    int panelX = ScaleUI(20);
 
-    if(!watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period))
-        Print("[JINPA][WATCH][WARN] Integration disabled — initialization failed.");
+    // panelY: khoảng cách từ đỉnh chart đến đỉnh panel (px)
+    // Chừa vùng comment trạng thái/Magic ở đỉnh chart; giá trị là pixel chart trực tiếp.
+    int panelY = 40;
 
-    Print("[JINPA V1 INPUT 1/3] Symbol=", _Symbol,
+    // panelH: tự động co giãn theo chiều cao chart.
+    // Không ép MIN_PANEL_H ở đây để panel không bị cắt khi MT5 chia nhiều chart.
+    int panelW = ScaleUI(PANEL_W);
+    int panelH = chartH - panelY - ScaleUI(4);
+    if(panelH < ScaleUI(260))
+        panelH = ScaleUI(260);
+    if((long)TerminalInfoInteger(TERMINAL_SCREEN_DPI) < JINPA_UI_REFERENCE_DPI)
+        panelH = MathMin(panelH, ScaleUI(MIN_PANEL_H));
+
+    if(!g_panel.Create(0, "JINPA v3.0 LIVE", 0, panelX, panelY, panelX + panelW, panelY + panelH))
+    {
+        Alert("Panel creation failed!");
+        return INIT_FAILED;
+    }
+
+    // Wire panel tới các dependencies
+    g_panel.SetDependencies(_Symbol, MagicNumber,
+                            &RM, &PM, &trade,
+                            MoneyManagement, MinLotPerEquitySteps,
+                            RiskPercent, FixedVolume, POExpirationMinutes,
+                            LogLevel);
+
+    g_panel.Run();  // bắt buộc để CAppDialog xử lý events
+    g_panel.RefreshVisuals();
+
+    if(!watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                                    ShowWatchPanel))
+        Print("[JINPA][WARN] Structure integration disabled — initialization failed.");
+
+    Print("[JINPA v3.0 LIVE INPUT 1/3] Symbol=", _Symbol,
           " | Magic=", MagicNumber,
           " | POExpMin=", POExpirationMinutes,
           " | MaxDD=", DoubleToString(MaxDrawdownDaily, 2), "%");
-    Print("[JINPA V1 INPUT 2/3] MM=", EnumToString(MoneyManagement),
+    Print("[JINPA v3.0 LIVE INPUT 2/3] MM=", EnumToString(MoneyManagement),
           " | Risk=", DoubleToString(RiskPercent, 2), "%",
           " | FixedLot=", DoubleToString(FixedVolume, 2),
           " | MinLotEqStep=", DoubleToString(MinLotPerEquitySteps, 2),
+          " | DisplayVC=", DoubleToString(DisplayVirtualCapital, 2),
           " | SLPoints=", slPointsValue);
-    Print("[JINPA V1 INPUT 3/3] MA=", IntegerToString(MAPeriod), "/", EnumToString(MAMethod),
+    Print("[JINPA v3.0 LIVE INPUT 3/3] MA=", IntegerToString(MAPeriod), "/", EnumToString(MAMethod),
           " | ATR=", IntegerToString(ATRPeriod),
           " | ATRFactorSL=", DoubleToString(ATRFactorSL, 2),
           " | ATRFactorTSL=", DoubleToString(ATRFactorTSL, 2),
           " | ATRFactorPO=", DoubleToString(ATRFactorPO, 2),
           " | TSL=", EnumToString(TSLMode),
-          " | TSLActivationATR=", DoubleToString(TSLActivationATR, 2),
-          " | TSLStepATR=", DoubleToString(TSLStepATR, 2),
           " | LogLevel=", EnumToString(LogLevel));
-    Print("JINPA DEV initialized successfully.");
+    Print("JINPA v3.0 LIVE initialized successfully.");
     return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason)
 {
-    uiManager.Destroy(reason);
+    g_panel.Destroy(reason);
     infoDisplay.ClearDisplay();
     watchIntegration.Shutdown();
-    Print("JINPA DEV stopped — reason: ", reason);
+    Print("JINPA v3.0 LIVE stopped — reason: ", reason);
 }
 
 void OnTick()
@@ -295,37 +318,30 @@ void OnTick()
     // 3 - UPDATE DRAWDOWN TRACKING
     //──────────────────────────────────────────────────────────────────
     drawdownManager.UpdateDaily();
-    drawdownManager.UpdateMonthly();
 
-    double dailyDD   = drawdownManager.GetDailyPercent();
-    double monthlyDD = drawdownManager.GetMonthlyPercent();
+    double dailyDD = drawdownManager.GetDailyPercent();
+    bool   dailyHalt = (MaxDrawdownDaily > 0 && dailyDD <= -MaxDrawdownDaily);
 
-    if(MaxDrawdownDaily > 0 && dailyDD <= -MaxDrawdownDaily)
+    if(dailyHalt)
     {
         Comment("Max Daily DD reached: ", DoubleToString(MathAbs(dailyDD), 2), "% — Trading Halted!");
-        return;
     }
+    else
+        g_panel.SetTradingHalt(false);
 
     //──────────────────────────────────────────────────────────────────
     // 4 - UPDATE INFORMATION DISPLAY
     //──────────────────────────────────────────────────────────────────
-    int openBuy  = CPositionHelper::CountBuyPositions(_Symbol);
-    int openSell = CPositionHelper::CountSellPositions(_Symbol);
-    int spread   = (int)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-
-    infoDisplay.UpdateDisplay(dailyDD, monthlyDD, openBuy, openSell,
-                              AccountInfoDouble(ACCOUNT_BALANCE), RiskPercent,
-                              spread, MagicNumber);
-    if(!infoDisplay.UpdateButtonTooltips(askPrice, bidPrice) && !IsStopped())
-    {
-        uiManager.RecreateAllButtons();
-        infoDisplay.UpdateButtonTooltips(askPrice, bidPrice);
-    }
+    infoDisplay.UpdatePoolSummary(_Symbol, MagicNumber, RiskPercent, dailyDD, DisplayVirtualCapital);
+    infoDisplay.UpdateButtonTooltips(askPrice, bidPrice);
 
     //──────────────────────────────────────────────────────────────────
-    // 5 - HANDLE BUTTON ORDERS
+    // 5 - UPDATE PANEL + PERIODIC LOG REFRESH
     //──────────────────────────────────────────────────────────────────
-    orderExecutor.HandleAllOrders(askPrice, bidPrice, atrValue, atrValuePO, slPointsValue);
+    g_panel.UpdateMarketData(atrValue, atrValuePO, slPointsValue, dailyDD);
+    if(dailyHalt)
+        g_panel.SetTradingHalt(true, "Max Daily DD reached: " + DoubleToString(MathAbs(dailyDD), 2) + "%");
+    g_panel.Tick();
 
     //──────────────────────────────────────────────────────────────────
     // 6 - TRAILING STOP LOSS
@@ -336,16 +352,46 @@ void OnTick()
 
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
 {
-    uiManager.OnChartEvent(id, lparam, dparam, sparam);
+    g_panel.ChartEvent(id, lparam, dparam, sparam);
 
     if(id == CHARTEVENT_CHART_CHANGE)
         watchIntegration.OnChartChange();
 }
 
-void OnTradeTransaction(const MqlTradeTransaction &transaction,
+void OnTradeTransaction(const MqlTradeTransaction &trans,
                         const MqlTradeRequest &request,
                         const MqlTradeResult &result)
 {
-    if(transaction.type == TRADE_TRANSACTION_DEAL_ADD)
-        LogExitDeal(transaction.deal);
+    if(trans.type == TRADE_TRANSACTION_HISTORY_ADD && trans.order > 0)
+    {
+        if(!HistoryOrderSelect(trans.order))
+            return;
+
+        string orderSymbol = HistoryOrderGetString(trans.order, ORDER_SYMBOL);
+        if(orderSymbol != _Symbol)
+            return;
+
+        long orderMagic = HistoryOrderGetInteger(trans.order, ORDER_MAGIC);
+        if(MagicNumber > 0 && orderMagic != (long)MagicNumber)
+            return;
+
+        ENUM_ORDER_STATE orderState = (ENUM_ORDER_STATE)HistoryOrderGetInteger(trans.order, ORDER_STATE);
+        if(orderState == ORDER_STATE_EXPIRED)
+        {
+            ENUM_ORDER_TYPE orderType = (ENUM_ORDER_TYPE)HistoryOrderGetInteger(trans.order, ORDER_TYPE);
+            datetime expiration = (datetime)HistoryOrderGetInteger(trans.order, ORDER_TIME_EXPIRATION);
+
+            Print("[Order EXPIRED] #", trans.order,
+                  " | ", orderSymbol,
+                  " | Type=", EnumToString(orderType),
+                  " | Vol=", DoubleToString(HistoryOrderGetDouble(trans.order, ORDER_VOLUME_INITIAL), 2),
+                  " | Price=", DoubleToString(HistoryOrderGetDouble(trans.order, ORDER_PRICE_OPEN), _Digits),
+                  " | Exp=", TimeToString(expiration, TIME_DATE | TIME_MINUTES));
+        }
+
+        return;
+    }
+
+    if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
+        LogExitDeal(trans.deal);
 }

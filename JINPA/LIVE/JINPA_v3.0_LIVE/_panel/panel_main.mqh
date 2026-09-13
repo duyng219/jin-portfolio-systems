@@ -22,6 +22,19 @@
 
 #define PANEL_LOG_ROWS 10
 
+const string PANEL_STATIC_LABEL_SUFFIXES[9] =
+{
+    "TitleSetup",
+    "LblKey",
+    "TitleSize",
+    "LblRiskM",
+    "LblSL",
+    "TitleTrade",
+    "TitleCancel",
+    "TitleLog",
+    "LblLogCols"
+};
+
 //+------------------------------------------------------------------+
 //| CJINPAPanel — Flat design panel, 7 blocks                        |
 //+------------------------------------------------------------------+
@@ -102,6 +115,8 @@ private:
     bool   CreateControls(int ox, int oy, int pw, int ph);
     void   StyleDialogFrame();
     void   RestyleStaticObjects();
+    bool   IsOwnedStaticLabelName(const string objectName);
+    void   CleanupStaleStaticLabels(const long chart, const int subwin);
     void   StyleComboText(string comboName, int fontSize = 8);
     bool   AddBlockBg(int idx, int x1, int y1, int x2, int y2);
     bool   AddSeparator(int idx, int x1, int y, int x2);
@@ -146,7 +161,8 @@ public:
     void   RefreshVisuals();
     void   Tick();
     string GetComment();
-    double GetLotSize(ENUM_ORDER_TYPE dir = ORDER_TYPE_BUY);
+    double GetLotSize(ENUM_ORDER_TYPE orderType = ORDER_TYPE_BUY,
+                      double slDistance = 0.0, double openPrice = 0.0);
 
 protected:
     virtual bool OnEvent(const int id, const long& lparam,
@@ -184,6 +200,11 @@ CJINPAPanel::CJINPAPanel() :
 bool CJINPAPanel::Create(const long chart, const string name, const int subwin,
                           const int x1, const int y1, const int x2, const int y2)
 {
+    // A template restores serialized labels after the previous panel has already
+    // been destroyed. Remove only stale labels that satisfy the exact panel-owned
+    // contract: a five-digit CAppDialog instance ID plus a whitelisted suffix.
+    CleanupStaleStaticLabels(chart, subwin);
+
     if(!CAppDialog::Create(chart, name, subwin, x1, y1, x2, y2))
         return false;
     StyleDialogFrame();
@@ -192,6 +213,41 @@ bool CJINPAPanel::Create(const long chart, const string name, const int subwin,
     // to absolute. Passing absolute coords here would double-shift and push wide controls
     // outside the container bounds, causing Contains()=false → Hide() on first Add().
     return CreateControls(0, 0, x2 - x1, y2 - y1);
+}
+
+//+------------------------------------------------------------------+
+bool CJINPAPanel::IsOwnedStaticLabelName(const string objectName)
+{
+    const int instanceIdLength = 5;
+    if(StringLen(objectName) <= instanceIdLength)
+        return false;
+
+    for(int i = 0; i < instanceIdLength; i++)
+    {
+        const ushort character = StringGetCharacter(objectName, i);
+        if(character < 48 || character > 57)
+            return false;
+    }
+
+    const string suffix = StringSubstr(objectName, instanceIdLength);
+    for(int i = 0; i < ArraySize(PANEL_STATIC_LABEL_SUFFIXES); i++)
+    {
+        if(suffix == PANEL_STATIC_LABEL_SUFFIXES[i])
+            return true;
+    }
+    return false;
+}
+
+//+------------------------------------------------------------------+
+void CJINPAPanel::CleanupStaleStaticLabels(const long chart, const int subwin)
+{
+    const int total = ObjectsTotal(chart, subwin, OBJ_LABEL);
+    for(int i = total - 1; i >= 0; i--)
+    {
+        const string objectName = ObjectName(chart, i, subwin, OBJ_LABEL);
+        if(IsOwnedStaticLabelName(objectName))
+            ObjectDelete(chart, objectName);
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -290,7 +346,7 @@ bool CJINPAPanel::MakeBtn(CButton& btn, string nm, int x1, int y1, int x2, int y
     btn.ColorBackground(bc);
     btn.ColorBorder(CLR_CONTROL_BORDER);
     btn.Font("Consolas");
-    btn.FontSize(8);
+    btn.FontSize(ScaleFont(8));
     if(!Add(btn)) return false;
     ObjectSetInteger(m_chart_id, m_name + nm, OBJPROP_ZORDER, 2);
     return true;
@@ -306,7 +362,7 @@ bool CJINPAPanel::MakeLbl(CLabel& lbl, string nm, int x1, int y1, int x2, int y2
     lbl.Text(txt);
     lbl.Color(tc);
     lbl.Font(font);
-    lbl.FontSize(sz);
+    lbl.FontSize(ScaleFont(sz));
     if(!Add(lbl)) return false;
     ObjectSetInteger(m_chart_id, m_name + nm, OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER);
     ObjectSetInteger(m_chart_id, m_name + nm, OBJPROP_ZORDER, 2);
@@ -322,7 +378,7 @@ void CJINPAPanel::StyleComboText(string comboName, int fontSize)
     if(ObjectFind(m_chart_id, editName) >= 0)
     {
         ObjectSetString(m_chart_id, editName, OBJPROP_FONT, "Consolas");
-        ObjectSetInteger(m_chart_id, editName, OBJPROP_FONTSIZE, fontSize);
+        ObjectSetInteger(m_chart_id, editName, OBJPROP_FONTSIZE, ScaleFont(fontSize));
     }
 
     string listPrefix = m_name + comboName + "ListItem";
@@ -333,17 +389,27 @@ void CJINPAPanel::StyleComboText(string comboName, int fontSize)
             continue;
 
         ObjectSetString(m_chart_id, itemName, OBJPROP_FONT, "Consolas");
-        ObjectSetInteger(m_chart_id, itemName, OBJPROP_FONTSIZE, fontSize);
+        ObjectSetInteger(m_chart_id, itemName, OBJPROP_FONTSIZE, ScaleFont(fontSize));
     }
 }
 
 //+------------------------------------------------------------------+
 bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
 {
-    int BW  = BTN_W;               // chiều rộng mỗi nút
-    int W   = 2 * BW + MX;        // chiều rộng 2 nút cạnh nhau
-    int bgW = PANEL_W - 6;        // chiều rộng background block
-    int clientH = ph - CAP_H - 6; // client area height (ph = total dialog height)
+    int mx       = ScaleUI(MX);
+    int btnGap   = ScaleUI(BTN_GAP);
+    int blkGap   = ScaleUI(BLK_GAP);
+    int blockPad = ScaleUI(BLOCK_PAD);
+    int titleGap = ScaleUI(TITLE_GAP);
+    int rowH     = ScaleUI(RH);
+    int btnH     = ScaleUI(BTN_H);
+    int logRH    = ScaleUI(LOG_RH);
+    int framePad = ScaleUI(6);
+
+    int BW  = ScaleUI(BTN_W);     // chiều rộng mỗi nút
+    int W   = 2 * BW + mx;        // chiều rộng 2 nút cạnh nhau
+    int bgW = pw - framePad;      // chiều rộng background block
+    int clientH = ph - CAP_H - framePad; // client area height (ph = total dialog height)
 
     // ── Full-panel background — Add() đầu tiên → z-order thấp nhất ──
     // Phủ toàn bộ client area để không có pixel xám/trắng lọt qua
@@ -360,42 +426,42 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
         ObjectSetInteger(m_chart_id, pnName, OBJPROP_ZORDER, 0);
     }
 
-    if(!AddSeparator(0, ox+MX, oy+MX, ox+bgW-MX)) return false;
+    if(!AddSeparator(0, ox+mx, oy+mx, ox+bgW-mx)) return false;
 
     // ══════════════════════════════════════════════════════════════
     //  BLOCK 1 — SETUP
     //  Hàng 1: [setup combo ▼]  Key: [suffix ▼]
     //  Hàng 2: [custom text edit]
     // ══════════════════════════════════════════════════════════════
-    int b1y1  = oy + MX;
-    int tY1   = b1y1 + BLOCK_PAD;
-    int yS0   = tY1 + LOG_RH + TITLE_GAP;   // hàng setup/suffix
-    int yS1   = yS0 + RH + MX;      // hàng custom edit
-    int b1y2  = yS1 + RH + BLOCK_PAD;
+    int b1y1  = oy + mx;
+    int tY1   = b1y1 + blockPad;
+    int yS0   = tY1 + logRH + titleGap;   // hàng setup/suffix
+    int yS1   = yS0 + rowH + mx;      // hàng custom edit
+    int b1y2  = yS1 + rowH + blockPad;
 
     if(!AddBlockBg(1, ox, b1y1, ox + bgW, b1y2)) return false;
 
-    if(!MakeLbl(m_lblTitleSetup, "TitleSetup", ox+MX, tY1, ox+bgW-MX, tY1+LOG_RH,
+    if(!MakeLbl(m_lblTitleSetup, "TitleSetup", ox+mx, tY1, ox+bgW-mx, tY1+logRH,
                 "SETUP", CLR_TITLE, "Consolas", 9)) return false;
 
     // setup combo | "Key:" label | suffix/key dropdown
-    int suffixW = 58;
-    int keyLblW = 28;
-    int setupW  = W - suffixW - keyLblW - MX;
+    int suffixW = ScaleUI(58);
+    int keyLblW = ScaleUI(28);
+    int setupW  = W - suffixW - keyLblW - mx;
 
     if(!m_cmbSetup.Create(m_chart_id, m_name+"CmbSetup", m_subwin,
-                           ox+MX, yS0, ox+MX+setupW, yS0+RH)) return false;
+                           ox+mx, yS0, ox+mx+setupW, yS0+rowH)) return false;
     StyleComboText("CmbSetup");
     for(int i = 0; i < PANEL_SETUPS_COUNT; i++)
         m_cmbSetup.AddItem(PANEL_SETUPS[i], i);
     m_cmbSetup.SelectByValue(3);
     if(!Add(m_cmbSetup)) return false;
 
-    if(!MakeLbl(m_lblKey, "LblKey", ox+MX+setupW+MX, yS0, ox+MX+setupW+MX+keyLblW, yS0+RH,
+    if(!MakeLbl(m_lblKey, "LblKey", ox+mx+setupW+mx, yS0, ox+mx+setupW+mx+keyLblW, yS0+rowH,
                 "Key:", CLR_TEXT_COMMENT)) return false;
 
     if(!m_cmbSuffix.Create(m_chart_id, m_name+"CmbSuffix", m_subwin,
-                            ox+MX+setupW+MX+keyLblW, yS0, ox+MX+W, yS0+RH)) return false;
+                            ox+mx+setupW+mx+keyLblW, yS0, ox+mx+W, yS0+rowH)) return false;
     StyleComboText("CmbSuffix");
     for(int i = 0; i < PANEL_SUFFIXES_COUNT; i++)
         m_cmbSuffix.AddItem(PANEL_SUFFIXES[i], i);
@@ -403,38 +469,38 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!Add(m_cmbSuffix)) return false;
 
     if(!m_edtCustom.Create(m_chart_id, m_name+"EdtCustom", m_subwin,
-                            ox+MX, yS1, ox+MX+W, yS1+RH)) return false;
+                            ox+mx, yS1, ox+mx+W, yS1+rowH)) return false;
     m_edtCustom.Text("");
     m_edtCustom.Color(clrBlack);
     m_edtCustom.ColorBackground(clrWhite);
     m_edtCustom.ColorBorder(CLR_CONTROL_BORDER);
     m_edtCustom.Font("Consolas");
-    m_edtCustom.FontSize(8);
+    m_edtCustom.FontSize(ScaleFont(8));
     if(!Add(m_edtCustom)) return false;
-    if(!AddSeparator(2, ox+MX, b1y2 + BLK_GAP / 2, ox+bgW-MX)) return false;
+    if(!AddSeparator(2, ox+mx, b1y2 + blkGap / 2, ox+bgW-mx)) return false;
 
     // ══════════════════════════════════════════════════════════════
     //  BLOCK 2 — ORDER SIZE / RISK
     //  Hàng 1: Risk-m: [MM combo]  SL: [SL combo]
     // ══════════════════════════════════════════════════════════════
-    int b2y1  = b1y2 + BLK_GAP;
-    int tY2   = b2y1 + BLOCK_PAD;
-    int yR0   = tY2 + LOG_RH + TITLE_GAP;
-    int b2y2  = yR0 + RH + BLOCK_PAD;
+    int b2y1  = b1y2 + blkGap;
+    int tY2   = b2y1 + blockPad;
+    int yR0   = tY2 + logRH + titleGap;
+    int b2y2  = yR0 + rowH + blockPad;
 
     if(!AddBlockBg(2, ox, b2y1, ox + bgW, b2y2)) return false;
 
-    if(!MakeLbl(m_lblTitleSize, "TitleSize", ox+MX, tY2, ox+bgW-MX, tY2+LOG_RH,
+    if(!MakeLbl(m_lblTitleSize, "TitleSize", ox+mx, tY2, ox+bgW-mx, tY2+logRH,
                 "ORDER SIZE / RISK", CLR_TITLE, "Consolas", 9)) return false;
 
     // "Risk-m:" label | wider risk combo | "SL:" label | shorter SL combo
-    int rLblW = 44, mmW = 118, slLblW = 22;
+    int rLblW = ScaleUI(44), mmW = ScaleUI(96), slLblW = ScaleUI(22);
 
-    if(!MakeLbl(m_lblRiskM, "LblRiskM", ox+MX, yR0, ox+MX+rLblW, yR0+RH,
+    if(!MakeLbl(m_lblRiskM, "LblRiskM", ox+mx, yR0, ox+mx+rLblW, yR0+rowH,
                 "Risk-m:", CLR_TEXT_COMMENT)) return false;
 
     if(!m_cmbRiskM.Create(m_chart_id, m_name+"CmbRiskM", m_subwin,
-                           ox+MX+rLblW+MX, yR0, ox+MX+rLblW+MX+mmW, yR0+RH)) return false;
+                           ox+mx+rLblW+mx, yR0, ox+mx+rLblW+mx+mmW, yR0+rowH)) return false;
     StyleComboText("CmbRiskM");
     m_cmbRiskM.AddItem("min Lot",  MM_MIN_LOT_SIZE);
     m_cmbRiskM.AddItem("min/eq",   MM_MIN_LOT_PER_EQUITY);
@@ -444,95 +510,96 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     m_cmbRiskM.SelectByValue((long)m_mmType);
     if(!Add(m_cmbRiskM)) return false;
 
-    int slLblX = ox+MX+rLblW+MX+mmW+MX;
-    if(!MakeLbl(m_lblSLLabel, "LblSL", slLblX, yR0, slLblX+slLblW, yR0+RH,
+    int slLblX = ox+mx+rLblW+mx+mmW+mx;
+    if(!MakeLbl(m_lblSLLabel, "LblSL", slLblX, yR0, slLblX+slLblW, yR0+rowH,
                 "SL:", CLR_TEXT_COMMENT)) return false;
 
     if(!m_cmbSL.Create(m_chart_id, m_name+"CmbSL", m_subwin,
-                        slLblX+slLblW, yR0, ox+MX+W, yR0+RH)) return false;
+                        slLblX+slLblW, yR0, ox+mx+W, yR0+rowH)) return false;
     StyleComboText("CmbSL");
     m_cmbSL.AddItem("atr",   PANEL_SL_ATR_IDX);
     m_cmbSL.AddItem("fixed", PANEL_SL_FIXED_IDX);
     m_cmbSL.SelectByValue(PANEL_SL_ATR_IDX);
     if(!Add(m_cmbSL)) return false;
-    if(!AddSeparator(2, ox+MX, b2y2 + BLK_GAP / 2, ox+bgW-MX)) return false;
+    if(!AddSeparator(2, ox+mx, b2y2 + blkGap / 2, ox+bgW-mx)) return false;
 
     // ══════════════════════════════════════════════════════════════
     //  BLOCK 3 — TRADE
     //  3 cặp nút: Market / Stop / Limit
     // ══════════════════════════════════════════════════════════════
-    int b3y1  = b2y2 + BLK_GAP;
-    int tY3   = b3y1 + BLOCK_PAD;
-    int yMkt  = tY3  + LOG_RH + TITLE_GAP;
-    int yStop = yMkt  + BTN_H + BTN_GAP;
-    int yLim  = yStop + BTN_H + BTN_GAP;
-    int b3y2  = yLim  + BTN_H + BLOCK_PAD;
+    int b3y1  = b2y2 + blkGap;
+    int tY3   = b3y1 + blockPad;
+    int yMkt  = tY3  + logRH + titleGap;
+    int yStop = yMkt  + btnH + btnGap;
+    int yLim  = yStop + btnH + btnGap;
+    int b3y2  = yLim  + btnH + blockPad;
 
     if(!AddBlockBg(3, ox, b3y1, ox + bgW, b3y2)) return false;
 
-    if(!MakeLbl(m_lblTitleTrade, "TitleTrade", ox+MX, tY3, ox+bgW-MX, tY3+LOG_RH,
+    if(!MakeLbl(m_lblTitleTrade, "TitleTrade", ox+mx, tY3, ox+bgW-mx, tY3+logRH,
                 "TRADE", CLR_TITLE, "Consolas", 9)) return false;
 
-    if(!MakeBtn(m_btnBuyMkt,    "BtnBuyMkt",   ox+MX,       yMkt,  ox+MX+BW,       yMkt+BTN_H,  "Buy Market",  CLR_TITLE,  CLR_BTN_BUY))  return false;
-    if(!MakeBtn(m_btnSellMkt,   "BtnSellMkt",  ox+MX+BW+MX, yMkt,  ox+MX+BW+MX+BW, yMkt+BTN_H,  "Sell Market", CLR_TITLE,  CLR_BTN_SELL)) return false;
-    if(!MakeBtn(m_btnBuyStop,   "BtnBuyStop",  ox+MX,       yStop, ox+MX+BW,       yStop+BTN_H, "B-Stop",      CLR_TITLE,  CLR_BTN_BUY))  return false;
-    if(!MakeBtn(m_btnSellStop,  "BtnSellStop", ox+MX+BW+MX, yStop, ox+MX+BW+MX+BW, yStop+BTN_H, "S-Stop",      CLR_TITLE,  CLR_BTN_SELL)) return false;
-    if(!MakeBtn(m_btnBuyLimit,  "BtnBuyLimit", ox+MX,       yLim,  ox+MX+BW,       yLim+BTN_H,  "B-Limit",     CLR_TITLE,  CLR_BTN_BUY))  return false;
-    if(!MakeBtn(m_btnSellLimit, "BtnSellLimit",ox+MX+BW+MX, yLim,  ox+MX+BW+MX+BW, yLim+BTN_H,  "S-Limit",     CLR_TITLE,  CLR_BTN_SELL)) return false;
-    if(!AddSeparator(3, ox+MX, b3y2 + BLK_GAP / 2, ox+bgW-MX)) return false;
+    if(!MakeBtn(m_btnBuyMkt,    "BtnBuyMkt",   ox+mx,       yMkt,  ox+mx+BW,       yMkt+btnH,  "Buy Market",  CLR_TITLE,  CLR_BTN_BUY))  return false;
+    if(!MakeBtn(m_btnSellMkt,   "BtnSellMkt",  ox+mx+BW+mx, yMkt,  ox+mx+BW+mx+BW, yMkt+btnH,  "Sell Market", CLR_TITLE,  CLR_BTN_SELL)) return false;
+    if(!MakeBtn(m_btnBuyStop,   "BtnBuyStop",  ox+mx,       yStop, ox+mx+BW,       yStop+btnH, "B-Stop",      CLR_TITLE,  CLR_BTN_BUY))  return false;
+    if(!MakeBtn(m_btnSellStop,  "BtnSellStop", ox+mx+BW+mx, yStop, ox+mx+BW+mx+BW, yStop+btnH, "S-Stop",      CLR_TITLE,  CLR_BTN_SELL)) return false;
+    if(!MakeBtn(m_btnBuyLimit,  "BtnBuyLimit", ox+mx,       yLim,  ox+mx+BW,       yLim+btnH,  "B-Limit",     CLR_TITLE,  CLR_BTN_BUY))  return false;
+    if(!MakeBtn(m_btnSellLimit, "BtnSellLimit",ox+mx+BW+mx, yLim,  ox+mx+BW+mx+BW, yLim+btnH,  "S-Limit",     CLR_TITLE,  CLR_BTN_SELL)) return false;
+    if(!AddSeparator(3, ox+mx, b3y2 + blkGap / 2, ox+bgW-mx)) return false;
 
     // ══════════════════════════════════════════════════════════════
     //  BLOCK 4 — CANCEL
     //  Hàng 1: Cancel BO / Cancel SO (xóa pending orders)
     //  Hàng 2: Cancel Buy / Cancel Sell (đóng positions)
     // ══════════════════════════════════════════════════════════════
-    int b4y1  = b3y2 + BLK_GAP;
-    int tY4   = b4y1 + BLOCK_PAD;
-    int yBO   = tY4  + LOG_RH + TITLE_GAP;
-    int yPos  = yBO  + BTN_H + BTN_GAP;
-    int b4y2  = yPos + BTN_H + BLOCK_PAD;
+    int b4y1  = b3y2 + blkGap;
+    int tY4   = b4y1 + blockPad;
+    int yBO   = tY4  + logRH + titleGap;
+    int yPos  = yBO  + btnH + btnGap;
+    int b4y2  = yPos + btnH + blockPad;
 
     if(!AddBlockBg(4, ox, b4y1, ox + bgW, b4y2)) return false;
 
-    if(!MakeLbl(m_lblTitleCancel, "TitleCancel", ox+MX, tY4, ox+bgW-MX, tY4+LOG_RH,
+    if(!MakeLbl(m_lblTitleCancel, "TitleCancel", ox+mx, tY4, ox+bgW-mx, tY4+logRH,
                 "CANCEL", CLR_TITLE, "Consolas", 9)) return false;
 
-    if(!MakeBtn(m_btnCancelBO,   "BtnCancelBO",   ox+MX,       yBO,  ox+MX+BW,       yBO+BTN_H,  "xBO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
-    if(!MakeBtn(m_btnCancelSO,   "BtnCancelSO",   ox+MX+BW+MX, yBO,  ox+MX+BW+MX+BW, yBO+BTN_H,  "xSO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
-    if(!MakeBtn(m_btnCancelBuy,  "BtnCancelBuy",  ox+MX,       yPos, ox+MX+BW,       yPos+BTN_H, "xBuy",  CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
-    if(!MakeBtn(m_btnCancelSell, "BtnCancelSell", ox+MX+BW+MX, yPos, ox+MX+BW+MX+BW, yPos+BTN_H, "xSell", CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
-    if(!AddSeparator(4, ox+MX, b4y2 + BLK_GAP / 2, ox+bgW-MX)) return false;
+    if(!MakeBtn(m_btnCancelBO,   "BtnCancelBO",   ox+mx,       yBO,  ox+mx+BW,       yBO+btnH,  "xBO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
+    if(!MakeBtn(m_btnCancelSO,   "BtnCancelSO",   ox+mx+BW+mx, yBO,  ox+mx+BW+mx+BW, yBO+btnH,  "xSO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
+    if(!MakeBtn(m_btnCancelBuy,  "BtnCancelBuy",  ox+mx,       yPos, ox+mx+BW,       yPos+btnH, "xBuy",  CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
+    if(!MakeBtn(m_btnCancelSell, "BtnCancelSell", ox+mx+BW+mx, yPos, ox+mx+BW+mx+BW, yPos+btnH, "xSell", CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
+    if(!AddSeparator(4, ox+mx, b4y2 + blkGap / 2, ox+bgW-mx)) return false;
 
     // ══════════════════════════════════════════════════════════════
     //  BLOCK 5 — TRADES LOG
     //  Header cột + PANEL_LOG_ROWS dòng vị thế đang mở
     // ══════════════════════════════════════════════════════════════
-    int b6y2 = oy + clientH - MX;
-    int b6y1 = b6y2 - BTN_H - 2 * BLOCK_PAD;
-    int yExp = b6y1 + BLOCK_PAD;
+    int b6y2 = oy + clientH - mx;
+    int b6y1 = b6y2 - btnH - 2 * blockPad;
+    int yExp = b6y1 + blockPad;
 
-    int b5y1    = b4y2 + BLK_GAP;
-    int tY5     = b5y1 + BLOCK_PAD;
-    int yLCols  = tY5  + LOG_RH + TITLE_GAP;
-    int yLog0   = yLCols + LOG_RH + 2;
-    int b5y2    = b6y1 - BLK_GAP;
-    int logRoom = b5y2 - yLog0 - BLOCK_PAD;
-    m_visibleLogRows = MathMax(0, MathMin(PANEL_LOG_ROWS, logRoom / (LOG_RH + 2)));
+    int b5y1    = b4y2 + blkGap;
+    int tY5     = b5y1 + blockPad;
+    int yLCols  = tY5  + logRH + titleGap;
+    int rowGap  = ScaleUI(2);
+    int yLog0   = yLCols + logRH + rowGap;
+    int b5y2    = b6y1 - blkGap;
+    int logRoom = b5y2 - yLog0 - blockPad;
+    m_visibleLogRows = MathMax(0, MathMin(PANEL_LOG_ROWS, logRoom / (logRH + rowGap)));
 
     if(!AddBlockBg(5, ox, b5y1, ox + bgW, b5y2)) return false;
 
-    if(!MakeLbl(m_lblTitleLog, "TitleLog", ox+MX, tY5, ox+bgW-MX, tY5+LOG_RH,
+    if(!MakeLbl(m_lblTitleLog, "TitleLog", ox+mx, tY5, ox+bgW-mx, tY5+logRH,
                 "TRADES LOG", CLR_TITLE, "Consolas", 9)) return false;
-    if(!MakeLbl(m_lblLogCols, "LblLogCols", ox+MX, yLCols, ox+MX+W, yLCols+LOG_RH,
+    if(!MakeLbl(m_lblLogCols, "LblLogCols", ox+mx, yLCols, ox+mx+W, yLCols+logRH,
                 "Ticket   Comment    Time", CLR_TEXT_COMMENT, "Consolas", 8)) return false;
     for(int i = 0; i < m_visibleLogRows; i++)
     {
-        int yRow = yLog0 + i * (LOG_RH + 2);
+        int yRow = yLog0 + i * (logRH + rowGap);
         if(!MakeLbl(m_logRows[i], "LogRow"+IntegerToString(i),
-                    ox+MX, yRow, ox+MX+W, yRow+LOG_RH,
+                    ox+mx, yRow, ox+mx+W, yRow+logRH,
                     "", CLR_TEXT_COMMENT, "Consolas", 8)) return false;
     }
-    if(!AddSeparator(5, ox+MX, b5y2 + BLK_GAP / 2, ox+bgW-MX)) return false;
+    if(!AddSeparator(5, ox+mx, b5y2 + blkGap / 2, ox+bgW-mx)) return false;
 
     // ══════════════════════════════════════════════════════════════
     //  BLOCK 6 — EXPORT
@@ -541,7 +608,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!AddBlockBg(6, ox, b6y1, ox + bgW, b6y2)) return false;
 
     if(!MakeBtn(m_btnExportCSV, "BtnExportCSV",
-                ox+MX, yExp, ox+MX+W, yExp+BTN_H,
+                ox+mx, yExp, ox+mx+W, yExp+btnH,
                 "EXPORT CSV", CLR_TEXT_COMMENT, CLR_BTN_NEUTRAL)) return false;
 
     ChartRedraw(m_chart_id);
@@ -608,7 +675,7 @@ void CJINPAPanel::Tick()
         s_firstTick = true;
     }
 
-    Caption("jinpa-v2.2");
+    Caption("JINPA v3.0 LIVE");
 
     // Refresh log mỗi 3 giây
     static datetime s_last = 0;
@@ -633,18 +700,23 @@ string CJINPAPanel::GetComment()
 }
 
 //+------------------------------------------------------------------+
-double CJINPAPanel::GetLotSize(ENUM_ORDER_TYPE dir)
+double CJINPAPanel::GetLotSize(ENUM_ORDER_TYPE orderType,
+                               double slDistance, double openPrice)
 {
     long mmVal = m_cmbRiskM.Value();
     ENUM_MONEY_MANAGEMENT mm = (mmVal >= 0 && mmVal <= 4) ?
                                 (ENUM_MONEY_MANAGEMENT)(int)mmVal : m_mmType;
 
-    bool   useATR = (m_cmbSL.Value() == PANEL_SL_ATR_IDX);
-    double slDist = useATR ? m_atrSL : (m_slPoints * _Point);
-    if(slDist <= 0) slDist = m_atrSL;
+    if(slDistance <= 0.0)
+    {
+        bool useATR = (m_cmbSL.Value() == PANEL_SL_ATR_IDX);
+        slDistance = useATR ? m_atrSL : (m_slPoints * _Point);
+        if(slDistance <= 0.0) slDistance = m_atrSL;
+    }
 
     return m_rm.MoneyManagement(m_symbol, mm, m_minLotSteps,
-                                m_riskPct, slDist, m_fixedLot, dir);
+                                m_riskPct, slDistance, m_fixedLot,
+                                orderType, openPrice);
 }
 
 //+------------------------------------------------------------------+
@@ -684,18 +756,18 @@ void CJINPAPanel::PlaceOrder(ENUM_ORDER_TYPE type)
 {
     if(!m_trade || !m_rm || !m_pm)
     {
-        Print("[Panel] Error: dependencies not set.");
+        Print("[JINPA][ERROR] Panel dependencies not set.");
         return;
     }
 
     if(m_tradingHalted)
     {
-        Print("[Panel HALT] Order blocked: ", m_haltReason);
+        Print("[JINPA][WARN] Order blocked | ", m_haltReason);
         return;
     }
 
     if(IsWeekendFxLikeMarket())
-        Print("[Panel WARN] Weekend order attempt on ", m_symbol,
+        Print("[JINPA][WARN] Weekend order attempt on ", m_symbol,
               " (FX/metal-like market). Today is Saturday/Sunday by broker server time. Please check before trading.");
 
     bool useATR    = (m_cmbSL.Value() == PANEL_SL_ATR_IDX);
@@ -705,13 +777,13 @@ void CJINPAPanel::PlaceOrder(ENUM_ORDER_TYPE type)
     // Guard: ATR SL buffer not populated yet (happens on new charts or new bars)
     if(useATR && m_atrSL <= 0)
     {
-        Print("[Panel] ATR SL not ready (atrSL=0) — wait a tick for indicator to load.");
+        Print("[JINPA][WARN] ATR SL not ready (atrSL=0) — wait a tick for indicator to load.");
         return;
     }
     // Guard: ATR PO offset = 0 makes pending price equal to current price → 10016
     if(isPending && m_atrPO <= 0)
     {
-        Print("[Panel] ATR PO not ready (atrPO=0) — wait a tick for indicator to load.");
+        Print("[JINPA][WARN] ATR PO not ready (atrPO=0) — wait a tick for indicator to load.");
         return;
     }
 
@@ -739,32 +811,32 @@ void CJINPAPanel::PlaceOrder(ENUM_ORDER_TYPE type)
 
         case ORDER_TYPE_BUY_STOP:
             poPrice = NormalizeDouble(ask + m_atrPO, digits);
-            sl      = NormalizeDouble(poPrice - m_atrSL, digits);
-            lot     = GetLotSize(ORDER_TYPE_BUY);
+            sl      = NormalizeDouble(m_pm.CalculateStopLossByATR(m_symbol, "BUY", m_atrPO), digits);
+            lot     = GetLotSize(ORDER_TYPE_BUY_STOP, MathAbs(poPrice - sl), poPrice);
             if(lot > 0) { m_trade.BuyStop(lot, poPrice, m_symbol, sl, 0,
                                            ORDER_TIME_SPECIFIED, exp, comment); traded = true; }
             break;
 
         case ORDER_TYPE_SELL_STOP:
             poPrice = NormalizeDouble(bid - m_atrPO, digits);
-            sl      = NormalizeDouble(poPrice + m_atrSL, digits);
-            lot     = GetLotSize(ORDER_TYPE_SELL);
+            sl      = NormalizeDouble(m_pm.CalculateStopLossByATR(m_symbol, "SELL", m_atrPO), digits);
+            lot     = GetLotSize(ORDER_TYPE_SELL_STOP, MathAbs(poPrice - sl), poPrice);
             if(lot > 0) { m_trade.SellStop(lot, poPrice, m_symbol, sl, 0,
                                             ORDER_TIME_SPECIFIED, exp, comment); traded = true; }
             break;
 
         case ORDER_TYPE_BUY_LIMIT:
-            poPrice = NormalizeDouble(bid - m_atrPO, digits);
+            poPrice = NormalizeDouble(ask - m_atrPO, digits);
             sl      = NormalizeDouble(poPrice - m_atrSL, digits);
-            lot     = GetLotSize(ORDER_TYPE_BUY);
+            lot     = GetLotSize(ORDER_TYPE_BUY_LIMIT, MathAbs(poPrice - sl), poPrice);
             if(lot > 0) { m_trade.BuyLimit(lot, poPrice, m_symbol, sl, 0,
                                             ORDER_TIME_SPECIFIED, exp, comment); traded = true; }
             break;
 
         case ORDER_TYPE_SELL_LIMIT:
-            poPrice = NormalizeDouble(ask + m_atrPO, digits);
+            poPrice = NormalizeDouble(bid + m_atrPO, digits);
             sl      = NormalizeDouble(poPrice + m_atrSL, digits);
-            lot     = GetLotSize(ORDER_TYPE_SELL);
+            lot     = GetLotSize(ORDER_TYPE_SELL_LIMIT, MathAbs(poPrice - sl), poPrice);
             if(lot > 0) { m_trade.SellLimit(lot, poPrice, m_symbol, sl, 0,
                                              ORDER_TIME_SPECIFIED, exp, comment); traded = true; }
             break;
@@ -778,7 +850,7 @@ void CJINPAPanel::PlaceOrder(ENUM_ORDER_TYPE type)
         RefreshLog();
     }
     else
-        Print("[Panel] Lot=0 — cannot place ", EnumToString(type),
+        Print("[JINPA][ERROR] Lot=0 — cannot place ", EnumToString(type),
               " | atrSL=", DoubleToString(m_atrSL, digits),
               " atrPO=", DoubleToString(m_atrPO, digits));
 }
@@ -794,12 +866,18 @@ void CJINPAPanel::LogResult(string action)
                retcode == TRADE_RETCODE_DONE_PARTIAL ||
                retcode == TRADE_RETCODE_NO_CHANGES);
 
+    StringReplace(action, "ORDER_TYPE_", "");
+    StringReplace(action, "_", " ");
+
     if(ok && m_logLevel >= LOG_INFO)
-        Print("[Panel OK] ", action, " | #", m_trade.ResultOrder(),
-              " vol=", DoubleToString(m_trade.ResultVolume(), 2),
-              " cmt=", GetComment());
+        Print("[JINPA][TRADE] ", action,
+              " | #", m_trade.ResultOrder(),
+              " | ", DoubleToString(m_trade.ResultVolume(), 2),
+              " | ", DoubleToString(m_trade.ResultPrice(), _Digits));
     else if(!ok && m_logLevel >= LOG_ERROR)
-        Print("[Panel ERR] ", action, " | ", retcode, ": ", m_trade.ResultRetcodeDescription());
+        Print("[JINPA][ERROR] ", action, " failed",
+              " | retcode=", retcode,
+              " | ", m_trade.ResultRetcodeDescription());
 }
 
 //+------------------------------------------------------------------+
@@ -831,7 +909,15 @@ void CJINPAPanel::OnCancelBO()
         if(m_magic > 0 && OrderGetInteger(ORDER_MAGIC) != (long)m_magic) continue;
         ENUM_ORDER_TYPE ot = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
         if(ot == ORDER_TYPE_BUY_STOP || ot == ORDER_TYPE_BUY_LIMIT)
-            m_trade.OrderDelete(ticket);
+        {
+            bool ok = m_trade.OrderDelete(ticket);
+            if(ok && m_logLevel >= LOG_INFO)
+                Print("[JINPA][TRADE] CANCEL BUY | #", ticket);
+            else if(!ok && m_logLevel >= LOG_ERROR)
+                Print("[JINPA][ERROR] CANCEL BUY failed | #", ticket,
+                      " | retcode=", m_trade.ResultRetcode(),
+                      " | ", m_trade.ResultRetcodeDescription());
+        }
     }
     RefreshLog();
 }
@@ -847,7 +933,15 @@ void CJINPAPanel::OnCancelSO()
         if(m_magic > 0 && OrderGetInteger(ORDER_MAGIC) != (long)m_magic) continue;
         ENUM_ORDER_TYPE ot = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
         if(ot == ORDER_TYPE_SELL_STOP || ot == ORDER_TYPE_SELL_LIMIT)
-            m_trade.OrderDelete(ticket);
+        {
+            bool ok = m_trade.OrderDelete(ticket);
+            if(ok && m_logLevel >= LOG_INFO)
+                Print("[JINPA][TRADE] CANCEL SELL | #", ticket);
+            else if(!ok && m_logLevel >= LOG_ERROR)
+                Print("[JINPA][ERROR] CANCEL SELL failed | #", ticket,
+                      " | retcode=", m_trade.ResultRetcode(),
+                      " | ", m_trade.ResultRetcodeDescription());
+        }
     }
     RefreshLog();
 }
@@ -862,7 +956,13 @@ void CJINPAPanel::OnCancelBuy()
         if(PositionGetString(POSITION_SYMBOL) != m_symbol) continue;
         if(m_magic > 0 && PositionGetInteger(POSITION_MAGIC) != (long)m_magic) continue;
         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
-            m_trade.PositionClose(ticket);
+        {
+            bool ok = m_trade.PositionClose(ticket);
+            if(!ok && m_logLevel >= LOG_ERROR)
+                Print("[JINPA][ERROR] CLOSE BUY failed | #", ticket,
+                      " | retcode=", m_trade.ResultRetcode(),
+                      " | ", m_trade.ResultRetcodeDescription());
+        }
     }
     RefreshLog();
 }
@@ -877,7 +977,13 @@ void CJINPAPanel::OnCancelSell()
         if(PositionGetString(POSITION_SYMBOL) != m_symbol) continue;
         if(m_magic > 0 && PositionGetInteger(POSITION_MAGIC) != (long)m_magic) continue;
         if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_SELL)
-            m_trade.PositionClose(ticket);
+        {
+            bool ok = m_trade.PositionClose(ticket);
+            if(!ok && m_logLevel >= LOG_ERROR)
+                Print("[JINPA][ERROR] CLOSE SELL failed | #", ticket,
+                      " | retcode=", m_trade.ResultRetcode(),
+                      " | ", m_trade.ResultRetcodeDescription());
+        }
     }
     RefreshLog();
 }
@@ -888,7 +994,7 @@ void CJINPAPanel::OnExportCSV()
     m_log.Refresh();
     string date = TimeToString(TimeCurrent(), TIME_DATE);
     StringReplace(date, ".", "-");
-    m_log.ExportCSV("JINPA_v2.2_" + m_symbol + "_" + date + ".csv");
+    m_log.ExportCSV("JINPA_v3.0_LIVE_" + m_symbol + "_" + date + ".csv");
 }
 
 #endif

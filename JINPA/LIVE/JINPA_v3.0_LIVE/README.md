@@ -1,15 +1,15 @@
-# JINPA — Manual Trading Assistant
+# JINPA v3.0 LIVE — Manual Trading Assistant
 
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công
 > One-click order entry + ATR-based risk management
 
-Version: 1.0.0 | Platform: MetaTrader 5
+Version: 3.0 LIVE | Platform: MetaTrader 5
 
 ---
 
 ## Cách dùng
 
-1. Attach `jinpa-manual.mq5` lên chart
+1. Attach `JINPA_v3.0_LIVE.ex5` lên chart
 2. Bật **AutoTrading** trong MT5
 3. 10 buttons xuất hiện góc trên-trái chart
 4. Click button để đặt/hủy/đóng lệnh
@@ -122,16 +122,3 @@ bres-pma
   VD: 
   revs-ppf_0 
   revs-ppf_1
-
-
-Tôi muốn bảng dạng này và thật tối giản 
----------------------------------------------------------- 
-| Comment: [revs-ppf ▼] [_0▼] | Custom: [___________] | 
-| Lot: [0.01] SL: [ATR] | 
----------------------------------------------------------- 
-| BUY Market | SELL Market | BUY Stop | SELL Stop | 
----------------------------------------------------------- 
-| Trades Log (hiện tại) | | Ticket | Type | Entry | SL | TP | Comment | Time | 
----------------------------------------------------------- 
-| Export CSV/JSON | 
-----------------------------------------------------------
