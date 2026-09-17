@@ -4,8 +4,8 @@
 #include "../core/WatcherTypes.mqh"
 #include "../core/WatcherLogger.mqh"
 
-#define JINPA_RADAR_COLUMN_COUNT 10
-#define JINPA_RADAR_FOOTER_FIELD_COUNT 5
+#define JINPA_RADAR_COLUMN_COUNT 8
+#define JINPA_RADAR_FOOTER_FIELD_COUNT 4
 
 const bool JINPA_RADAR_LAYOUT_TRACE = false;
 
@@ -47,6 +47,11 @@ private:
       return m_prefix + "TITLE";
    }
 
+   string HeaderUpdatedName() const
+   {
+      return m_prefix + "HEADER_UPDATED";
+   }
+
    string FooterWatcherName() const
    {
       return m_prefix + "FOOTER_WATCHER";
@@ -62,14 +67,9 @@ private:
       return m_prefix + "FOOTER_ACTIVE";
    }
 
-   string FooterTfName() const
+   string FooterEventName() const
    {
-      return m_prefix + "FOOTER_TF";
-   }
-
-   string FooterTimeName() const
-   {
-      return m_prefix + "FOOTER_TIME";
+      return m_prefix + "FOOTER_EVENT";
    }
 
    string HeaderName(const int column) const
@@ -87,11 +87,11 @@ private:
    {
       if(ObjectFind(m_chartId, BackgroundName()) < 0
          || ObjectFind(m_chartId, TitleName()) < 0
+         || ObjectFind(m_chartId, HeaderUpdatedName()) < 0
          || ObjectFind(m_chartId, FooterWatcherName()) < 0
          || ObjectFind(m_chartId, FooterSymbolName()) < 0
          || ObjectFind(m_chartId, FooterActiveName()) < 0
-         || ObjectFind(m_chartId, FooterTfName()) < 0
-         || ObjectFind(m_chartId, FooterTimeName()) < 0)
+         || ObjectFind(m_chartId, FooterEventName()) < 0)
          return false;
 
       for(int line = 0; line < 3; line++)
@@ -122,13 +122,11 @@ private:
          case 0: return "SYMBOL";
          case 1: return "TF";
          case 2: return "CYCLE";
-         case 3: return "CORE";
-         case 4: return "REGIME";
-         case 5: return "PHASE";
-         case 6: return "STRUCT";
-         case 7: return "SETUP";
-         case 8: return "STATUS";
-         case 9: return "LAST EVENT";
+         case 3: return "REGIME";
+         case 4: return "STATE";
+         case 5: return "STRUCTURE";
+         case 6: return "SETUP";
+         case 7: return "STATUS";
       }
 
       return "";
@@ -147,47 +145,39 @@ private:
    {
       if(profile == RADAR_LAYOUT_ULTRA)
       {
-         // Semantic ULTRA widths: long analytical fields receive most of the
-         // additional space; SYMBOL/TF remain intentionally compact.
-         m_columnWidths[0] = 90;  m_columnWidths[1] = 46;
-         m_columnWidths[2] = 120; m_columnWidths[3] = 115;
-         m_columnWidths[4] = 130; m_columnWidths[5] = 120;
-         m_columnWidths[6] = 125; m_columnWidths[7] = 100;
-         m_columnWidths[8] = 94;  m_columnWidths[9] = 240;
+         m_columnWidths[0] = 100; m_columnWidths[1] = 50;
+         m_columnWidths[2] = 120; m_columnWidths[3] = 120;
+         m_columnWidths[4] = 135; m_columnWidths[5] = 160;
+         m_columnWidths[6] = 110; m_columnWidths[7] = 100;
 
          m_footerOffsets[0] = 10;
-         m_footerOffsets[1] = 190;
-         m_footerOffsets[2] = 365;
-         m_footerOffsets[3] = 525;
-         m_footerOffsets[4] = 625;
+         m_footerOffsets[1] = 170;
+         m_footerOffsets[2] = 330;
+         m_footerOffsets[3] = 480;
       }
       else if(profile == RADAR_LAYOUT_WIDE)
       {
-         m_columnWidths[0] = 82;  m_columnWidths[1] = 42;
-         m_columnWidths[2] = 102; m_columnWidths[3] = 108;
-         m_columnWidths[4] = 108; m_columnWidths[5] = 100;
-         m_columnWidths[6] = 108; m_columnWidths[7] = 92;
-         m_columnWidths[8] = 88;  m_columnWidths[9] = 180;
+         m_columnWidths[0] = 88;  m_columnWidths[1] = 44;
+         m_columnWidths[2] = 105; m_columnWidths[3] = 105;
+         m_columnWidths[4] = 115; m_columnWidths[5] = 135;
+         m_columnWidths[6] = 95;  m_columnWidths[7] = 90;
 
          m_footerOffsets[0] = 10;
-         m_footerOffsets[1] = 165;
-         m_footerOffsets[2] = 305;
-         m_footerOffsets[3] = 435;
-         m_footerOffsets[4] = 510;
+         m_footerOffsets[1] = 150;
+         m_footerOffsets[2] = 285;
+         m_footerOffsets[3] = 410;
       }
       else
       {
-         m_columnWidths[0] = 72; m_columnWidths[1] = 34;
-         m_columnWidths[2] = 88; m_columnWidths[3] = 90;
-         m_columnWidths[4] = 94; m_columnWidths[5] = 86;
-         m_columnWidths[6] = 92; m_columnWidths[7] = 76;
-         m_columnWidths[8] = 72; m_columnWidths[9] = 150;
+         m_columnWidths[0] = 72;  m_columnWidths[1] = 34;
+         m_columnWidths[2] = 88;  m_columnWidths[3] = 88;
+         m_columnWidths[4] = 100; m_columnWidths[5] = 105;
+         m_columnWidths[6] = 76;  m_columnWidths[7] = 72;
 
          m_footerOffsets[0] = 10;
-         m_footerOffsets[1] = 155;
-         m_footerOffsets[2] = 285;
-         m_footerOffsets[3] = 405;
-         m_footerOffsets[4] = 480;
+         m_footerOffsets[1] = 135;
+         m_footerOffsets[2] = 250;
+         m_footerOffsets[3] = 355;
       }
 
       int offset = 10;
@@ -217,13 +207,7 @@ private:
       const int ultraWidth = m_panelWidth;
       const int availableWidth = MathMax(0, chartWidth - (m_x * 2));
 
-      // Wide is selected only when the drawable viewport comfortably fits the
-      // footprint of both profiles. This derives the breakpoint from the UI's
-      // own minimum widths instead of assuming a Windows resolution or DPI.
       const int wideThreshold = compactWidth + wideWidth + 80;
-      // Runtime logs on the 2880x1800 Visual Tester show available widths of
-      // 2137-2193 px. 2100 keeps that complete observed range in ULTRA while
-      // the 1910 px Full-HD chart remains COMPACT.
       const int ultraThreshold = 2100;
       const int screenDpi = (int)TerminalInfoInteger(TERMINAL_SCREEN_DPI);
       ENUM_RADAR_LAYOUT_PROFILE profile = RADAR_LAYOUT_COMPACT;
@@ -382,6 +366,16 @@ private:
                        ObjectY(topOffset));
    }
 
+   void SetUpdatedHeaderPosition()
+   {
+      const string name = HeaderUpdatedName();
+      ObjectSetInteger(m_chartId, name, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
+      ObjectSetInteger(m_chartId, name, OBJPROP_CORNER, m_corner);
+      ObjectSetInteger(m_chartId, name, OBJPROP_XDISTANCE, m_x + 10);
+      ObjectSetInteger(m_chartId, name, OBJPROP_YDISTANCE, ObjectY(8));
+      ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 8);
+   }
+
    void SetTextIfChanged(const string name, const string text)
    {
       if(ObjectGetString(m_chartId, name, OBJPROP_TEXT) != text)
@@ -412,14 +406,14 @@ private:
       const color footerColor = lightChart ? C'35,75,115' : C'145,185,215';
 
       SetColorIfChanged(TitleName(), titleColor);
+      SetColorIfChanged(HeaderUpdatedName(), footerColor);
       for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
          SetColorIfChanged(HeaderName(column), headerColor);
 
       SetColorIfChanged(FooterWatcherName(), footerColor);
       SetColorIfChanged(FooterSymbolName(), footerColor);
       SetColorIfChanged(FooterActiveName(), footerColor);
-      SetColorIfChanged(FooterTfName(), footerColor);
-      SetColorIfChanged(FooterTimeName(), footerColor);
+      SetColorIfChanged(FooterEventName(), footerColor);
    }
 
    color CellColor(const SymbolState &state, const int column) const
@@ -436,11 +430,6 @@ private:
             return lightChart ? C'165,45,45' : C'195,115,115';
          return neutralState;
       }
-
-      if(column == 3)
-         return state.hasActiveCore && state.activeCorePrice > 0.0
-                ? (lightChart ? C'145,80,15' : C'210,160,95')
-                : neutralState;
 
       return neutralText;
    }
@@ -459,19 +448,11 @@ private:
                return "BEAR (DOWN)";
             return "UNKNOWN";
          }
-         case 3:
-         {
-            if(!state.hasActiveCore || state.activeCorePrice <= 0.0)
-               return "-";
-            const int digits = (int)SymbolInfoInteger(state.symbol, SYMBOL_DIGITS);
-            return DoubleToString(state.activeCorePrice, digits);
-         }
-         case 4: return state.regime;
-         case 5: return state.phase;
-         case 6: return state.structure;
-         case 7: return state.setup;
-         case 8: return state.setupStatus;
-         case 9: return state.lastEvent;
+         case 3: return state.regime;
+         case 4: return state.state;
+         case 5: return state.structure;
+         case 6: return state.setup;
+         case 7: return state.setupStatus;
       }
 
       return "";
@@ -539,11 +520,16 @@ public:
          return false;
       }
 
+      if(!CreateLabel(HeaderUpdatedName(), "", C'145,185,215'))
+      {
+         Destroy();
+         return false;
+      }
+
       if(!CreateLabel(FooterWatcherName(), "", C'145,185,215')
          || !CreateLabel(FooterSymbolName(), "", C'145,185,215')
          || !CreateLabel(FooterActiveName(), "", C'145,185,215')
-         || !CreateLabel(FooterTfName(), "", C'145,185,215')
-         || !CreateLabel(FooterTimeName(), "", C'145,185,215'))
+         || !CreateLabel(FooterEventName(), "", C'145,185,215'))
       {
          Destroy();
          return false;
@@ -587,6 +573,8 @@ public:
       }
 
       SetTextIfChanged(TitleName(), "JINPA WATCH v1.1");
+      SetTextIfChanged(HeaderUpdatedName(), "UPDATED: "
+                       + TimeToString(TimeCurrent(), TIME_MINUTES));
       ApplyTextPalette();
 
       for(int row = 0; row < m_rowCount; row++)
@@ -615,12 +603,10 @@ public:
       SetTextIfChanged(FooterActiveName(), "ACTIVE: "
                        + IntegerToString(activeSymbolCount) + "/"
                        + IntegerToString(symbolCount));
-      SetTextIfChanged(FooterTfName(), "TF: "
-                       + (symbolCount > 0
-                          ? WatcherTimeframeToString(states[0].timeframe)
-                          : "-"));
-      SetTextIfChanged(FooterTimeName(), "LAST UPDATE: "
-                       + TimeToString(TimeCurrent(), TIME_MINUTES));
+      string lastEvent = "WAITING";
+      if(symbolCount > 0 && states[0].lastEvent != "")
+         lastEvent = states[0].lastEvent;
+      SetTextIfChanged(FooterEventName(), "LAST EVENT: " + lastEvent);
 
       ChartRedraw(m_chartId);
    }
@@ -649,6 +635,7 @@ public:
       ObjectSetInteger(m_chartId, background, OBJPROP_YSIZE, m_panelHeight);
 
       SetLabelPosition(TitleName(), 10, 8);
+      SetUpdatedHeaderPosition();
       for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
          SetLabelPosition(HeaderName(column), ColumnOffset(column), 36);
 
@@ -660,7 +647,6 @@ public:
          const int top = 61 + (row * m_rowHeight);
          for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
             SetLabelPosition(CellName(row, column), ColumnOffset(column), top);
-
       }
 
       const int footerSeparatorTop = 60 + (m_rowCount * m_rowHeight);
@@ -670,8 +656,7 @@ public:
       SetLabelPosition(FooterWatcherName(), m_footerOffsets[0], footerTop);
       SetLabelPosition(FooterSymbolName(), m_footerOffsets[1], footerTop);
       SetLabelPosition(FooterActiveName(), m_footerOffsets[2], footerTop);
-      SetLabelPosition(FooterTfName(), m_footerOffsets[3], footerTop);
-      SetLabelPosition(FooterTimeName(), m_footerOffsets[4], footerTop);
+      SetLabelPosition(FooterEventName(), m_footerOffsets[3], footerTop);
 
       ChartRedraw(m_chartId);
    }

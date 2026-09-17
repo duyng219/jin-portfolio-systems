@@ -4,6 +4,8 @@
 #include "structure/PriceStructureEngine.mqh"
 #include "structure/StructureDebugRenderer.mqh"
 #include "structure/StructureNotificationManager.mqh"
+#include "state/MarketStateEngine.mqh"
+#include "state/MarketStructureEngine.mqh"
 #include "ui/MarketRadar.mqh"
 
 // Read-only boundary for the future single-symbol WATCH engine.
@@ -18,12 +20,16 @@ private:
     CPriceStructureEngine m_structureEngine;
     CStructureDebugRenderer m_structureRenderer;
     CStructureNotificationManager m_structureNotificationManager;
+    CMarketStateEngine m_marketStateEngine;
+    CMarketStructureEngine m_marketStructureEngine;
+    string          m_lastMarketStructure;
     CMarketRadar    m_marketRadar;
     SymbolState     m_states[1];
     PriceStructureState m_structureState;
     SwingPoint      m_structureSwings[];
     BrokenCoreRecord m_brokenCores[];
     SidewayBoxRecord m_sidewayBoxes[];
+    StructureEvent  m_structureEventHistory[];
 
     // WATCH v1.1 structure defaults. Kept instance-scoped to avoid collisions
     // with JINPA trading inputs such as ATRPeriod.
@@ -42,7 +48,7 @@ private:
     bool            m_watchEnableStructureNotifications;
 
     void            ResetContext(void);
-    void            UpdateStructureRenderer(void);
+    void            UpdateStructureConsumers(void);
 
 public:
                     CWatchIntegration(void);
@@ -128,6 +134,7 @@ void CWatchIntegration::ResetContext(void)
     m_timeframe   = PERIOD_CURRENT;
     m_enabled     = false;
     m_lastBarTime = 0;
+    m_lastMarketStructure = "UNKNOWN";
 
     m_states[0].symbol              = "";
     m_states[0].timeframe           = PERIOD_CURRENT;
@@ -137,7 +144,7 @@ void CWatchIntegration::ResetContext(void)
     m_states[0].activeCorePrice     = 0.0;
     m_states[0].hasActiveCore       = false;
     m_states[0].regime              = "UNKNOWN";
-    m_states[0].phase               = "UNKNOWN";
+    m_states[0].state               = "UNKNOWN";
     m_states[0].structure           = "UNKNOWN";
     m_states[0].setup               = "-";
     m_states[0].setupStatus         = "NONE";
@@ -152,9 +159,11 @@ void CWatchIntegration::ResetContext(void)
     ArrayResize(m_structureSwings, 0);
     ArrayResize(m_brokenCores, 0);
     ArrayResize(m_sidewayBoxes, 0);
+    ArrayResize(m_structureEventHistory, 0);
+    m_marketStateEngine.Reset();
 }
 
-void CWatchIntegration::UpdateStructureRenderer(void)
+void CWatchIntegration::UpdateStructureConsumers(void)
 {
     if(!m_structureEngine.GetSnapshot(m_symbol,
                                       m_timeframe,
@@ -164,8 +173,59 @@ void CWatchIntegration::UpdateStructureRenderer(void)
                                       m_sidewayBoxes))
         return;
 
-    // Rendering is a read-only consumer of the Engine snapshot. Individual
-    // chart-object failures are logged by the renderer and remain non-fatal.
+    // Stage 2 already reconstructs these histories chronologically. Stage 3
+    // replays them against the same closed bars and remains read-only.
+    m_structureEngine.LabProbeEventHistory(m_structureEventHistory);
+    MqlRates stateRates[];
+    ArraySetAsSeries(stateRates, false);
+    const int copied = CopyRates(m_symbol, m_timeframe, 0,
+                                 m_watchStructureLookbackBars, stateRates);
+    const datetime lastClosedBarTime = iTime(m_symbol, m_timeframe, 1);
+
+    const string previousRegime = m_states[0].regime;
+    const string previousState = m_states[0].state;
+    const string previousStructure = m_lastMarketStructure;
+    bool stateChanged = false;
+    bool structureChanged = false;
+    if(copied > 0 && lastClosedBarTime > 0)
+    {
+       stateChanged = m_marketStateEngine.Apply(m_structureState,
+                                                m_structureSwings,
+                                                m_structureEventHistory,
+                                                stateRates,
+                                                lastClosedBarTime,
+                                                m_states[0]);
+       m_marketStructureEngine.Apply(m_marketStateEngine.State(),
+                                     m_structureState, m_states[0]);
+       structureChanged = previousStructure != m_states[0].structure;
+       m_lastMarketStructure = m_states[0].structure;
+    }
+
+    if(stateChanged)
+    {
+        WatcherLog("MARKET_STATE", m_symbol + " "
+                   + WatcherTimeframeToString(m_timeframe)
+                   + " | bar="
+                   + TimeToString(m_states[0].lastBarTime,
+                                  TIME_DATE | TIME_MINUTES)
+                   + " | Regime " + previousRegime + " -> "
+                   + m_states[0].regime
+                   + " | State " + previousState + " -> "
+                   + m_states[0].state);
+    }
+
+    if(structureChanged)
+    {
+        WatcherLog("MARKET_STRUCTURE", m_symbol + " "
+                   + WatcherTimeframeToString(m_timeframe)
+                   + " | bar="
+                   + TimeToString(m_states[0].lastBarTime,
+                                  TIME_DATE | TIME_MINUTES)
+                   + " | Structure " + previousStructure + " -> "
+                   + m_states[0].structure);
+    }
+
+    // Rendering is a separate read-only consumer of the same Stage 2 snapshot.
     m_structureRenderer.Update(m_structureState,
                                m_structureSwings,
                                m_brokenCores,
@@ -225,7 +285,7 @@ bool CWatchIntegration::Initialize(const string symbol, const ENUM_TIMEFRAMES ti
 
     m_structureRenderer.Configure(m_watchShowStructureSwings);
     m_structureRenderer.Destroy();
-    UpdateStructureRenderer();
+    UpdateStructureConsumers();
 
     // Integrated WATCH owns one current-chart row. Keep the latest standalone
     // visual identity while anchoring it away from JINPA's top-left controls.
@@ -259,7 +319,7 @@ void CWatchIntegration::ProcessTick(void)
     m_states[0].isReady = true;
 
     m_structureEngine.Update(m_states);
-    UpdateStructureRenderer();
+    UpdateStructureConsumers();
     m_marketRadar.Update(m_states, true);
 
     StructureEvent structureEvents[];

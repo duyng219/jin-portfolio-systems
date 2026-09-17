@@ -10,12 +10,12 @@ struct SymbolState
    datetime        lastBarTime;
    datetime        lastUpdate;
 
-   // Presentation-ready state populated by future analysis engines.
+   // Presentation-ready state populated by analysis engines.
    string          cycle;
    double          activeCorePrice;
    bool            hasActiveCore;
    string          regime;
-   string          phase;
+   string          state;
    string          structure;
    string          setup;
    string          setupStatus;
