@@ -38,6 +38,50 @@ bool IsStructure(const ENUM_JINPA_MARKET_STATE state,
    return g_engine.Derive(state, source) == expected;
 }
 
+MqlRates ClosedBar(const datetime time, const double high,
+                   const double low, const double close)
+{
+   MqlRates bar;
+   ZeroMemory(bar);
+   bar.time = time;
+   bar.open = close;
+   bar.high = high;
+   bar.low = low;
+   bar.close = close;
+   return bar;
+}
+
+bool IsRangeStructure(const PriceStructureState &source,
+                      const MqlRates &closedBar,
+                      const double edgeDistance,
+                      const bool falseBreakConfirmed,
+                      const ENUM_JINPA_MARKET_STRUCTURE expected)
+{
+   return g_engine.Derive(JINPA_STATE_COMPRESSION, source, closedBar,
+                          edgeDistance, falseBreakConfirmed) == expected;
+}
+
+void AppendBar(MqlRates &rates[], const MqlRates &bar)
+{
+   const int index = ArraySize(rates);
+   ArrayResize(rates, index + 1);
+   rates[index] = bar;
+}
+
+string ApplyRuntimeStructure(CMarketStructureEngine &engine,
+                             const ENUM_JINPA_MARKET_REGIME regime,
+                             const ENUM_JINPA_MARKET_STATE state,
+                             PriceStructureState &source,
+                             MqlRates &rates[], SymbolState &symbolState)
+{
+   StructureEvent events[];
+   const string previousStructure = symbolState.structure;
+   const datetime closedTime = rates[ArraySize(rates) - 1].time;
+   engine.Apply(regime, state, previousStructure, source, events, rates,
+                closedTime, 1, 0.10, symbolState);
+   return symbolState.structure;
+}
+
 void TestRequiredCases(void)
 {
    PriceStructureState source = BaseStructureState();
@@ -164,6 +208,255 @@ void TestFlowsAndAuthority(void)
          "BOOTSTRAP_RESTART_STATELESS_PARITY");
 }
 
+void TestRangeContextExtensions(void)
+{
+   PriceStructureState source = BaseStructureState();
+   source.sidewayBox.active = true;
+   source.sidewayBox.sidewayConfirmed = true;
+   source.sidewayBox.status = SIDEWAY_BOX_ACTIVE;
+   source.sidewayBox.boxHigh = 110.0;
+   source.sidewayBox.boxLow = 90.0;
+
+   MqlRates bar = ClosedBar(1000, 101.0, 99.0, 100.0);
+   Check(IsRangeStructure(source, bar, 1.0, false,
+                          JINPA_STRUCTURE_SIDEWAY),
+         "RANGE_A_MIDDLE_REMAINS_SIDEWAY");
+
+   bar = ClosedBar(1060, 109.7, 108.8, 109.5);
+   Check(IsRangeStructure(source, bar, 1.0, false,
+                          JINPA_STRUCTURE_RANGE_EDGE),
+         "RANGE_B_APPROACH_UPPER_EDGE");
+
+   bar = ClosedBar(1120, 91.2, 90.3, 90.5);
+   Check(IsRangeStructure(source, bar, 1.0, false,
+                          JINPA_STRUCTURE_RANGE_EDGE),
+         "RANGE_C_APPROACH_LOWER_EDGE");
+
+   MqlRates rates[];
+   ArrayResize(rates, 3);
+   rates[0] = ClosedBar(1000, 105.0, 95.0, 100.0);
+   rates[1] = ClosedBar(1060, 109.7, 99.0, 109.5);
+   rates[2] = ClosedBar(1120, 112.0, 109.0, 111.0);
+   StructureEvent noEvents[];
+   SymbolState symbolState;
+   symbolState.structure = "SIDEWAY";
+   g_engine.Apply(JINPA_STATE_COMPRESSION, source, noEvents, rates, 1060,
+                  1, 0.10, symbolState);
+   Check(symbolState.structure == "RANGE EDGE",
+         "RANGE_D_FORMING_WICK_IGNORED_USES_LAST_CLOSED_BAR");
+
+   bar = ClosedBar(1180, 111.0, 108.0, 109.0);
+   Check(IsRangeStructure(source, bar, 1.0, false,
+                          JINPA_STRUCTURE_REJECTION),
+         "RANGE_E_UPPER_REJECTION");
+
+   bar = ClosedBar(1240, 92.0, 89.0, 91.0);
+   Check(IsRangeStructure(source, bar, 1.0, false,
+                          JINPA_STRUCTURE_REJECTION),
+         "RANGE_F_LOWER_REJECTION");
+
+   Check(IsRangeStructure(source, bar, 1.0, true,
+                          JINPA_STRUCTURE_FALSE_BREAK),
+         "RANGE_G_FALSE_BREAK_PRIORITY_OVER_REJECTION");
+
+   StructureEvent events[];
+   ArrayResize(events, 1);
+   ZeroMemory(events[0]);
+   events[0].type = CORE_BREAK_FAILED;
+   events[0].eventBarTime = 1060;
+   rates[1] = ClosedBar(1060, 111.0, 105.0, 109.0);
+   symbolState.structure = "RANGE EDGE";
+   g_engine.Apply(JINPA_STATE_COMPRESSION, source, events, rates, 1060,
+                  1, 0.10, symbolState);
+   Check(symbolState.structure == "FALSE BREAK",
+         "RANGE_H_EXISTING_EVENT_WIRES_TO_SYMBOL_STATE");
+
+   events[0].type = SIDEWAY_CONFIRMED;
+   symbolState.structure = "LEG 1";
+   g_engine.Apply(JINPA_STATE_COMPRESSION, source, events, rates, 1060,
+                  1, 0.10, symbolState);
+   Check(symbolState.structure == "SIDEWAY",
+         "RANGE_I_CONFIRMATION_BAR_STARTS_AS_SIDEWAY");
+
+   events[0].type = CORE_BREAK_FAILED;
+   rates[2] = ClosedBar(1120, 101.0, 99.0, 100.0);
+   g_engine.Apply(JINPA_STATE_COMPRESSION, source, events, rates, 1120,
+                  1, 0.10, symbolState);
+   Check(symbolState.structure == "SIDEWAY",
+         "RANGE_J_FALSE_BREAK_EVENT_NOT_STICKY");
+
+   Check(IsStructure(JINPA_STATE_EXPANSION, source,
+                     JINPA_STRUCTURE_BREAKOUT)
+         && IsStructure(JINPA_STATE_IMPULSE, source,
+                        JINPA_STRUCTURE_CONTINUATION),
+         "RANGE_K_EXPANSION_IMPULSE_UNCHANGED");
+
+   source.sidewayBox.leg1Confirmed = true;
+   Check(IsStructure(JINPA_STATE_CORRECTION, source,
+                     JINPA_STRUCTURE_LEG_1),
+         "RANGE_L_CORRECTION_LEG1_UNCHANGED");
+   source.sidewayBox.leg2Confirmed = true;
+   Check(IsStructure(JINPA_STATE_CORRECTION, source,
+                     JINPA_STRUCTURE_LEG_2),
+         "RANGE_M_CORRECTION_LEG2_UNCHANGED");
+}
+
+void TestMicroBaseLifecycle(void)
+{
+   PriceStructureState source = BaseStructureState();
+   source.cycleState.cycle = MARKET_CYCLE_BULL;
+   MqlRates rates[];
+   SymbolState symbolState;
+   symbolState.structure = "CONTINUATION";
+   CMarketStructureEngine engine;
+
+   AppendBar(rates, ClosedBar(1000, 110.0, 100.0, 108.0));
+   const bool anchorContinuation =
+      ApplyRuntimeStructure(engine, JINPA_REGIME_TREND,
+                            JINPA_STATE_IMPULSE, source, rates,
+                            symbolState) == "CONTINUATION";
+   AppendBar(rates, ClosedBar(1060, 111.0, 101.0, 107.0));
+   const bool twoBarsContinuation =
+      ApplyRuntimeStructure(engine, JINPA_REGIME_TREND,
+                            JINPA_STATE_IMPULSE, source, rates,
+                            symbolState) == "CONTINUATION";
+   Check(anchorContinuation && twoBarsContinuation,
+         "MICRO_BASE_01_TWO_BARS_NOT_CONFIRMED");
+
+   AppendBar(rates, ClosedBar(1120, 109.0, 99.0, 106.0));
+   Check(ApplyRuntimeStructure(engine, JINPA_REGIME_TREND,
+                               JINPA_STATE_IMPULSE, source, rates,
+                               symbolState) == "MICRO BASE",
+         "MICRO_BASE_02_ANCHOR_PLUS_TWO_INSIDE_CLOSES");
+   Check(symbolState.structure == "MICRO BASE",
+         "MICRO_BASE_03_WICKS_OUTSIDE_CLOSE_INSIDE_PERSISTS");
+
+   CMarketStructureEngine earlyBreakEngine;
+   MqlRates earlyRates[];
+   SymbolState earlyState;
+   earlyState.structure = "CONTINUATION";
+   AppendBar(earlyRates, ClosedBar(2000, 110.0, 100.0, 108.0));
+   ApplyRuntimeStructure(earlyBreakEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, source, earlyRates,
+                         earlyState);
+   AppendBar(earlyRates, ClosedBar(2060, 112.0, 109.0, 111.0));
+   ApplyRuntimeStructure(earlyBreakEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, source, earlyRates,
+                         earlyState);
+   AppendBar(earlyRates, ClosedBar(2120, 111.0, 105.0, 107.0));
+   ApplyRuntimeStructure(earlyBreakEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, source, earlyRates,
+                         earlyState);
+   AppendBar(earlyRates, ClosedBar(2180, 110.0, 104.0, 106.0));
+   Check(ApplyRuntimeStructure(earlyBreakEngine, JINPA_REGIME_TREND,
+                               JINPA_STATE_IMPULSE, source, earlyRates,
+                               earlyState) == "CONTINUATION",
+         "MICRO_BASE_04_PRE_MIN_CLOSE_BREAK_RESETS_CANDIDATE");
+
+   AppendBar(rates, ClosedBar(1180, 112.0, 108.0, 111.0));
+   Check(ApplyRuntimeStructure(engine, JINPA_REGIME_TREND,
+                               JINPA_STATE_IMPULSE, source, rates,
+                               symbolState) == "CONTINUATION",
+         "MICRO_BASE_05_BULL_TREND_BREAK_CONTINUATION");
+
+   CMarketStructureEngine bearEngine;
+   PriceStructureState bearSource = BaseStructureState();
+   bearSource.cycleState.cycle = MARKET_CYCLE_BEAR;
+   MqlRates bearRates[];
+   SymbolState bearState;
+   bearState.structure = "CONTINUATION";
+   AppendBar(bearRates, ClosedBar(3000, 110.0, 100.0, 102.0));
+   ApplyRuntimeStructure(bearEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, bearSource, bearRates,
+                         bearState);
+   AppendBar(bearRates, ClosedBar(3060, 109.0, 99.0, 103.0));
+   ApplyRuntimeStructure(bearEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, bearSource, bearRates,
+                         bearState);
+   AppendBar(bearRates, ClosedBar(3120, 108.0, 101.0, 104.0));
+   ApplyRuntimeStructure(bearEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, bearSource, bearRates,
+                         bearState);
+   AppendBar(bearRates, ClosedBar(3180, 101.0, 98.0, 99.0));
+   Check(ApplyRuntimeStructure(bearEngine, JINPA_REGIME_TREND,
+                               JINPA_STATE_IMPULSE, bearSource,
+                               bearRates, bearState) == "CONTINUATION",
+         "MICRO_BASE_06_BEAR_TREND_BREAK_CONTINUATION");
+
+   CMarketStructureEngine correctionEngine;
+   MqlRates correctionRates[];
+   SymbolState correctionState;
+   correctionState.structure = "CONTINUATION";
+   AppendBar(correctionRates, ClosedBar(4000, 110.0, 100.0, 108.0));
+   ApplyRuntimeStructure(correctionEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, source, correctionRates,
+                         correctionState);
+   AppendBar(correctionRates, ClosedBar(4060, 109.0, 101.0, 107.0));
+   ApplyRuntimeStructure(correctionEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, source, correctionRates,
+                         correctionState);
+   AppendBar(correctionRates, ClosedBar(4120, 108.0, 102.0, 106.0));
+   ApplyRuntimeStructure(correctionEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, source, correctionRates,
+                         correctionState);
+   source.sidewayBox.leg1Confirmed = true;
+   AppendBar(correctionRates, ClosedBar(4180, 107.0, 101.0, 103.0));
+   Check(ApplyRuntimeStructure(correctionEngine, JINPA_REGIME_TREND,
+                               JINPA_STATE_CORRECTION, source,
+                               correctionRates, correctionState) == "LEG 1",
+         "MICRO_BASE_07_CORRECTION_LEG_AUTHORITY");
+   source.sidewayBox.leg1Confirmed = false;
+
+   CMarketStructureEngine timeoutEngine;
+   MqlRates timeoutRates[];
+   SymbolState timeoutState;
+   timeoutState.structure = "CONTINUATION";
+   for(int index = 0; index < 9; index++)
+   {
+      AppendBar(timeoutRates, ClosedBar(5000 + index * 60,
+                                        110.0, 100.0, 105.0));
+      ApplyRuntimeStructure(timeoutEngine, JINPA_REGIME_TREND,
+                            JINPA_STATE_IMPULSE, source, timeoutRates,
+                            timeoutState);
+   }
+   Check(timeoutState.structure == "CONTINUATION",
+         "MICRO_BASE_08_TIMEOUT_AFTER_EIGHT_BARS");
+
+   CMarketStructureEngine sidewayEngine;
+   PriceStructureState sidewaySource = BaseStructureState();
+   sidewaySource.sidewayBox.active = true;
+   sidewaySource.sidewayBox.sidewayConfirmed = true;
+   sidewaySource.sidewayBox.status = SIDEWAY_BOX_ACTIVE;
+   sidewaySource.sidewayBox.boxHigh = 110.0;
+   sidewaySource.sidewayBox.boxLow = 90.0;
+   MqlRates sidewayRates[];
+   SymbolState sidewayState;
+   sidewayState.structure = "CONTINUATION";
+   AppendBar(sidewayRates, ClosedBar(6000, 101.0, 99.0, 100.0));
+   Check(ApplyRuntimeStructure(sidewayEngine, JINPA_REGIME_RANGE,
+                               JINPA_STATE_COMPRESSION, sidewaySource,
+                               sidewayRates, sidewayState) == "SIDEWAY",
+         "MICRO_BASE_09_SIDEWAY_CONTEXT_EXCLUDED");
+
+   CMarketStructureEngine priorEngine;
+   MqlRates priorRates[];
+   SymbolState priorState;
+   priorState.structure = "BREAKOUT";
+   AppendBar(priorRates, ClosedBar(7000, 110.0, 100.0, 108.0));
+   ApplyRuntimeStructure(priorEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, source, priorRates,
+                         priorState);
+   AppendBar(priorRates, ClosedBar(7060, 109.0, 101.0, 107.0));
+   ApplyRuntimeStructure(priorEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, source, priorRates,
+                         priorState);
+   AppendBar(priorRates, ClosedBar(7120, 108.0, 102.0, 106.0));
+   Check(ApplyRuntimeStructure(priorEngine, JINPA_REGIME_TREND,
+                               JINPA_STATE_IMPULSE, source, priorRates,
+                               priorState) == "CONTINUATION",
+         "MICRO_BASE_10_REQUIRES_PRIOR_CONTINUATION_BEFORE_ANCHOR");
+}
+
 void TestPanelValue(void)
 {
    SymbolState states[1];
@@ -188,6 +481,29 @@ void TestPanelValue(void)
          && ObjectGetString(0, "JINPA_RADAR_ROW_000_COL_05", OBJPROP_TEXT)
             == "CONTINUATION",
          "WATCH_PANEL_STRUCTURE_COLUMN_VALUE");
+   states[0].structure = "RANGE EDGE";
+   radar.Update(states, true);
+   const bool rangeEdgeDisplayed =
+      ObjectGetString(0, "JINPA_RADAR_ROW_000_COL_05", OBJPROP_TEXT)
+      == "RANGE EDGE";
+   states[0].structure = "REJECTION";
+   radar.Update(states, true);
+   const bool rejectionDisplayed =
+      ObjectGetString(0, "JINPA_RADAR_ROW_000_COL_05", OBJPROP_TEXT)
+      == "REJECTION";
+   states[0].structure = "FALSE BREAK";
+   radar.Update(states, true);
+   const bool falseBreakDisplayed =
+      ObjectGetString(0, "JINPA_RADAR_ROW_000_COL_05", OBJPROP_TEXT)
+      == "FALSE BREAK";
+   states[0].structure = "MICRO BASE";
+   radar.Update(states, true);
+   const bool microBaseDisplayed =
+      ObjectGetString(0, "JINPA_RADAR_ROW_000_COL_05", OBJPROP_TEXT)
+      == "MICRO BASE";
+   Check(rangeEdgeDisplayed && rejectionDisplayed && falseBreakDisplayed
+         && microBaseDisplayed,
+         "WATCH_PANEL_EXTENDED_STRUCTURE_VALUES");
    radar.Destroy();
 }
 
@@ -195,6 +511,8 @@ int OnInit(void)
 {
    TestRequiredCases();
    TestFlowsAndAuthority();
+   TestRangeContextExtensions();
+   TestMicroBaseLifecycle();
    TestPanelValue();
    Print("[MARKET_STRUCTURE_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,

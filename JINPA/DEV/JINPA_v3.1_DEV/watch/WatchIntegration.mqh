@@ -6,6 +6,7 @@
 #include "structure/StructureNotificationManager.mqh"
 #include "state/MarketStateEngine.mqh"
 #include "state/MarketStructureEngine.mqh"
+#include "setup/PullbackSetupEngine.mqh"
 #include "ui/MarketRadar.mqh"
 
 // Read-only boundary for the future single-symbol WATCH engine.
@@ -22,6 +23,7 @@ private:
     CStructureNotificationManager m_structureNotificationManager;
     CMarketStateEngine m_marketStateEngine;
     CMarketStructureEngine m_marketStructureEngine;
+    CPullbackSetupEngine m_pullbackSetupEngine;
     string          m_lastMarketStructure;
     CMarketRadar    m_marketRadar;
     SymbolState     m_states[1];
@@ -161,6 +163,8 @@ void CWatchIntegration::ResetContext(void)
     ArrayResize(m_sidewayBoxes, 0);
     ArrayResize(m_structureEventHistory, 0);
     m_marketStateEngine.Reset();
+    m_marketStructureEngine.Reset();
+    m_pullbackSetupEngine.Reset();
 }
 
 void CWatchIntegration::UpdateStructureConsumers(void)
@@ -185,8 +189,11 @@ void CWatchIntegration::UpdateStructureConsumers(void)
     const string previousRegime = m_states[0].regime;
     const string previousState = m_states[0].state;
     const string previousStructure = m_lastMarketStructure;
+    const string previousSetup = m_states[0].setup;
+    const string previousSetupStatus = m_states[0].setupStatus;
     bool stateChanged = false;
     bool structureChanged = false;
+    bool setupChanged = false;
     if(copied > 0 && lastClosedBarTime > 0)
     {
        stateChanged = m_marketStateEngine.Apply(m_structureState,
@@ -195,10 +202,23 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                                 stateRates,
                                                 lastClosedBarTime,
                                                 m_states[0]);
-       m_marketStructureEngine.Apply(m_marketStateEngine.State(),
-                                     m_structureState, m_states[0]);
+       m_marketStructureEngine.Apply(m_marketStateEngine.Regime(),
+                                     m_marketStateEngine.State(),
+                                     previousStructure,
+                                     m_structureState,
+                                     m_structureEventHistory,
+                                     stateRates,
+                                     lastClosedBarTime,
+                                     m_watchATRPeriod,
+                                     m_watchCoreBreakATRBuffer,
+                                     m_states[0]);
        structureChanged = previousStructure != m_states[0].structure;
        m_lastMarketStructure = m_states[0].structure;
+       setupChanged = m_pullbackSetupEngine.Apply(
+          previousState, m_marketStateEngine.State(),
+          m_states[0].structure, m_structureState,
+          m_structureSwings, stateRates, lastClosedBarTime,
+          m_states[0]);
     }
 
     if(stateChanged)
@@ -223,6 +243,23 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                   TIME_DATE | TIME_MINUTES)
                    + " | Structure " + previousStructure + " -> "
                    + m_states[0].structure);
+    }
+
+    if(setupChanged)
+    {
+        string transition = m_states[0].setup;
+        if(previousSetup != m_states[0].setup)
+            transition = previousSetup + " -> " + m_states[0].setup;
+        else
+            transition += " | " + previousSetupStatus + " -> "
+                          + m_states[0].setupStatus;
+        WatcherLog("SETUP", m_symbol + " "
+                   + WatcherTimeframeToString(m_timeframe)
+                   + " | bar="
+                   + TimeToString(m_states[0].lastBarTime,
+                                  TIME_DATE | TIME_MINUTES)
+                   + " | " + transition
+                   + " | status=" + m_states[0].setupStatus);
     }
 
     // Rendering is a separate read-only consumer of the same Stage 2 snapshot.
