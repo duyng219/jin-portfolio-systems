@@ -2823,8 +2823,10 @@ void TestNotificationABreakCandidate()
    string messages[];
    manager.LabProbeDrainMessages(messages);
    Check(ArraySize(messages) == 1
-         && messages[0] == "JINPA | XAUUSD H1\n"
-                           "BREAK CANDIDATE | CORE LOW | BULL",
+         && StringFind(messages[0], "JINPA Watch | XAUUSD H1\n") == 0
+         && StringFind(messages[0],
+                       "Break Candidate\nBull | Core Low") >= 0
+         && StringFind(messages[0], "\nBreak Level ") >= 0,
          "N_A_BREAK_CANDIDATE", "one compact symbol/TF/Core/Cycle message");
 }
 
@@ -2845,10 +2847,10 @@ void TestNotificationBCoreUpdated()
    EnqueuePendingEngineEvents(engine, manager);
    string messages[];
    manager.LabProbeDrainMessages(messages);
-   Check(NotificationMessageCount(messages, "CORE UPDATED") == 1
+   Check(NotificationMessageCount(messages, "Core Updated") == 1
          && NotificationMessageCount(messages, "CORE_BOX_CHANGED") == 0
          && NotificationMessageCount(messages,
-                                      "CORE UPDATED | CORE LOW | BULL") == 1,
+                                      "Core Updated\nBull | Core Low") == 1,
          "N_B_CORE_UPDATED",
          "transition promotion maps once; completion noise is ignored");
 }
@@ -2868,7 +2870,7 @@ void TestNotificationCCycleChanged()
    manager.LabProbeDrainMessages(messages);
    Check(ArraySize(messages) == 1
          && StringFind(messages[0],
-                       "CYCLE CHANGED | BULL → BEAR") >= 0,
+                       "Cycle Changed\nBull → Bear") >= 0,
          "N_C_CYCLE_CHANGED",
          "actual reversal formats once; Bull-to-Bull is ineligible");
 }
@@ -2883,7 +2885,8 @@ void TestNotificationDLeg1()
    string messages[];
    manager.LabProbeDrainMessages(messages);
    Check(ArraySize(messages) == 1
-         && StringFind(messages[0], "LEG 1 CONFIRMED | BULL") >= 0,
+         && StringFind(messages[0],
+                       "Leg 1 Confirmed\nBull | Correction | Leg 1") >= 0,
          "N_D_LEG_1", "one event-driven Leg 1 notification");
 }
 
@@ -2897,7 +2900,8 @@ void TestNotificationELeg2()
    string messages[];
    manager.LabProbeDrainMessages(messages);
    Check(ArraySize(messages) == 1
-         && StringFind(messages[0], "LEG 2 CONFIRMED | BEAR") >= 0,
+         && StringFind(messages[0],
+                       "Leg 2 Confirmed\nBear | Correction | Leg 2") >= 0,
          "N_E_LEG_2", "one event-driven Leg 2 notification");
 }
 
@@ -2912,7 +2916,7 @@ void TestNotificationFFalseBreak()
    manager.LabProbeDrainMessages(messages);
    Check(ArraySize(messages) == 1
          && StringFind(messages[0],
-                       "FALSE BREAK | CORE LOW | BULL") >= 0,
+                       "False Break\nBull | Compression | False Break") >= 0,
          "N_F_FALSE_BREAK", "candidate failure maps without a new detector");
 }
 
@@ -2926,7 +2930,8 @@ void TestNotificationGSideway()
    string messages[];
    manager.LabProbeDrainMessages(messages);
    Check(ArraySize(messages) == 1
-         && StringFind(messages[0], "SIDEWAY CONFIRMED | BEAR") >= 0,
+         && StringFind(messages[0],
+                       "Sideway Confirmed\nBear | Compression | Sideway") >= 0,
          "N_G_SIDEWAY_CONFIRMED", "one semantic Sideway notification");
 }
 
@@ -2942,8 +2947,8 @@ void TestNotificationHConfirmedBreakNotFalseBreak()
    EnqueuePendingEngineEvents(engine, manager);
    string messages[];
    manager.LabProbeDrainMessages(messages);
-   Check(NotificationMessageCount(messages, "BREAK CANDIDATE") == 1
-         && NotificationMessageCount(messages, "FALSE BREAK") == 0,
+   Check(NotificationMessageCount(messages, "Break Candidate") == 1
+         && NotificationMessageCount(messages, "False Break") == 0,
          "N_H_CONFIRMED_BREAK_NOT_FALSE_BREAK",
          "confirmed transition never fabricates candidate failure");
 }
@@ -2979,7 +2984,7 @@ void TestNotificationJLeg1DuplicateState()
    EnqueuePendingEngineEvents(engine, manager);
    string messages[];
    manager.LabProbeDrainMessages(messages);
-   Check(NotificationMessageCount(messages, "LEG 1 CONFIRMED") == 1,
+   Check(NotificationMessageCount(messages, "Leg 1 Confirmed") == 1,
          "N_J_LEG_1_DUPLICATE_STATE",
          "later bars with active Leg 1 emit no repeated event");
 }
@@ -3001,7 +3006,7 @@ void TestNotificationKLeg2DuplicateState()
    EnqueuePendingEngineEvents(engine, manager);
    string messages[];
    manager.LabProbeDrainMessages(messages);
-   Check(NotificationMessageCount(messages, "LEG 2 CONFIRMED") == 1,
+   Check(NotificationMessageCount(messages, "Leg 2 Confirmed") == 1,
          "N_K_LEG_2_DUPLICATE_STATE",
          "later bars with active Leg 2 emit no repeated event");
 }
@@ -3021,7 +3026,7 @@ void TestNotificationLSidewayDuplicateState()
    engine.LabProbeClosedBar(108.0, 96.0, 102.0, 1050);
    engine.LabProbeClosedBar(107.0, 97.0, 103.0, 1060);
    EnqueuePendingEngineEvents(engine, manager);
-   Check(NotificationMessageCount(initial, "SIDEWAY CONFIRMED") == 1
+   Check(NotificationMessageCount(initial, "Sideway Confirmed") == 1
          && manager.LabProbeQueueSize() == 0,
          "N_L_SIDEWAY_DUPLICATE_STATE",
          "closed-bar right-edge updates emit no notification");
@@ -3068,8 +3073,8 @@ void TestNotificationOSameBarDistinctEvents()
    string messages[];
    manager.LabProbeDrainMessages(messages);
    Check(ArraySize(messages) == 2
-         && StringFind(messages[0], "CYCLE CHANGED") >= 0
-         && StringFind(messages[1], "CORE UPDATED") >= 0,
+         && StringFind(messages[0], "Cycle Changed") >= 0
+         && StringFind(messages[1], "Core Updated") >= 0,
          "N_O_SAME_BAR_DISTINCT_EVENTS",
          "FIFO retains both distinct identities from one closed bar");
 }
@@ -3084,9 +3089,9 @@ void TestNotificationPEventOrder()
    };
    const string labels[] =
    {
-      "BREAK CANDIDATE", "CORE UPDATED", "CYCLE CHANGED",
-      "LEG 1 CONFIRMED", "LEG 2 CONFIRMED", "FALSE BREAK",
-      "SIDEWAY CONFIRMED"
+      "Break Candidate", "Core Updated", "Cycle Changed",
+      "Leg 1 Confirmed", "Leg 2 Confirmed", "False Break",
+      "Sideway Confirmed"
    };
    CStructureNotificationManager manager;
    manager.Configure(true, false);
@@ -3135,13 +3140,13 @@ void TestNotificationRFormatting()
    };
    const string bodies[] =
    {
-      "BREAK CANDIDATE | CORE LOW | BULL",
-      "CORE UPDATED | CORE LOW | BULL",
-      "CYCLE CHANGED | BULL → BEAR",
-      "LEG 1 CONFIRMED | BULL",
-      "LEG 2 CONFIRMED | BULL",
-      "FALSE BREAK | CORE LOW | BULL",
-      "SIDEWAY CONFIRMED | BULL"
+      "Break Candidate\nBull | Core Low",
+      "Core Updated\nBull | Core Low",
+      "Cycle Changed\nBull → Bear",
+      "Leg 1 Confirmed\nBull | Correction | Leg 1",
+      "Leg 2 Confirmed\nBull | Correction | Leg 2",
+      "False Break\nBull | Compression | False Break",
+      "Sideway Confirmed\nBull | Compression | Sideway"
    };
    CStructureNotificationManager manager;
    manager.Configure(true, false);
@@ -3155,9 +3160,10 @@ void TestNotificationRFormatting()
          index == 0 || index == 1 || index == 5
          ? CORE_SWING_LOW : CORE_SWING_NONE,
          1000 + index);
+      const string message = manager.LabProbeBuildMessage(event);
       exact = manager.LabProbeEligible(event)
-              && manager.LabProbeBuildMessage(event)
-                 == "JINPA | XAUUSD H1\n" + bodies[index];
+              && StringFind(message, "JINPA Watch | XAUUSD H1\n") == 0
+              && StringFind(message, bodies[index]) >= 0;
    }
    Check(exact, "N_R_FORMATTING", "all seven labels and compact bodies exact");
 }

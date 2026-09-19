@@ -243,6 +243,14 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                   TIME_DATE | TIME_MINUTES)
                    + " | Structure " + previousStructure + " -> "
                    + m_states[0].structure);
+
+        // Bootstrap reconstruction runs while m_enabled is false. Only a
+        // genuine live/tester closed-bar transition enters the Push queue.
+        if(m_enabled)
+            m_structureNotificationManager.EnqueueMarketStructureTransition(
+               m_symbol, m_timeframe, lastClosedBarTime,
+               previousStructure, m_states[0].structure,
+               m_states[0].cycle, m_states[0].state);
     }
 
     if(setupChanged)
@@ -260,6 +268,16 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                   TIME_DATE | TIME_MINUTES)
                    + " | " + transition
                    + " | status=" + m_states[0].setupStatus);
+
+        if(m_enabled)
+            m_structureNotificationManager.EnqueueSetupTransition(
+               m_symbol, m_timeframe, lastClosedBarTime,
+               previousSetup, previousSetupStatus,
+               m_states[0].setup, m_states[0].setupStatus,
+               m_states[0].cycle, m_states[0].state,
+               m_states[0].structure,
+               m_pullbackSetupEngine.BaseHigh(),
+               m_pullbackSetupEngine.BaseLow());
     }
 
     // Rendering is a separate read-only consumer of the same Stage 2 snapshot.
@@ -362,18 +380,15 @@ void CWatchIntegration::ProcessTick(void)
     StructureEvent structureEvents[];
     m_structureEngine.ConsumeEvents(structureEvents);
 
-    // Strategy Tester must preserve the validated consume/discard behavior and
-    // must never enqueue or dispatch MT5 Push notifications.
-    if(!(bool)MQLInfoInteger(MQL_TESTER))
-    {
-        const int eventCount = ArraySize(structureEvents);
-        for(int index = 0; index < eventCount; index++)
-            m_structureNotificationManager.Enqueue(structureEvents[index]);
+    // Tester follows the same eligibility/queue path. DispatchNext owns the
+    // final MQL_TESTER guard and therefore never calls the real Push API.
+    const int eventCount = ArraySize(structureEvents);
+    for(int index = 0; index < eventCount; index++)
+        m_structureNotificationManager.Enqueue(structureEvents[index]);
 
-        // Standalone WATCH dispatches at most one item per timer cycle. With no
-        // timer in JINPA, preserve that bound once per live new-bar cycle.
-        m_structureNotificationManager.DispatchNext();
-    }
+    // Preserve the existing bound: at most one queued item per new-bar cycle.
+    // Additional eligible items remain FIFO queued; none are silently dropped.
+    m_structureNotificationManager.DispatchNext();
 
     ArrayResize(structureEvents, 0);
 }

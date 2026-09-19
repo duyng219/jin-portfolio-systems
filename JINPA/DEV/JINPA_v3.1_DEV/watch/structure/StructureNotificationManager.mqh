@@ -5,19 +5,22 @@
 #include "../core/WatcherTypes.mqh"
 #include "../core/WatcherLogger.mqh"
 
+// Notification Policy v1.0. Detectors remain notification-agnostic; this
+// class owns eligibility, formatting, session deduplication and bounded send.
 class CStructureNotificationManager
 {
 private:
-   bool           m_enabled;
-   bool           m_enableAuditLog;
-   StructureEvent m_queue[];
-   string         m_knownIdentities[];
-   int            m_realSendAttempts;
+   bool   m_enabled;
+   bool   m_enableAuditLog;
+   string m_queueMessages[];
+   string m_queueLabels[];
+   string m_queueIdentities[];
+   string m_knownIdentities[];
+   int    m_realSendAttempts;
 
    bool IsKnownIdentity(const string identity) const
    {
-      const int count = ArraySize(m_knownIdentities);
-      for(int index = 0; index < count; index++)
+      for(int index = 0; index < ArraySize(m_knownIdentities); index++)
       {
          if(m_knownIdentities[index] == identity)
             return true;
@@ -41,70 +44,240 @@ private:
              || event.type == SIDEWAY_CONFIRMED;
    }
 
+   bool IsMarketStructureEligible(const string structure) const
+   {
+      return structure == "RANGE EDGE" || structure == "REJECTION"
+             || structure == "MICRO BASE" || structure == "BREAKOUT";
+   }
+
+   bool IsSetupEligible(const string setup, const string status) const
+   {
+      return (setup == "revs-ppf" || setup == "revs-pps")
+             && (status == "WATCH" || status == "ACTIVE");
+   }
+
    string FormatCycle(const ENUM_MARKET_CYCLE cycle) const
    {
       if(cycle == MARKET_CYCLE_BULL)
-         return "BULL";
+         return "Bull";
       if(cycle == MARKET_CYCLE_BEAR)
-         return "BEAR";
-      return "UNKNOWN";
+         return "Bear";
+      return "Unknown";
    }
 
    string FormatCoreType(const ENUM_CORE_SWING_TYPE coreType) const
    {
       if(coreType == CORE_SWING_LOW)
-         return "CORE LOW";
+         return "Core Low";
       if(coreType == CORE_SWING_HIGH)
-         return "CORE HIGH";
-      return "CORE";
+         return "Core High";
+      return "Core";
+   }
+
+   string Uppercase(const string value) const
+   {
+      string result = value;
+      StringToUpper(result);
+      return result;
+   }
+
+   string Naturalize(const string value) const
+   {
+      if(value == "BULL")        return "Bull";
+      if(value == "BEAR")        return "Bear";
+      if(value == "UNKNOWN")     return "Unknown";
+      if(value == "COMPRESSION") return "Compression";
+      if(value == "EXPANSION")   return "Expansion";
+      if(value == "IMPULSE")     return "Impulse";
+      if(value == "CORRECTION")  return "Correction";
+      if(value == "LEG 1")       return "Leg 1";
+      if(value == "LEG 2")       return "Leg 2";
+      if(value == "SIDEWAY")     return "Sideway";
+      if(value == "FALSE BREAK") return "False Break";
+      if(value == "RANGE EDGE")  return "Range Edge";
+      if(value == "REJECTION")   return "Rejection";
+      if(value == "MICRO BASE")  return "Micro Base";
+      if(value == "BREAKOUT")    return "Breakout";
+      if(value == "CONTINUATION") return "Continuation";
+      if(value == "NONE")        return "None";
+      if(value == "WATCH")       return "Watch";
+      if(value == "ACTIVE")      return "Active";
+      if(value == "INVALID")     return "Invalid";
+      if(value == "revs-ppf")    return "Revs-ppf";
+      if(value == "revs-pps")    return "Revs-pps";
+      return value;
+   }
+
+   int PriceDigits(const string symbol) const
+   {
+      const long digits = SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+      return digits >= 0 && digits <= 8 ? (int)digits : 2;
+   }
+
+   string Header(const string symbol,
+                 const ENUM_TIMEFRAMES timeframe) const
+   {
+      return "JINPA Watch | " + symbol + " "
+             + WatcherTimeframeToString(timeframe) + "\n";
+   }
+
+   string Context(const string cycle, const string state,
+                  const string structure) const
+   {
+      return Naturalize(cycle) + " | " + Naturalize(state) + " | "
+             + Naturalize(structure);
    }
 
    string BuildMessage(const StructureEvent &event) const
    {
-      const string heading = "JINPA | " + event.symbol + " "
-                             + WatcherTimeframeToString(event.timeframe) + "\n";
+      const string heading = Header(event.symbol, event.timeframe);
+      const int digits = PriceDigits(event.symbol);
 
       if(event.type == CORE_BREAK_CANDIDATE)
-         return heading + "BREAK CANDIDATE | "
-                + FormatCoreType(event.coreType) + " | "
-                + FormatCycle(event.cycleBefore);
+      {
+         string message = heading + "Break Candidate\n"
+                          + FormatCycle(event.cycleBefore) + " | "
+                          + FormatCoreType(event.coreType);
+         if(event.breakLevel > 0.0)
+            message += "\nBreak Level "
+                       + DoubleToString(event.breakLevel, digits);
+         return message;
+      }
 
       if(event.type == CORE_BOX_TRANSITION_STARTED)
-         return heading + "CORE UPDATED | "
-                + FormatCoreType(event.coreType) + " | "
-                + FormatCycle(event.cycleAfter);
+      {
+         string message = heading + "Core Updated\n"
+                          + FormatCycle(event.cycleAfter) + " | "
+                          + FormatCoreType(event.coreType);
+         if(event.oldCoreLevel > 0.0 && event.newCoreLevel > 0.0)
+            message += "\n" + DoubleToString(event.oldCoreLevel, digits)
+                       + " → "
+                       + DoubleToString(event.newCoreLevel, digits);
+         return message;
+      }
 
       if(event.type == CYCLE_CHANGED)
-         return heading + "CYCLE CHANGED | "
-                + FormatCycle(event.cycleBefore) + " → "
-                + FormatCycle(event.cycleAfter);
+      {
+         string message = heading + "Cycle Changed\n"
+                          + FormatCycle(event.cycleBefore) + " → "
+                          + FormatCycle(event.cycleAfter);
+         const double brokenCore = event.breakLevel > 0.0
+                                   ? event.breakLevel
+                                   : event.oldCoreLevel;
+         if(brokenCore > 0.0)
+            message += "\nBroken Core "
+                       + DoubleToString(brokenCore, digits);
+         return message;
+      }
 
       if(event.type == LEG_1_CONFIRMED)
-         return heading + "LEG 1 CONFIRMED | "
-                + FormatCycle(event.cycleAfter);
+         return heading + "Leg 1 Confirmed\n"
+                + FormatCycle(event.cycleAfter)
+                + " | Correction | Leg 1";
 
       if(event.type == LEG_2_CONFIRMED)
-         return heading + "LEG 2 CONFIRMED | "
-                + FormatCycle(event.cycleAfter);
+         return heading + "Leg 2 Confirmed\n"
+                + FormatCycle(event.cycleAfter)
+                + " | Correction | Leg 2";
 
       if(event.type == CORE_BREAK_FAILED)
-         return heading + "FALSE BREAK | "
-                + FormatCoreType(event.coreType) + " | "
-                + FormatCycle(event.cycleAfter);
+         return heading + "False Break\n"
+                + FormatCycle(event.cycleAfter)
+                + " | Compression | False Break";
 
       if(event.type == SIDEWAY_CONFIRMED)
-         return heading + "SIDEWAY CONFIRMED | "
-                + FormatCycle(event.cycleAfter);
+         return heading + "Sideway Confirmed\n"
+                + FormatCycle(event.cycleAfter)
+                + " | Compression | Sideway";
 
       return "";
    }
 
-   void RemoveFirstQueuedEvent()
+   string BuildMarketStructureMessage(
+      const string symbol, const ENUM_TIMEFRAMES timeframe,
+      const string cycle, const string state,
+      const string structure) const
    {
-      const int count = ArraySize(m_queue);
+      if(!IsMarketStructureEligible(structure))
+         return "";
+      string message = Header(symbol, timeframe) + Naturalize(structure) + "\n"
+                       + Context(cycle, state, structure);
+      if(structure == "MICRO BASE")
+         message += "\nBase confirmed";
+      return message;
+   }
+
+   string BuildSetupMessage(
+      const string symbol, const ENUM_TIMEFRAMES timeframe,
+      const string setup, const string status,
+      const string cycle, const string state, const string structure,
+      const double baseHigh, const double baseLow) const
+   {
+      if(!IsSetupEligible(setup, status))
+         return "";
+
+      string message = Header(symbol, timeframe) + Naturalize(setup)
+                       + " | " + Naturalize(status) + "\n"
+                       + Context(cycle, state, structure);
+      if(status == "WATCH")
+      {
+         if(setup == "revs-ppf")
+            message += "\nPullback tracking started";
+         else if(cycle == "BULL")
+            message += "\nLocal Swing High confirmed";
+         else if(cycle == "BEAR")
+            message += "\nLocal Swing Low confirmed";
+      }
+      else if(status == "ACTIVE")
+      {
+         const int digits = PriceDigits(symbol);
+         if(cycle == "BULL" && baseHigh > 0.0)
+            message += "\nClose > Base High "
+                       + DoubleToString(baseHigh, digits);
+         else if(cycle == "BEAR" && baseLow > 0.0)
+            message += "\nClose < Base Low "
+                       + DoubleToString(baseLow, digits);
+      }
+      return message;
+   }
+
+   bool QueueMessage(const string identity, const string label,
+                     const string message)
+   {
+      if(!m_enabled || identity == "" || message == ""
+         || IsKnownIdentity(identity))
+         return false;
+
+      int index = ArraySize(m_knownIdentities);
+      ArrayResize(m_knownIdentities, index + 1);
+      m_knownIdentities[index] = identity;
+
+      index = ArraySize(m_queueMessages);
+      ArrayResize(m_queueMessages, index + 1);
+      ArrayResize(m_queueLabels, index + 1);
+      ArrayResize(m_queueIdentities, index + 1);
+      m_queueMessages[index] = message;
+      m_queueLabels[index] = label;
+      m_queueIdentities[index] = identity;
+
+      if(m_enableAuditLog)
+         WatcherLog("PUSH_QUEUE", label);
+      return true;
+   }
+
+   void RemoveFirstQueuedMessage()
+   {
+      const int count = ArraySize(m_queueMessages);
       for(int index = 1; index < count; index++)
-         m_queue[index - 1] = m_queue[index];
-      ArrayResize(m_queue, MathMax(0, count - 1));
+      {
+         m_queueMessages[index - 1] = m_queueMessages[index];
+         m_queueLabels[index - 1] = m_queueLabels[index];
+         m_queueIdentities[index - 1] = m_queueIdentities[index];
+      }
+      const int nextSize = MathMax(0, count - 1);
+      ArrayResize(m_queueMessages, nextSize);
+      ArrayResize(m_queueLabels, nextSize);
+      ArrayResize(m_queueIdentities, nextSize);
    }
 
 public:
@@ -115,52 +288,85 @@ public:
       m_realSendAttempts = 0;
    }
 
-   void Configure(const bool enabled,
-                  const bool enableAuditLog)
+   void Configure(const bool enabled, const bool enableAuditLog)
    {
       m_enabled = enabled;
       m_enableAuditLog = enableAuditLog;
       m_realSendAttempts = 0;
-      ArrayResize(m_queue, 0);
+      ArrayResize(m_queueMessages, 0);
+      ArrayResize(m_queueLabels, 0);
+      ArrayResize(m_queueIdentities, 0);
       ArrayResize(m_knownIdentities, 0);
    }
 
    void Enqueue(const StructureEvent &event)
    {
-      if(!ShouldNotify(event) || IsKnownIdentity(event.identity))
+      if(!ShouldNotify(event))
          return;
+      QueueMessage(event.identity,
+                   event.symbol + " "
+                   + WatcherTimeframeToString(event.timeframe) + " | "
+                   + StructureEventTypeToString(event.type),
+                   BuildMessage(event));
+   }
 
-      const int identityIndex = ArraySize(m_knownIdentities);
-      ArrayResize(m_knownIdentities, identityIndex + 1);
-      m_knownIdentities[identityIndex] = event.identity;
+   bool EnqueueMarketStructureTransition(
+      const string symbol, const ENUM_TIMEFRAMES timeframe,
+      const datetime closedBarTime,
+      const string previousStructure, const string currentStructure,
+      const string cycle, const string state)
+   {
+      if(previousStructure == currentStructure
+         || !IsMarketStructureEligible(currentStructure))
+         return false;
+      const string identity = symbol + "|"
+         + IntegerToString((int)timeframe) + "|"
+         + IntegerToString((long)closedBarTime)
+         + "|MARKET_STRUCTURE|" + currentStructure;
+      return QueueMessage(identity,
+                          symbol + " " + WatcherTimeframeToString(timeframe)
+                          + " | " + currentStructure,
+                          BuildMarketStructureMessage(symbol, timeframe,
+                             cycle, state, currentStructure));
+   }
 
-      const int queueIndex = ArraySize(m_queue);
-      ArrayResize(m_queue, queueIndex + 1);
-      m_queue[queueIndex] = event;
-
-      if(m_enableAuditLog)
-      {
-         WatcherLog("AUDIT][EVENT_QUEUE", "\n" + event.symbol + " "
-                    + WatcherTimeframeToString(event.timeframe)
-                    + "\nEvent: " + StructureEventTypeToString(event.type)
-                    + "\nQueued: TRUE");
-      }
+   bool EnqueueSetupTransition(
+      const string symbol, const ENUM_TIMEFRAMES timeframe,
+      const datetime closedBarTime,
+      const string previousSetup, const string previousStatus,
+      const string currentSetup, const string currentStatus,
+      const string cycle, const string state, const string structure,
+      const double baseHigh, const double baseLow)
+   {
+      if(previousSetup == currentSetup && previousStatus == currentStatus)
+         return false;
+      if(!IsSetupEligible(currentSetup, currentStatus))
+         return false;
+      const string identity = symbol + "|"
+         + IntegerToString((int)timeframe) + "|"
+         + IntegerToString((long)closedBarTime)
+         + "|SETUP|" + currentSetup + "|" + currentStatus;
+      return QueueMessage(identity,
+                          symbol + " " + WatcherTimeframeToString(timeframe)
+                          + " | " + Uppercase(currentSetup) + " "
+                          + currentStatus,
+                          BuildSetupMessage(symbol, timeframe,
+                             currentSetup, currentStatus, cycle, state,
+                             structure, baseHigh, baseLow));
    }
 
    void DispatchNext()
    {
-      if(ArraySize(m_queue) == 0)
+      if(ArraySize(m_queueMessages) == 0)
          return;
 
-      const StructureEvent event = m_queue[0];
-      RemoveFirstQueuedEvent();
-      const string message = BuildMessage(event);
-      if(message == "")
-         return;
+      const string message = m_queueMessages[0];
+      const string label = m_queueLabels[0];
+      const string identity = m_queueIdentities[0];
+      RemoveFirstQueuedMessage();
 
-      // Integration already suppresses enqueue/dispatch in Strategy Tester.
-      // Keep a second guard here so direct manager tests can never reach the
-      // terminal Push API either.
+      // Eligibility and queueing still run in Strategy Tester, but the real
+      // terminal Push API is never called there.
       if((bool)MQLInfoInteger(MQL_TESTER))
          return;
 
@@ -169,24 +375,16 @@ public:
       if(SendNotification(message))
       {
          if(m_enableAuditLog)
-         {
-            WatcherLog("AUDIT][PUSH", "\nEvent: "
-                       + StructureEventTypeToString(event.type)
-                       + "\nSendNotification: SUCCESS");
-         }
+            WatcherLog("PUSH_SEND", label + " | SUCCESS");
          return;
       }
 
       const int errorCode = GetLastError();
-      WatcherLogError("Structure notification failed | event=" + event.identity
+      WatcherLogError("Notification failed | event=" + identity
                       + " | error=" + IntegerToString(errorCode));
       if(m_enableAuditLog)
-      {
-         WatcherLog("AUDIT][PUSH", "\nEvent: "
-                    + StructureEventTypeToString(event.type)
-                    + "\nSendNotification: FAILED"
-                    + "\nGetLastError: " + IntegerToString(errorCode));
-      }
+         WatcherLog("PUSH_SEND", label + " | FAILED | error="
+                    + IntegerToString(errorCode));
    }
 
    bool LabProbeEligible(const StructureEvent &event) const
@@ -201,7 +399,7 @@ public:
 
    int LabProbeQueueSize() const
    {
-      return ArraySize(m_queue);
+      return ArraySize(m_queueMessages);
    }
 
    int LabProbeKnownIdentityCount() const
@@ -216,12 +414,12 @@ public:
 
    void LabProbeDrainMessages(string &messages[])
    {
-      const int count = ArraySize(m_queue);
+      const int count = ArraySize(m_queueMessages);
       ArrayResize(messages, count);
       for(int index = 0; index < count; index++)
       {
-         messages[index] = BuildMessage(m_queue[0]);
-         RemoveFirstQueuedEvent();
+         messages[index] = m_queueMessages[0];
+         RemoveFirstQueuedMessage();
       }
    }
 };
