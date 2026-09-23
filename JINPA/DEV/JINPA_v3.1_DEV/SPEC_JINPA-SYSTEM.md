@@ -389,9 +389,11 @@ Nominal lifecycle:
 NONE → WATCH → READY → ACTIVE → INVALID → NONE
 ```
 
-A WATCH or READY setup can also become INVALID when Correction context is lost
-or Cycle changes. A READY Base failure is different: the setup context remains
-valid and returns to WATCH. PPS can replace the current PPF directly.
+A PPF WATCH or READY setup becomes INVALID when Correction context is lost or
+Cycle changes. After unified LEG 1, the armed PPS lifecycle instead accepts
+both `CORRECTION` and `COMPRESSION`; Sideway/Compression alone does not
+invalidate PPS. A READY Base failure is different from context invalidation:
+the setup context remains valid and returns to WATCH.
 
 ### 8.1 Unified candidate and Base rule
 
@@ -443,6 +445,12 @@ second swing detector.
 - Bull requires a newly confirmed Swing High after the LEG 1 candidate and
   confirmation bar; Bear mirrors this with Swing Low. This turning swing
   starts PPS `WATCH`.
+- The armed PPS context, PPS `WATCH`, and PPS `READY` are valid in either State
+  `CORRECTION` or `COMPRESSION` while Cycle remains known and unchanged. This
+  includes a turning Swing or candidate Swing confirmed on the same bar as
+  `SIDEWAY_CONFIRMED`.
+- Sideway/Compression alone does not clear unified LEG 1, the PPS turning Swing,
+  the current candidate identity or an immutable READY Base.
 - The next Bull Swing Low or Bear Swing High creates the shared four-closed-bar
   Base and enters `READY`; candidate replacement follows the same PPF rule.
 - A later Bull `Close > BaseHigh` or Bear `Close < BaseLow` confirms `LEG 2`
@@ -457,6 +465,10 @@ second swing detector.
   base from the PPS confirmation bar.
 - Its Bull/Bear rolling-base trigger and ACTIVE/INVALID behavior are identical
   to PPF.
+- PPS can confirm LEG 2 while State is `COMPRESSION`. Current projection
+  precedence remains unchanged: on the PPS ACTIVE bar, the Pullback authority
+  writes `Structure = LEG 2`, overriding the previously derived `SIDEWAY` value
+  for that bar. This patch does not redesign Structure precedence.
 
 ## 9. Setup Status Lifecycle
 
@@ -465,8 +477,13 @@ second swing detector.
 - `INVALID` remains for that closed-bar cycle; the next later closed bar clears
   to `NONE` unless another valid start occurs through normal logic.
 - No-new-bar calls are rejected by `m_lastProcessedBarTime`.
-- Cycle change, unknown Cycle or State leaving Correction safely invalidates a
-  WATCH or READY setup. Candidate Base failure does not invalidate the setup.
+- Cycle change or unknown Cycle invalidates PPF/PPS and clears their stored
+  context. PPF WATCH/READY additionally requires State `CORRECTION`. Armed PPS,
+  PPS WATCH and PPS READY permit `CORRECTION` or `COMPRESSION`; other States
+  invalidate them. Candidate Base failure does not invalidate the setup.
+- No separate opposite-Core-break detector exists in the Pullback engine.
+  Structural invalidation beyond reset is currently expressed through known,
+  unchanged Cycle plus the setup-specific State gate above.
 
 `CPullbackSetupEngine` is the single authority for Pullback candidate, Base,
 READY, LEG 1/LEG 2 confirmation and PPF/PPS activation. CoreBox internal leg
@@ -491,6 +508,9 @@ Columns and sources:
 | STRUCTURE | `SymbolState.structure` |
 | SETUP | `SymbolState.setup` |
 | STATUS | `SymbolState.setupStatus` |
+
+The columns are independent: `RANGE / COMPRESSION / SIDEWAY` can legitimately
+coexist with `revs-pps / WATCH` or `revs-pps / READY`.
 
 The integrated WATCH owns one current-chart row. Layout is bottom-right with
 Compact/Wide/Ultra responsive profiles. `RecoverIfNeeded()` recreates missing
@@ -705,7 +725,7 @@ pending, cancel and close counters are zero.
 | `CoreBoxDevDeterministicProbe.mq5` | Stage 2 Local Swing/Core Box/Cycle/Sideway, bootstrap, renderer, configuration and legacy StructureEvent notification regression | `128/128 PASS` |
 | `MarketStateDeterministicProbe.mq5` | Compression/Expansion/Impulse/Correction lifecycle, guards, bootstrap and Radar contract | `23/23 PASS` |
 | `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, Micro Base and Radar value | `41/41 PASS` |
-| `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear candidate failure/recovery, same-bar priority, wick-only guard, historical freeze and LEG/ACTIVE invariants | `48 checks` |
+| `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, PPS survival and activation in Compression, same-bar Sideway edges, PPF strictness, cycle guards, historical freeze and Radar coexistence | `67 checks` |
 | `NotificationPolicyDeterministicProbe.mq5` | Eligible policy including unified Leg, READY candidate identity, Base-failure WATCH suppression, READY formatting, FIFO/dedup and Tester guard | `31 checks` |
 
 All engines and probes use deterministic closed-bar timestamps. The notification

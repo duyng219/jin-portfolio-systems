@@ -146,6 +146,105 @@ void TestSameBarOldBasePriority()
    Check(out.setupStatus=="READY"&&e.CandidateSwingTime()==12030&&e.BaseLow()==95&&e.BaseHigh()==109,"ORDER_37_OLD_BASE_FAILURE_FINALIZED_BEFORE_SAME_BAR_NEW_CANDIDATE");
 }
 
+void BuildBullPpsWatch(CPullbackSetupEngine &e,PriceStructureState &source,SwingPoint &swings[],MqlRates &rates[],SymbolState &out,const datetime t)
+{
+   e.ConfigureSwingRightBars(1);source=Source(MARKET_CYCLE_BULL);out.setup="-";out.setupStatus="NONE";out.structure="NONE";
+   AddBar(rates,Bar(t,112,102,106));Apply(e,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(t+10,110,100,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,t+10,t+20,100));AddBar(rates,Bar(t+20,108,102,105));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(t+30,112,105,111));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(t+40,111,103,107));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(t+50,110,102,106));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(t+60,115,105,109));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,t+60,t+70,115));AddBar(rates,Bar(t+70,112,104,108));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+}
+
+void BuildBearPpsWatch(CPullbackSetupEngine &e,PriceStructureState &source,SwingPoint &swings[],MqlRates &rates[],SymbolState &out,const datetime t)
+{
+   e.ConfigureSwingRightBars(1);source=Source(MARKET_CYCLE_BEAR);out.setup="-";out.setupStatus="NONE";out.structure="NONE";
+   AddBar(rates,Bar(t,202,188,195));Apply(e,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(t+10,200,190,196));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,t+10,t+20,200));AddBar(rates,Bar(t+20,198,192,195));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(t+30,195,187,189));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(t+40,197,188,193));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(t+50,198,189,194));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(t+60,195,180,187));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,t+60,t+70,180));AddBar(rates,Bar(t+70,196,183,190));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+}
+
+void TestBullPpsCompressionLifecycle()
+{
+   CPullbackSetupEngine e;PriceStructureState source;SwingPoint swings[];MqlRates rates[];SymbolState out;BuildBullPpsWatch(e,source,swings,rates,out,13000);
+   datetime leg=e.Leg1ConfirmedBarTime(),turn=e.PpsTurningSwingTime();
+   AddBar(rates,Bar(13080,113,103,108));Apply(e,"CORRECTION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="WATCH"&&e.Leg1ConfirmedBarTime()==leg&&e.PpsTurningSwingTime()==turn,"COMPRESSION_41_BULL_PPS_WATCH_AND_CONTEXT_SURVIVE");
+   AddBar(rates,Bar(13085,112,102,107));Apply(e,"COMPRESSION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="WATCH"&&e.Leg1ConfirmedBarTime()==leg,"COMPRESSION_41B_RETURN_TO_CORRECTION_DOES_NOT_RESTART_PPF");
+   AddBar(rates,Bar(13090,109,95,101));Apply(e,"CORRECTION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,13090,13100,95));AddBar(rates,Bar(13100,108,97,102));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   double high=e.BaseHigh(),low=e.BaseLow();datetime candidate=e.CandidateSwingTime();
+   Check(out.setupStatus=="READY"&&candidate==13090&&high==109&&low==95,"COMPRESSION_42_BULL_PPS_CAN_ENTER_READY");
+   AddBar(rates,Bar(13110,120,94,103));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.BaseHigh()==high&&e.BaseLow()==low&&e.CandidateSwingTime()==candidate,"COMPRESSION_43_BULL_READY_BASE_SURVIVES_IMMUTABLY");
+   AddBar(rates,Bar(13120,100,93,94));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setupStatus=="WATCH"&&e.Leg1ConfirmedBarTime()==leg&&e.PpsTurningSwingTime()==turn&&!e.HasActiveBase(),"COMPRESSION_44_BULL_BASE_FAILURE_RETURNS_WATCH_WITH_CONTEXT");
+   AddBar(rates,Bar(13130,108,90,98));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,13130,13140,90));AddBar(rates,Bar(13140,107,93,100));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   out.structure="SIDEWAY";AddBar(rates,Bar(13150,111,101,109));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 2"&&e.Leg2ConfirmedBarTime()==13150,"COMPRESSION_45_BULL_PPS_ACTIVE_AND_CURRENT_LEG2_PRECEDENCE");
+}
+
+void TestBearPpsCompressionLifecycle()
+{
+   CPullbackSetupEngine e;PriceStructureState source;SwingPoint swings[];MqlRates rates[];SymbolState out;BuildBearPpsWatch(e,source,swings,rates,out,14000);
+   datetime leg=e.Leg1ConfirmedBarTime(),turn=e.PpsTurningSwingTime();
+   AddBar(rates,Bar(14080,210,195,202));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,14080,14090,210));AddBar(rates,Bar(14090,208,198,203));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   double high=e.BaseHigh(),low=e.BaseLow();datetime candidate=e.CandidateSwingTime();
+   Check(out.setupStatus=="READY"&&candidate==14080&&high==210&&low==195,"COMPRESSION_46_BEAR_PPS_READY_BEFORE_COMPRESSION");
+   AddBar(rates,Bar(14100,211,190,202));Apply(e,"CORRECTION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.BaseHigh()==high&&e.BaseLow()==low&&e.CandidateSwingTime()==candidate&&e.Leg1ConfirmedBarTime()==leg&&e.PpsTurningSwingTime()==turn,"COMPRESSION_47_BEAR_READY_BASE_AND_CONTEXT_SURVIVE");
+   AddBar(rates,Bar(14110,212,205,211));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setupStatus=="WATCH"&&e.Leg1ConfirmedBarTime()==leg&&e.PpsTurningSwingTime()==turn,"COMPRESSION_49_BEAR_BASE_FAILURE_RETURNS_WATCH_WITH_CONTEXT");
+   AddBar(rates,Bar(14120,215,198,207));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,14120,14130,215));AddBar(rates,Bar(14130,213,200,206));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   AddBar(rates,Bar(14140,201,195,197));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 2"&&e.Leg2ConfirmedBarTime()==14140,"COMPRESSION_48_BEAR_PPS_ACTIVE");
+}
+
+void TestCompressionEdgesAndInvalidation()
+{
+   CPullbackSetupEngine turn;PriceStructureState bull=Source(MARKET_CYCLE_BULL);SwingPoint ts[];MqlRates tr[];SymbolState to;to.setup="-";to.setupStatus="NONE";to.structure="NONE";turn.ConfigureSwingRightBars(1);
+   AddBar(tr,Bar(15000,112,102,106));Apply(turn,"IMPULSE",JINPA_STATE_CORRECTION,bull,ts,tr,to);AddBar(tr,Bar(15010,110,100,104));Apply(turn,"CORRECTION",JINPA_STATE_CORRECTION,bull,ts,tr,to);
+   AddSwing(ts,Swing(SWING_LOW,15010,15020,100));AddBar(tr,Bar(15020,108,102,105));Apply(turn,"CORRECTION",JINPA_STATE_CORRECTION,bull,ts,tr,to);AddBar(tr,Bar(15030,115,105,111));Apply(turn,"CORRECTION",JINPA_STATE_CORRECTION,bull,ts,tr,to);
+   AddSwing(ts,Swing(SWING_HIGH,15030,15040,115));AddBar(tr,Bar(15040,112,104,108));Apply(turn,"CORRECTION",JINPA_STATE_COMPRESSION,bull,ts,tr,to);
+   Check(to.setup=="revs-pps"&&to.setupStatus=="WATCH"&&turn.PpsTurningSwingTime()==15030,"EDGE_51_SAME_BAR_TURNING_AND_SIDEWAY_STARTS_PPS");
+
+   CPullbackSetupEngine candidate;PriceStructureState bear;SwingPoint cs[];MqlRates cr[];SymbolState co;BuildBearPpsWatch(candidate,bear,cs,cr,co,15100);
+   AddBar(cr,Bar(15180,210,195,202));Apply(candidate,"CORRECTION",JINPA_STATE_CORRECTION,bear,cs,cr,co);AddSwing(cs,Swing(SWING_HIGH,15180,15190,210));AddBar(cr,Bar(15190,208,198,203));Apply(candidate,"CORRECTION",JINPA_STATE_COMPRESSION,bear,cs,cr,co);
+   Check(co.setup=="revs-pps"&&co.setupStatus=="READY"&&candidate.CandidateSwingTime()==15180,"EDGE_52_SAME_BAR_CANDIDATE_AND_SIDEWAY_ENTERS_READY");
+
+   CPullbackSetupEngine changed;PriceStructureState changedSource;SwingPoint xs[];MqlRates xr[];SymbolState xo;BuildBullPpsWatch(changed,changedSource,xs,xr,xo,15300);changedSource.cycleState.cycle=MARKET_CYCLE_BEAR;AddBar(xr,Bar(15380,113,103,108));Apply(changed,"CORRECTION",JINPA_STATE_COMPRESSION,changedSource,xs,xr,xo);
+   Check(xo.setupStatus=="INVALID"&&changed.Leg1ConfirmedBarTime()==0&&changed.PpsTurningSwingTime()==0,"INVALID_53_CYCLE_CHANGE_STILL_INVALIDATES_PPS_WATCH");
+
+   CPullbackSetupEngine unknown;PriceStructureState unknownSource;SwingPoint us[];MqlRates ur[];SymbolState uo;BuildBearPpsWatch(unknown,unknownSource,us,ur,uo,15500);AddBar(ur,Bar(15580,210,195,202));Apply(unknown,"CORRECTION",JINPA_STATE_CORRECTION,unknownSource,us,ur,uo);AddSwing(us,Swing(SWING_HIGH,15580,15590,210));AddBar(ur,Bar(15590,208,198,203));Apply(unknown,"CORRECTION",JINPA_STATE_CORRECTION,unknownSource,us,ur,uo);unknownSource.cycleState.cycle=MARKET_CYCLE_UNKNOWN;AddBar(ur,Bar(15600,207,197,202));Apply(unknown,"CORRECTION",JINPA_STATE_COMPRESSION,unknownSource,us,ur,uo);
+   Check(uo.setupStatus=="INVALID"&&unknown.Leg1ConfirmedBarTime()==0&&unknown.PpsTurningSwingTime()==0,"INVALID_54_UNKNOWN_CYCLE_STILL_INVALIDATES_PPS_READY");
+
+   CPullbackSetupEngine changedReady;PriceStructureState readySource;SwingPoint ys[];MqlRates yr[];SymbolState yo;BuildBearPpsWatch(changedReady,readySource,ys,yr,yo,15700);AddBar(yr,Bar(15780,210,195,202));Apply(changedReady,"CORRECTION",JINPA_STATE_CORRECTION,readySource,ys,yr,yo);AddSwing(ys,Swing(SWING_HIGH,15780,15790,210));AddBar(yr,Bar(15790,208,198,203));Apply(changedReady,"CORRECTION",JINPA_STATE_CORRECTION,readySource,ys,yr,yo);readySource.cycleState.cycle=MARKET_CYCLE_BULL;AddBar(yr,Bar(15800,207,197,202));Apply(changedReady,"CORRECTION",JINPA_STATE_COMPRESSION,readySource,ys,yr,yo);
+   Check(yo.setupStatus=="INVALID"&&changedReady.Leg1ConfirmedBarTime()==0,"INVALID_55_CYCLE_CHANGE_STILL_INVALIDATES_PPS_READY");
+
+   CPullbackSetupEngine unknownWatch;PriceStructureState watchSource;SwingPoint zs[];MqlRates zr[];SymbolState zo;BuildBullPpsWatch(unknownWatch,watchSource,zs,zr,zo,15900);watchSource.cycleState.cycle=MARKET_CYCLE_UNKNOWN;AddBar(zr,Bar(15980,113,103,108));Apply(unknownWatch,"CORRECTION",JINPA_STATE_COMPRESSION,watchSource,zs,zr,zo);
+   Check(zo.setupStatus=="INVALID"&&unknownWatch.PpsTurningSwingTime()==0,"INVALID_56_UNKNOWN_CYCLE_STILL_INVALIDATES_PPS_WATCH");
+}
+
+void TestPpfRemainsCorrectionOnly()
+{
+   CPullbackSetupEngine watch;PriceStructureState source=Source(MARKET_CYCLE_BULL);SwingPoint swings[];MqlRates rates[];SymbolState out;out.setup="-";out.setupStatus="NONE";out.structure="NONE";watch.ConfigureSwingRightBars(1);
+   AddBar(rates,Bar(16000,110,100,105));Apply(watch,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(16010,109,101,104));Apply(watch,"CORRECTION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setup=="revs-ppf"&&out.setupStatus=="INVALID","PPF_57_WATCH_REMAINS_INVALID_IN_COMPRESSION");
+   CPullbackSetupEngine ready;SwingPoint rs[];MqlRates rr[];SymbolState ro;ro.setup="-";ro.setupStatus="NONE";ro.structure="NONE";ready.ConfigureSwingRightBars(1);
+   AddBar(rr,Bar(16100,110,100,105));Apply(ready,"IMPULSE",JINPA_STATE_CORRECTION,source,rs,rr,ro);AddBar(rr,Bar(16110,108,98,102));Apply(ready,"CORRECTION",JINPA_STATE_CORRECTION,source,rs,rr,ro);AddSwing(rs,Swing(SWING_LOW,16110,16120,98));AddBar(rr,Bar(16120,107,100,103));Apply(ready,"CORRECTION",JINPA_STATE_CORRECTION,source,rs,rr,ro);AddBar(rr,Bar(16130,106,99,102));Apply(ready,"CORRECTION",JINPA_STATE_COMPRESSION,source,rs,rr,ro);
+   Check(ro.setup=="revs-ppf"&&ro.setupStatus=="INVALID","PPF_58_READY_REMAINS_INVALID_IN_COMPRESSION");
+}
+
 void TestFourBarBaseBuilder()
 {
    CPullbackSetupEngine bull;bull.ConfigureSwingRightBars(3);PriceStructureState bs=Source(MARKET_CYCLE_BULL);SwingPoint sw[];MqlRates r[];SymbolState o;o.setup="-";o.setupStatus="NONE";o.structure="NONE";
@@ -189,7 +288,9 @@ void TestBaseVisual()
 void TestRadarReady()
 {
    SymbolState s[1];s[0].symbol=_Symbol;s[0].timeframe=(ENUM_TIMEFRAMES)_Period;s[0].cycle="BULL";s[0].regime="TREND";s[0].state="CORRECTION";s[0].structure="NONE";s[0].setup="revs-ppf";s[0].setupStatus="READY";s[0].isReady=true;
-   CMarketRadar r;r.Configure(true,CORNER_RIGHT_LOWER,15,20,20,9);bool made=r.Create(s);r.Update(s,true);Check(made&&ObjectGetString(0,"JINPA_RADAR_ROW_000_COL_07",OBJPROP_TEXT)=="READY","RADAR_18_READY_VISIBLE");r.Destroy();
+   CMarketRadar r;r.Configure(true,CORNER_RIGHT_LOWER,15,20,20,9);bool made=r.Create(s);r.Update(s,true);Check(made&&ObjectGetString(0,"JINPA_RADAR_ROW_000_COL_07",OBJPROP_TEXT)=="READY","RADAR_18_READY_VISIBLE");
+   s[0].regime="RANGE";s[0].state="COMPRESSION";s[0].structure="SIDEWAY";s[0].setup="revs-pps";s[0].setupStatus="WATCH";r.Update(s,true);
+   Check(ObjectGetString(0,"JINPA_RADAR_ROW_000_COL_03",OBJPROP_TEXT)=="RANGE"&&ObjectGetString(0,"JINPA_RADAR_ROW_000_COL_04",OBJPROP_TEXT)=="COMPRESSION"&&ObjectGetString(0,"JINPA_RADAR_ROW_000_COL_05",OBJPROP_TEXT)=="SIDEWAY"&&ObjectGetString(0,"JINPA_RADAR_ROW_000_COL_06",OBJPROP_TEXT)=="revs-pps"&&ObjectGetString(0,"JINPA_RADAR_ROW_000_COL_07",OBJPROP_TEXT)=="WATCH","RADAR_59_SIDEWAY_AND_PPS_COEXIST");r.Destroy();
 }
-int OnInit(){TestBullUnifiedLifecycle();TestBearAndInvalidation();TestBullBaseFailureAndPpsRecovery();TestBearBaseFailureAndPpsRecovery();TestSameBarOldBasePriority();TestFourBarBaseBuilder();TestBaseVisual();TestRadarReady();Print("[PULLBACK_SETUP_TEST][SUMMARY] passed=",g_passed," failed=",g_failed," trades=0 pending=0 cancels=0 closes=0 push=0");return g_failed==0?INIT_SUCCEEDED:INIT_FAILED;}
+int OnInit(){TestBullUnifiedLifecycle();TestBearAndInvalidation();TestBullBaseFailureAndPpsRecovery();TestBearBaseFailureAndPpsRecovery();TestSameBarOldBasePriority();TestBullPpsCompressionLifecycle();TestBearPpsCompressionLifecycle();TestCompressionEdgesAndInvalidation();TestPpfRemainsCorrectionOnly();TestFourBarBaseBuilder();TestBaseVisual();TestRadarReady();Print("[PULLBACK_SETUP_TEST][SUMMARY] passed=",g_passed," failed=",g_failed," trades=0 pending=0 cancels=0 closes=0 push=0");return g_failed==0?INIT_SUCCEEDED:INIT_FAILED;}
 void OnTick(){ExpertRemove();}

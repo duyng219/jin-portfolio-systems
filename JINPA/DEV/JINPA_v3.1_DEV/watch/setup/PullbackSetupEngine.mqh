@@ -68,6 +68,16 @@ private:
    }
    bool TurningAt(const SwingPoint &swings[],const datetime bar,SwingPoint &out) const
    { return m_leg1Bar>0&&FindSwing(swings,TurningType(),bar,m_leg1Candidate,m_leg1Bar,out); }
+   bool PpsStateAllowed(const ENUM_JINPA_MARKET_STATE state) const
+   { return state==JINPA_STATE_CORRECTION||state==JINPA_STATE_COMPRESSION; }
+   bool LifecycleStateAllowed(const ENUM_JINPA_MARKET_STATE state) const
+   {
+      if(m_setup==JINPA_SETUP_REVS_PPS||(m_setup==JINPA_SETUP_NONE&&m_leg1Bar>0))
+         return PpsStateAllowed(state);
+      return state==JINPA_STATE_CORRECTION;
+   }
+   void StartPps(const SwingPoint &turn)
+   { m_turningTime=turn.time;m_turningConfirm=turn.confirmationTime;Watch(JINPA_SETUP_REVS_PPS); }
    int BaseOutcome(const MqlRates &bar) const
    {
       if(m_status!=JINPA_SETUP_STATUS_READY||bar.time<=m_candidateConfirm) return 0;
@@ -101,13 +111,22 @@ public:
       int ci=BarIndex(rates,closedTime); if(ci<0||closedTime<=m_lastBar){Output(state);return oldSetup!=state.setup||oldStatus!=state.setupStatus||oldStructure!=state.structure;} m_lastBar=closedTime;
       MqlRates bar=rates[ci]; ENUM_MARKET_CYCLE cycle=source.cycleState.cycle; bool cycleChanged=m_cycle!=MARKET_CYCLE_UNKNOWN&&cycle!=m_cycle;m_cycle=cycle;
       if(m_status==JINPA_SETUP_STATUS_ACTIVE&&bar.time>m_triggerTime)
-      { Invalidate(bar.time);if(cycleChanged||cycle==MARKET_CYCLE_UNKNOWN||marketState!=JINPA_STATE_CORRECTION){m_correctionStart=0;ClearLegs();}Output(state);return true; }
+      {
+         bool ppfLegArmed=m_setup==JINPA_SETUP_REVS_PPF&&m_leg1Bar>0;
+         bool preservePpsContext=(ppfLegArmed||m_setup==JINPA_SETUP_REVS_PPS)
+                                 &&!cycleChanged&&cycle!=MARKET_CYCLE_UNKNOWN
+                                 &&PpsStateAllowed(marketState);
+         Invalidate(bar.time);
+         if(!preservePpsContext){m_correctionStart=0;ClearLegs();}
+         else if(ppfLegArmed){SwingPoint turn;if(TurningAt(swings,bar.time,turn)){StartPps(turn);Output(state);return true;}}
+         Output(state);return true;
+      }
       if(m_status==JINPA_SETUP_STATUS_INVALID){if(bar.time>m_invalidTime)ClearSetup();else{Output(state);return oldSetup!=state.setup||oldStatus!=state.setupStatus||oldStructure!=state.structure;}}
       bool correctionStarted=marketState==JINPA_STATE_CORRECTION&&previousState!="CORRECTION";
-      if(cycleChanged||cycle==MARKET_CYCLE_UNKNOWN||marketState!=JINPA_STATE_CORRECTION)
+      if(cycleChanged||cycle==MARKET_CYCLE_UNKNOWN||!LifecycleStateAllowed(marketState))
       { if(m_status==JINPA_SETUP_STATUS_WATCH||m_status==JINPA_SETUP_STATUS_READY)Invalidate(bar.time);else if(m_status==JINPA_SETUP_STATUS_NONE)ClearSetup();m_correctionStart=0;ClearLegs();Output(state);return oldSetup!=state.setup||oldStatus!=state.setupStatus||oldStructure!=state.structure; }
-      if(correctionStarted){ClearLegs();m_correctionStart=bar.time;Watch(JINPA_SETUP_REVS_PPF);}
-      if(m_setup==JINPA_SETUP_NONE&&m_leg1Bar>0){SwingPoint turn;if(TurningAt(swings,bar.time,turn)){m_turningTime=turn.time;m_turningConfirm=turn.confirmationTime;Watch(JINPA_SETUP_REVS_PPS);Output(state);return true;}}
+      if(correctionStarted&&m_setup!=JINPA_SETUP_REVS_PPS&&m_leg1Bar==0){ClearLegs();m_correctionStart=bar.time;Watch(JINPA_SETUP_REVS_PPF);}
+      if(m_setup==JINPA_SETUP_NONE&&m_leg1Bar>0){SwingPoint turn;if(TurningAt(swings,bar.time,turn)){StartPps(turn);Output(state);return true;}}
       // Finalize the immutable old Base before considering a SwingPoint whose
       // confirmation lands on this same closed bar.  A failed Base returns to
       // WATCH without disturbing confirmed Leg or PPS turning context.
