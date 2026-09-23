@@ -140,8 +140,8 @@ input double                              TSLActivationATR = 2.5;            // 
 input double                              TSLStepATR       = 2.5;            // Step: dịch SL tối thiểu X ATR mỗi bước
 
 sinput group                              "──────────── STRUCTURE ENGINE ───────────────"
-input int                                 SwingLeftBars             = 5;     // Confirmed swing left window
-input int                                 SwingRightBars            = 5;     // Confirmed swing right window
+input int                                 SwingLeftBars             = 3;     // Confirmed swing left window
+input int                                 SwingRightBars            = 3;     // Confirmed swing right window
 input int                                 StructureATRPeriod         = 14;    // Shared swing-distance/Core-break ATR
 input double                              CoreBreakATRBuffer         = 0.10;  // Core boundary ATR multiplier
 input int                                 CoreBreakConfirmCloses     = 2;     // Consecutive closes beyond boundary

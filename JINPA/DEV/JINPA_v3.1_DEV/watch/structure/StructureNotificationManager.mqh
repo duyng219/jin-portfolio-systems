@@ -38,22 +38,22 @@ private:
                 && event.cycleBefore != event.cycleAfter;
       return event.type == CORE_BREAK_CANDIDATE
              || event.type == CORE_BOX_TRANSITION_STARTED
-             || event.type == LEG_1_CONFIRMED
-             || event.type == LEG_2_CONFIRMED
              || event.type == CORE_BREAK_FAILED
              || event.type == SIDEWAY_CONFIRMED;
    }
 
    bool IsMarketStructureEligible(const string structure) const
    {
-      return structure == "RANGE EDGE" || structure == "REJECTION"
+      return structure == "LEG 1" || structure == "LEG 2"
+             || structure == "RANGE EDGE" || structure == "REJECTION"
              || structure == "MICRO BASE" || structure == "BREAKOUT";
    }
 
    bool IsSetupEligible(const string setup, const string status) const
    {
       return (setup == "revs-ppf" || setup == "revs-pps")
-             && (status == "WATCH" || status == "ACTIVE");
+             && (status == "WATCH" || status == "READY"
+                 || status == "ACTIVE");
    }
 
    string FormatCycle(const ENUM_MARKET_CYCLE cycle) const
@@ -101,6 +101,7 @@ private:
       if(value == "CONTINUATION") return "Continuation";
       if(value == "NONE")        return "None";
       if(value == "WATCH")       return "Watch";
+      if(value == "READY")       return "Ready";
       if(value == "ACTIVE")      return "Active";
       if(value == "INVALID")     return "Invalid";
       if(value == "revs-ppf")    return "Revs-ppf";
@@ -200,7 +201,10 @@ private:
    {
       if(!IsMarketStructureEligible(structure))
          return "";
-      string message = Header(symbol, timeframe) + Naturalize(structure) + "\n"
+      string heading = Naturalize(structure);
+      if(structure == "LEG 1" || structure == "LEG 2")
+         heading += " Confirmed";
+      string message = Header(symbol, timeframe) + heading + "\n"
                        + Context(cycle, state, structure);
       if(structure == "MICRO BASE")
          message += "\nBase confirmed";
@@ -227,6 +231,13 @@ private:
             message += "\nLocal Swing High confirmed";
          else if(cycle == "BEAR")
             message += "\nLocal Swing Low confirmed";
+      }
+      else if(status == "READY")
+      {
+         const int digits = PriceDigits(symbol);
+         if(baseLow > 0.0 && baseHigh > baseLow)
+            message += "\nBase " + DoubleToString(baseLow, digits)
+                       + " - " + DoubleToString(baseHigh, digits);
       }
       else if(status == "ACTIVE")
       {
@@ -319,7 +330,7 @@ public:
       if(previousStructure == currentStructure
          || !IsMarketStructureEligible(currentStructure))
          return false;
-      const string identity = symbol + "|"
+      string identity = symbol + "|"
          + IntegerToString((int)timeframe) + "|"
          + IntegerToString((long)closedBarTime)
          + "|MARKET_STRUCTURE|" + currentStructure;
@@ -336,16 +347,28 @@ public:
       const string previousSetup, const string previousStatus,
       const string currentSetup, const string currentStatus,
       const string cycle, const string state, const string structure,
-      const double baseHigh, const double baseLow)
+      const double baseHigh, const double baseLow,
+      const datetime candidateTime = 0)
    {
-      if(previousSetup == currentSetup && previousStatus == currentStatus)
+      const bool replacementReady = currentStatus == "READY"
+                                    && candidateTime > 0;
+      if(previousSetup == currentSetup && previousStatus == currentStatus
+         && !replacementReady)
+         return false;
+      // A Base failure is a candidate reset, not a new setup WATCH event.
+      // The next confirmed candidate receives its own READY notification.
+      if(currentStatus == "WATCH" && previousStatus == "READY"
+         && previousSetup == currentSetup)
          return false;
       if(!IsSetupEligible(currentSetup, currentStatus))
          return false;
-      const string identity = symbol + "|"
-         + IntegerToString((int)timeframe) + "|"
-         + IntegerToString((long)closedBarTime)
-         + "|SETUP|" + currentSetup + "|" + currentStatus;
+      string identity = symbol + "|"
+         + IntegerToString((int)timeframe) + "|SETUP|" + currentSetup
+         + "|" + currentStatus + "|";
+      if(currentStatus == "READY" && candidateTime > 0)
+         identity += IntegerToString((long)candidateTime);
+      else
+         identity += IntegerToString((long)closedBarTime);
       return QueueMessage(identity,
                           symbol + " " + WatcherTimeframeToString(timeframe)
                           + " | " + Uppercase(currentSetup) + " "

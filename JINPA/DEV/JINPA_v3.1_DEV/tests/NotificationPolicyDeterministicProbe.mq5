@@ -88,9 +88,11 @@ void TestExistingEvents(void)
       manager.Enqueue(event);
       string messages[];
       manager.LabProbeDrainMessages(messages);
-      Check(ArraySize(messages) == 1
-            && StringFind(messages[0], "JINPA Watch | XAUUSD H1\n") == 0
-            && Contains(messages[0], expected[index]),
+      const bool internalLegEvent = index == 3 || index == 4;
+      Check(internalLegEvent ? ArraySize(messages) == 0
+            : ArraySize(messages) == 1
+              && StringFind(messages[0], "JINPA Watch | XAUUSD H1\n") == 0
+              && Contains(messages[0], expected[index]),
             "STRUCTURE_EVENT_" + IntegerToString(index + 1));
    }
 }
@@ -116,6 +118,14 @@ void TestMarketStructureTransitions(void)
             "XAUUSD", PERIOD_H1, 2003, "NONE", "BREAKOUT",
             "BEAR", "EXPANSION"),
          "MARKET_STRUCTURE_11_BREAKOUT_ELIGIBLE");
+   Check(manager.EnqueueMarketStructureTransition(
+            "XAUUSD", PERIOD_H1, 2004, "NONE", "LEG 1",
+            "BULL", "CORRECTION"),
+         "MARKET_STRUCTURE_12_UNIFIED_LEG1_ELIGIBLE");
+   Check(manager.EnqueueMarketStructureTransition(
+            "XAUUSD", PERIOD_H1, 2005, "NONE", "LEG 2",
+            "BEAR", "CORRECTION"),
+         "MARKET_STRUCTURE_13_UNIFIED_LEG2_ELIGIBLE");
    Check(!manager.EnqueueMarketStructureTransition(
             "XAUUSD", PERIOD_H1, 2004, "BREAKOUT", "CONTINUATION",
             "BEAR", "IMPULSE"),
@@ -127,15 +137,16 @@ void TestMarketStructureTransitions(void)
 
    string messages[];
    manager.LabProbeDrainMessages(messages);
-   Check(ArraySize(messages) == 4
+   Check(ArraySize(messages) == 6
          && Contains(messages[0],
                      "Range Edge\nBull | Compression | Range Edge")
          && Contains(messages[1],
                      "Rejection\nBear | Compression | Rejection")
          && Contains(messages[2],
                      "Micro Base\nBull | Impulse | Micro Base\nBase confirmed")
-         && Contains(messages[3],
-                     "Breakout\nBear | Expansion | Breakout"),
+         && Contains(messages[3], "Breakout\nBear | Expansion | Breakout")
+         && Contains(messages[4], "Leg 1 Confirmed\nBull | Correction | Leg 1")
+         && Contains(messages[5], "Leg 2 Confirmed\nBear | Correction | Leg 2"),
          "FORMATTER_22_MARKET_STRUCTURE_MESSAGES");
 }
 
@@ -160,14 +171,34 @@ void TestSetupTransitions(void)
             3728.4, 3710.0),
          "SETUP_16_REVS_PPF_INVALID_INELIGIBLE");
    Check(manager.EnqueueSetupTransition(
+            "XAUUSD", PERIOD_H1, 3007, "revs-ppf", "WATCH",
+            "revs-ppf", "READY", "BULL", "CORRECTION", "NONE",
+            3728.4, 3710.0, 3100),
+         "SETUP_16B_REVS_PPF_READY_ELIGIBLE");
+   Check(manager.EnqueueSetupTransition(
             "XAUUSD", PERIOD_H1, 3003, "revs-ppf", "WATCH",
             "revs-pps", "WATCH", "BEAR", "CORRECTION", "LEG 1",
             3740.0, 3702.2),
          "SETUP_17_REVS_PPS_WATCH_ELIGIBLE");
    Check(manager.EnqueueSetupTransition(
             "XAUUSD", PERIOD_H1, 3004, "revs-pps", "WATCH",
-            "revs-pps", "ACTIVE", "BEAR", "CORRECTION", "LEG 1",
-            3740.0, 3702.2),
+            "revs-pps", "READY", "BEAR", "CORRECTION", "LEG 1",
+            3740.0, 3702.2, 4200),
+         "SETUP_18_REVS_PPS_READY_ELIGIBLE");
+   Check(!manager.EnqueueSetupTransition(
+            "XAUUSD", PERIOD_H1, 3010, "revs-pps", "READY",
+            "revs-pps", "READY", "BEAR", "CORRECTION", "LEG 1",
+            3740.0, 3702.2, 4200),
+         "SETUP_18B_SAME_READY_CANDIDATE_DEDUP");
+   Check(manager.EnqueueSetupTransition(
+            "XAUUSD", PERIOD_H1, 3011, "revs-pps", "READY",
+            "revs-pps", "READY", "BEAR", "CORRECTION", "LEG 1",
+            3738.0, 3700.0, 4300),
+         "SETUP_18C_REPLACEMENT_READY_ELIGIBLE");
+   Check(manager.EnqueueSetupTransition(
+            "XAUUSD", PERIOD_H1, 3004, "revs-pps", "READY",
+            "revs-pps", "ACTIVE", "BEAR", "CORRECTION", "LEG 2",
+            3738.0, 3700.0),
          "SETUP_18_REVS_PPS_ACTIVE_ELIGIBLE");
    Check(!manager.EnqueueSetupTransition(
             "XAUUSD", PERIOD_H1, 3005, "revs-pps", "ACTIVE",
@@ -179,6 +210,13 @@ void TestSetupTransitions(void)
             "revs-pps", "WATCH", "BEAR", "CORRECTION", "LEG 1",
             3740.0, 3702.2),
          "SETUP_20_UNCHANGED_INELIGIBLE");
+   const int beforeFailure = manager.LabProbeQueueSize();
+   Check(!manager.EnqueueSetupTransition(
+            "XAUUSD", PERIOD_H1, 3012, "revs-pps", "READY",
+            "revs-pps", "WATCH", "BEAR", "CORRECTION", "LEG 1",
+            0.0, 0.0)
+         && manager.LabProbeQueueSize() == beforeFailure,
+         "SETUP_20B_BASE_FAILURE_READY_TO_WATCH_NO_PUSH");
 
    // Replaying an identical transition identity on the same closed bar does
    // not grow the queue or known-identity set.
@@ -192,17 +230,32 @@ void TestSetupTransitions(void)
 
    string messages[];
    manager.LabProbeDrainMessages(messages);
-   const bool formatted = ArraySize(messages) == 4
+   int digits = (int)SymbolInfoInteger("XAUUSD", SYMBOL_DIGITS);
+   if(digits < 0 || digits > 8)
+      digits = 2;
+   const string ppfBase = "Base " + DoubleToString(3710.0, digits)
+                          + " - " + DoubleToString(3728.4, digits);
+   const string ppsBaseA = "Base " + DoubleToString(3702.2, digits)
+                           + " - " + DoubleToString(3740.0, digits);
+   const string ppsBaseB = "Base " + DoubleToString(3700.0, digits)
+                           + " - " + DoubleToString(3738.0, digits);
+   const bool formatted = ArraySize(messages) == 7
       && Contains(messages[0],
                   "Revs-ppf | Watch\nBull | Correction | None\n"
                   "Pullback tracking started")
       && Contains(messages[1], "Revs-ppf | Active\n"
                   "Bull | Correction | Leg 1\nClose > Base High ")
-      && Contains(messages[2], "Revs-pps | Watch\n"
+      && Contains(messages[2], "Revs-ppf | Ready\n"
+                  "Bull | Correction | None\n" + ppfBase)
+      && Contains(messages[3], "Revs-pps | Watch\n"
                   "Bear | Correction | Leg 1\n"
                   "Local Swing Low confirmed")
-      && Contains(messages[3], "Revs-pps | Active\n"
-                  "Bear | Correction | Leg 1\nClose < Base Low ");
+      && Contains(messages[4], "Revs-pps | Ready\n"
+                  "Bear | Correction | Leg 1\n" + ppsBaseA)
+      && Contains(messages[5], "Revs-pps | Ready\n"
+                  "Bear | Correction | Leg 1\n" + ppsBaseB)
+      && Contains(messages[6], "Revs-pps | Active\n"
+                  "Bear | Correction | Leg 2\nClose < Base Low ");
    // Included in check 22 together with the Market Structure formatter.
    Check(formatted, "FORMATTER_22_SETUP_MESSAGES");
 }

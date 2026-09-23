@@ -105,12 +105,12 @@ void TestRequiredCases(void)
 
    source.sidewayBox.leg1Confirmed = true;
    Check(IsStructure(JINPA_STATE_CORRECTION, source,
-                     JINPA_STRUCTURE_LEG_1),
-         "CASE_S5_CORRECTION_LEG1");
+                     JINPA_STRUCTURE_NONE),
+         "CASE_S5_COREBOX_LEG1_NOT_MARKET_STRUCTURE_AUTHORITY");
    source.sidewayBox.leg2Confirmed = true;
    Check(IsStructure(JINPA_STATE_CORRECTION, source,
-                     JINPA_STRUCTURE_LEG_2),
-         "CASE_S6_LEG2_PRIORITY_OVER_LEG1");
+                     JINPA_STRUCTURE_NONE),
+         "CASE_S6_COREBOX_LEG2_NOT_MARKET_STRUCTURE_AUTHORITY");
 
    source = BaseStructureState();
    source.sidewayBox.active = true;
@@ -125,8 +125,8 @@ void TestRequiredCases(void)
    source.sidewayBox.leg1Confirmed = true;
    source.lastEvent = "FALSE BREAK";
    Check(IsStructure(JINPA_STATE_CORRECTION, source,
-                     JINPA_STRUCTURE_LEG_1),
-         "CASE_S8_FALSE_BREAK_LEG1_STABLE");
+                     JINPA_STRUCTURE_NONE),
+         "CASE_S8_CORRECTION_REMAINS_NONE_WITH_STALE_COREBOX_LEG");
 
    SymbolState symbolState;
    symbolState.structure = "LEG 2";
@@ -169,10 +169,10 @@ bool FullFlow(void)
                                             JINPA_STRUCTURE_NONE);
    source.sidewayBox.leg1Confirmed = true;
    const bool leg1 = IsStructure(JINPA_STATE_CORRECTION, source,
-                                 JINPA_STRUCTURE_LEG_1);
+                                 JINPA_STRUCTURE_NONE);
    source.sidewayBox.leg2Confirmed = true;
    const bool leg2 = IsStructure(JINPA_STATE_CORRECTION, source,
-                                 JINPA_STRUCTURE_LEG_2);
+                                 JINPA_STRUCTURE_NONE);
    source.sidewayBox.active = true;
    source.sidewayBox.sidewayConfirmed = true;
    source.sidewayBox.status = SIDEWAY_BOX_ACTIVE;
@@ -204,7 +204,7 @@ void TestFlowsAndAuthority(void)
       g_engine.Derive(JINPA_STATE_CORRECTION, stale);
    const ENUM_JINPA_MARKET_STRUCTURE after =
       restarted.Derive(JINPA_STATE_CORRECTION, stale);
-   Check(before == JINPA_STRUCTURE_LEG_2 && after == before,
+   Check(before == JINPA_STRUCTURE_NONE && after == before,
          "BOOTSTRAP_RESTART_STATELESS_PARITY");
 }
 
@@ -293,11 +293,11 @@ void TestRangeContextExtensions(void)
 
    source.sidewayBox.leg1Confirmed = true;
    Check(IsStructure(JINPA_STATE_CORRECTION, source,
-                     JINPA_STRUCTURE_LEG_1),
+                     JINPA_STRUCTURE_NONE),
          "RANGE_L_CORRECTION_LEG1_UNCHANGED");
    source.sidewayBox.leg2Confirmed = true;
    Check(IsStructure(JINPA_STATE_CORRECTION, source,
-                     JINPA_STRUCTURE_LEG_2),
+                     JINPA_STRUCTURE_NONE),
          "RANGE_M_CORRECTION_LEG2_UNCHANGED");
 }
 
@@ -403,7 +403,7 @@ void TestMicroBaseLifecycle(void)
    AppendBar(correctionRates, ClosedBar(4180, 107.0, 101.0, 103.0));
    Check(ApplyRuntimeStructure(correctionEngine, JINPA_REGIME_TREND,
                                JINPA_STATE_CORRECTION, source,
-                               correctionRates, correctionState) == "LEG 1",
+                               correctionRates, correctionState) == "NONE",
          "MICRO_BASE_07_CORRECTION_LEG_AUTHORITY");
    source.sidewayBox.leg1Confirmed = false;
 

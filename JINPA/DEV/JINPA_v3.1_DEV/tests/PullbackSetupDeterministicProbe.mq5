@@ -1,279 +1,195 @@
 #property strict
-#property version "1.00"
-#property description "JINPA v3.1 DEV Pullback Setup deterministic probe"
-
+#property version "1.10"
 #include "../watch/setup/PullbackSetupEngine.mqh"
+#include "../watch/setup/PullbackBaseRenderer.mqh"
 #include "../watch/ui/MarketRadar.mqh"
+int g_passed=0,g_failed=0;
+void Check(bool ok,string name){if(ok){g_passed++;Print("[PULLBACK_SETUP_TEST][PASS] ",name);}else{g_failed++;Print("[PULLBACK_SETUP_TEST][FAIL] ",name);}}
+PriceStructureState Source(ENUM_MARKET_CYCLE cycle){PriceStructureState s;ResetPriceStructureState(s);s.initialized=true;s.cycleState.cycle=cycle;return s;}
+MqlRates Bar(datetime t,double h,double l,double c){MqlRates b;ZeroMemory(b);b.time=t;b.open=c;b.high=h;b.low=l;b.close=c;return b;}
+void AddBar(MqlRates &a[],const MqlRates &b){int n=ArraySize(a);ArrayResize(a,n+1);a[n]=b;}
+SwingPoint Swing(ENUM_SWING_TYPE type,datetime pivot,datetime confirm,double price){SwingPoint p;ResetSwingPoint(p);p.type=type;p.time=pivot;p.confirmationTime=confirm;p.price=price;p.confirmed=true;return p;}
+void AddSwing(SwingPoint &a[],const SwingPoint &p){int n=ArraySize(a);ArrayResize(a,n+1);a[n]=p;}
+bool Apply(CPullbackSetupEngine &e,string previous,ENUM_JINPA_MARKET_STATE state,PriceStructureState &source,SwingPoint &swings[],MqlRates &rates[],SymbolState &out)
+{return e.Apply(previous,state,source,swings,rates,rates[ArraySize(rates)-1].time,out);}
 
-int g_passed = 0;
-int g_failed = 0;
-
-void Check(const bool condition, const string name)
+void TestBullUnifiedLifecycle()
 {
-   if(condition)
-   {
-      g_passed++;
-      Print("[PULLBACK_SETUP_TEST][PASS] ", name);
-   }
-   else
-   {
-      g_failed++;
-      Print("[PULLBACK_SETUP_TEST][FAIL] ", name);
-   }
+   CPullbackSetupEngine e; PriceStructureState source=Source(MARKET_CYCLE_BULL); SwingPoint swings[];MqlRates rates[];SymbolState out;out.setup="-";out.setupStatus="NONE";out.structure="NONE";
+   e.ConfigureSwingRightBars(1);
+   AddBar(rates,Bar(100,110,100,105));
+   Apply(e,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-ppf"&&out.setupStatus=="WATCH"&&e.BaseTime()==0,"PPF_01_CORRECTION_START_WATCH_NO_BASE");
+   Check(!Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out),"PPF_02_NO_NEW_BAR_NO_TRANSITION");
+   AddBar(rates,Bar(110,107,98,101));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="WATCH","PPF_03_NO_CONFIRMED_SWING_STAYS_WATCH");
+   AddSwing(swings,Swing(SWING_LOW,110,120,98));AddBar(rates,Bar(120,106,100,103));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.BaseTime()==110&&e.BaseHigh()==107&&e.BaseLow()==98&&out.structure!="LEG 1","PPF_04_SWING_LOW_EXACT_PIVOT_BASE_READY_NO_LEG");
+   AddBar(rates,Bar(130,999,97,105));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&out.structure!="LEG 1","PPF_05_NO_BREAK_NO_LEG");
+   AddBar(rates,Bar(140,105,95,99));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,140,150,95));AddBar(rates,Bar(150,104,97,101));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.BaseTime()==140&&e.BaseHigh()==105,"PPF_06_DEEPER_CANDIDATE_REPLACES_BASE");
+   AddBar(rates,Bar(160,108,101,106));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 1"&&e.Leg1ConfirmedBarTime()==160,"PPF_07_BREAK_CONFIRMS_LEG1_AND_ACTIVE_SAME_BAR");
+   AddBar(rates,Bar(170,107,100,103));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="INVALID"&&out.structure!="LEG 1","PPF_08_ACTIVE_NEXT_BAR_INVALID");
+   AddBar(rates,Bar(180,106,99,102));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="NONE","PPF_09_INVALID_NEXT_BAR_NONE");
+   AddBar(rates,Bar(190,109,101,105));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="-","PPS_10_NO_TURNING_SWING_NO_WATCH");
+   AddSwing(swings,Swing(SWING_HIGH,190,200,109));AddBar(rates,Bar(200,108,102,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="WATCH"&&e.PpsTurningSwingTime()==190,"PPS_11_POST_LEG1_TURNING_HIGH_WATCH");
+   AddBar(rates,Bar(210,106,96,100));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,210,220,96));AddBar(rates,Bar(220,105,99,102));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.BaseTime()==210&&e.BaseHigh()==106,"PPS_12_NEXT_LOW_EXACT_BASE_READY");
+   AddBar(rates,Bar(230,109,101,107));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="ACTIVE"&&out.structure=="LEG 2"&&e.Leg2ConfirmedBarTime()==230,"PPS_13_BREAK_CONFIRMS_LEG2_AND_ACTIVE_SAME_BAR");
+   AddBar(rates,Bar(240,108,100,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="INVALID","PPS_14_ACTIVE_NEXT_BAR_INVALID");
 }
 
-PriceStructureState SetupSource(const ENUM_MARKET_CYCLE cycle)
+void TestBearAndInvalidation()
 {
-   PriceStructureState source;
-   ResetPriceStructureState(source);
-   source.initialized = true;
-   source.cycleState.cycle = cycle;
-   return source;
+   CPullbackSetupEngine e;PriceStructureState source=Source(MARKET_CYCLE_BEAR);SwingPoint swings[];MqlRates rates[];SymbolState out;out.setup="-";out.setupStatus="NONE";out.structure="NONE";
+   e.ConfigureSwingRightBars(1);
+   AddBar(rates,Bar(300,110,100,105));Apply(e,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(310,112,103,108));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,310,320,112));AddBar(rates,Bar(320,110,104,107));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.BaseHigh()==112&&e.BaseLow()==103,"PPF_15_BEAR_HIGH_READY");
+   AddBar(rates,Bar(330,105,99,102));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 1","PPF_16_BEAR_BREAK_LEG1_ACTIVE");
+   CPullbackSetupEngine invalid;PriceStructureState bull=Source(MARKET_CYCLE_BULL);SwingPoint none[];MqlRates rr[];SymbolState ss;ss.setup="-";ss.setupStatus="NONE";ss.structure="NONE";
+   invalid.ConfigureSwingRightBars(1);
+   AddBar(rr,Bar(400,110,100,105));Apply(invalid,"IMPULSE",JINPA_STATE_CORRECTION,bull,none,rr,ss);AddBar(rr,Bar(410,109,99,103));Apply(invalid,"CORRECTION",JINPA_STATE_IMPULSE,bull,none,rr,ss);
+   Check(ss.setupStatus=="INVALID","CONTEXT_17_LEAVING_CORRECTION_INVALIDATES");
 }
 
-MqlRates SetupBar(const datetime time, const double high,
-                  const double low, const double close)
+void TestBullBaseFailureAndPpsRecovery()
 {
-   MqlRates bar;
-   ZeroMemory(bar);
-   bar.time = time;
-   bar.open = close;
-   bar.high = high;
-   bar.low = low;
-   bar.close = close;
-   return bar;
+   CPullbackSetupEngine e;PriceStructureState source=Source(MARKET_CYCLE_BULL);SwingPoint swings[];MqlRates rates[];SymbolState out;out.setup="-";out.setupStatus="NONE";out.structure="NONE";
+   e.ConfigureSwingRightBars(1);
+   AddBar(rates,Bar(10000,112,102,107));Apply(e,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(10010,110,100,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,10010,10020,100));AddBar(rates,Bar(10020,108,101,105));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   double originalHigh=e.BaseHigh(),originalLow=e.BaseLow();datetime originalCandidate=e.CandidateSwingTime();
+   AddBar(rates,Bar(10030,115,99,105));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.BaseHigh()==originalHigh&&e.BaseLow()==originalLow&&e.CandidateSwingTime()==originalCandidate,"FAILURE_18_BULL_INSIDE_AND_WICK_PRESERVE_IMMUTABLE_BASE");
+   AddBar(rates,Bar(10040,101,98,99));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-ppf"&&out.setupStatus=="WATCH"&&out.structure!="LEG 1"&&!e.HasActiveBase()&&e.CandidateSwingTime()==0,"FAILURE_19_BULL_CLOSE_BELOW_BASE_RETURNS_WATCH_AND_CLEARS_CANDIDATE");
+   AddBar(rates,Bar(10050,103,97,101));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="WATCH"&&!e.HasActiveBase()&&e.BaseTime()==0,"FAILURE_20_NO_SWING_NO_NEW_BASE");
+   AddBar(rates,Bar(10060,109,95,100));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,10060,10070,95));AddBar(rates,Bar(10070,108,97,103));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.CandidateSwingTime()==10060&&e.BaseHigh()==109&&e.BaseLow()==95,"FAILURE_21_NEW_BULL_SWING_CREATES_NEW_READY_BASE");
+   AddBar(rates,Bar(10080,111,100,110));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 1","FAILURE_22_NEW_BASE_SUCCESS_CONFIRMS_LEG1");
+   AddBar(rates,Bar(10090,109,99,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(10100,108,98,103));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(10110,111,100,105));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,10110,10120,111));AddBar(rates,Bar(10120,109,101,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(10130,107,96,100));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,10130,10140,96));AddBar(rates,Bar(10140,106,98,102));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="READY","FAILURE_23_BULL_PPS_READY");
+   datetime turning=e.PpsTurningSwingTime(),leg1=e.Leg1ConfirmedBarTime();
+   AddBar(rates,Bar(10150,100,94,95));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="WATCH"&&out.structure!="LEG 2"&&e.PpsTurningSwingTime()==turning&&e.Leg1ConfirmedBarTime()==leg1,"FAILURE_24_BULL_PPS_FAILURE_PRESERVES_TURNING_AND_LEG1_CONTEXT");
+   AddBar(rates,Bar(10160,102,93,98));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="WATCH"&&!e.HasActiveBase(),"FAILURE_25_BULL_PPS_WAITS_WITHOUT_BASE");
+   AddBar(rates,Bar(10170,105,92,97));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,10170,10180,92));AddBar(rates,Bar(10180,104,94,99));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.CandidateSwingTime()==10170,"FAILURE_26_BULL_PPS_NEW_SWING_READY");
+   AddBar(rates,Bar(10190,107,100,106));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 2","FAILURE_27_BULL_PPS_SUCCESS_ONLY_CONFIRMS_LEG2");
 }
 
-void AddSetupBar(MqlRates &rates[], const MqlRates &bar)
+void TestBearBaseFailureAndPpsRecovery()
 {
-   const int index = ArraySize(rates);
-   ArrayResize(rates, index + 1);
-   rates[index] = bar;
+   CPullbackSetupEngine e;PriceStructureState source=Source(MARKET_CYCLE_BEAR);SwingPoint swings[];MqlRates rates[];SymbolState out;out.setup="-";out.setupStatus="NONE";out.structure="NONE";
+   e.ConfigureSwingRightBars(1);
+   AddBar(rates,Bar(11000,202,188,195));Apply(e,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(11010,200,190,195));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,11010,11020,200));AddBar(rates,Bar(11020,198,191,194));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(11030,201,189,195));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.BaseHigh()==200&&e.BaseLow()==190,"FAILURE_28_BEAR_WICK_ABOVE_PRESERVES_READY_BASE");
+   AddBar(rates,Bar(11040,203,197,201));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="WATCH"&&!e.HasActiveBase()&&e.CandidateSwingTime()==0&&out.structure!="LEG 1","FAILURE_29_BEAR_CLOSE_ABOVE_BASE_RETURNS_WATCH");
+   AddBar(rates,Bar(11050,204,194,198));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(11060,205,192,199));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,11060,11070,205));AddBar(rates,Bar(11070,203,193,198));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.CandidateSwingTime()==11060,"FAILURE_30_NEW_BEAR_SWING_READY");
+   AddBar(rates,Bar(11080,196,189,191));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 1","FAILURE_31_NEW_BEAR_BASE_SUCCESS_CONFIRMS_LEG1");
+   AddBar(rates,Bar(11090,199,190,195));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(11100,200,191,196));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(11110,198,187,192));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,11110,11120,187));AddBar(rates,Bar(11120,199,189,194));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(11130,210,195,202));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,11130,11140,210));AddBar(rates,Bar(11140,208,197,203));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="READY","FAILURE_32_BEAR_PPS_READY");
+   AddBar(rates,Bar(11150,212,205,211));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="WATCH"&&out.structure!="LEG 2","FAILURE_33_BEAR_PPS_FAILURE_RETURNS_WATCH");
+   AddBar(rates,Bar(11160,211,199,204));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="WATCH"&&!e.HasActiveBase(),"FAILURE_34_BEAR_PPS_WAITS_WITHOUT_BASE");
+   AddBar(rates,Bar(11170,215,198,207));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,11170,11180,215));AddBar(rates,Bar(11180,213,200,206));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.CandidateSwingTime()==11170,"FAILURE_35_BEAR_PPS_NEW_SWING_READY");
+   AddBar(rates,Bar(11190,201,195,197));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 2","FAILURE_36_BEAR_PPS_SUCCESS_ONLY_CONFIRMS_LEG2");
 }
 
-SwingPoint SetupSwing(const ENUM_SWING_TYPE type,
-                      const datetime pivotTime,
-                      const datetime confirmationTime,
-                      const double price)
+void TestSameBarOldBasePriority()
 {
-   SwingPoint point;
-   ResetSwingPoint(point);
-   point.type = type;
-   point.time = pivotTime;
-   point.confirmationTime = confirmationTime;
-   point.price = price;
-   point.confirmed = true;
-   return point;
+   CPullbackSetupEngine e;PriceStructureState source=Source(MARKET_CYCLE_BULL);SwingPoint swings[];MqlRates rates[];SymbolState out;out.setup="-";out.setupStatus="NONE";out.structure="NONE";e.ConfigureSwingRightBars(1);
+   AddBar(rates,Bar(12000,112,102,106));Apply(e,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(12010,110,100,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,12010,12020,100));AddBar(rates,Bar(12020,108,102,105));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddBar(rates,Bar(12030,109,95,103));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_LOW,12030,12040,95));AddBar(rates,Bar(12040,107,97,99));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setupStatus=="READY"&&e.CandidateSwingTime()==12030&&e.BaseLow()==95&&e.BaseHigh()==109,"ORDER_37_OLD_BASE_FAILURE_FINALIZED_BEFORE_SAME_BAR_NEW_CANDIDATE");
 }
 
-bool ApplySetup(CPullbackSetupEngine &engine,
-                const string previousState,
-                const ENUM_JINPA_MARKET_STATE state,
-                const string structure,
-                PriceStructureState &source,
-                SwingPoint &swings[], MqlRates &rates[],
-                SymbolState &symbolState)
+void TestFourBarBaseBuilder()
 {
-   return engine.Apply(previousState, state, structure, source, swings,
-                       rates, rates[ArraySize(rates) - 1].time,
-                       symbolState);
+   CPullbackSetupEngine bull;bull.ConfigureSwingRightBars(3);PriceStructureState bs=Source(MARKET_CYCLE_BULL);SwingPoint sw[];MqlRates r[];SymbolState o;o.setup="-";o.setupStatus="NONE";o.structure="NONE";
+   AddBar(r,Bar(1000,120,90,105));Apply(bull,"IMPULSE",JINPA_STATE_CORRECTION,bs,sw,r,o);
+   AddBar(r,Bar(1010,999,1,500));AddBar(r,Bar(1020,888,2,400));AddBar(r,Bar(1030,777,3,300));
+   AddBar(r,Bar(1040,106,100,103));AddBar(r,Bar(1050,108,101,104));AddBar(r,Bar(1060,107,102,105));AddSwing(sw,Swing(SWING_LOW,1040,1070,100));AddBar(r,Bar(1070,110,103,106));Apply(bull,"CORRECTION",JINPA_STATE_CORRECTION,bs,sw,r,o);
+   Check(o.setupStatus=="READY"&&bull.BaseLow()==100&&bull.BaseHigh()==110,"BASE_19_BULL_PIVOT_THROUGH_R3_ONLY");
+   AddBar(r,Bar(1080,999,0,109));Apply(bull,"CORRECTION",JINPA_STATE_CORRECTION,bs,sw,r,o);
+   Check(o.setupStatus=="READY"&&bull.BaseHigh()==110,"BASE_20_R4_EXCLUDED_AND_WICK_NO_BREAK");
+
+   CPullbackSetupEngine bear;bear.ConfigureSwingRightBars(3);PriceStructureState brs=Source(MARKET_CYCLE_BEAR);SwingPoint bw[];MqlRates br[];SymbolState bo;bo.setup="-";bo.setupStatus="NONE";bo.structure="NONE";
+   AddBar(br,Bar(2000,210,180,195));Apply(bear,"IMPULSE",JINPA_STATE_CORRECTION,brs,bw,br,bo);
+   AddBar(br,Bar(2010,999,1,500));AddBar(br,Bar(2020,888,2,400));AddBar(br,Bar(2030,777,3,300));
+   AddBar(br,Bar(2040,200,194,197));AddBar(br,Bar(2050,199,192,196));AddBar(br,Bar(2060,198,193,195));AddSwing(bw,Swing(SWING_HIGH,2040,2070,200));AddBar(br,Bar(2070,197,190,194));Apply(bear,"CORRECTION",JINPA_STATE_CORRECTION,brs,bw,br,bo);
+   Check(bo.setupStatus=="READY"&&bear.BaseHigh()==200&&bear.BaseLow()==190,"BASE_21_BEAR_PIVOT_THROUGH_R3_ONLY");
 }
 
-void TestPpfLifecycle(void)
+void TestBaseVisual()
 {
-   CPullbackSetupEngine engine;
-   PriceStructureState source = SetupSource(MARKET_CYCLE_BULL);
-   SwingPoint swings[];
-   MqlRates rates[];
-   SymbolState state;
-   state.setup = "-";
-   state.setupStatus = "NONE";
-
-   AddSetupBar(rates, SetupBar(1000, 110.0, 100.0, 105.0));
-   Check(ApplySetup(engine, "IMPULSE", JINPA_STATE_CORRECTION,
-                    "NONE", source, swings, rates, state)
-         && state.setup == "revs-ppf" && state.setupStatus == "WATCH"
-         && engine.BaseHigh() == 110.0 && engine.BaseLow() == 100.0
-         && engine.BaseTime() == 1000,
-         "PPF_01_CORRECTION_STARTS_WATCH_WITH_INITIAL_BASE");
-
-   Check(!ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-                     "NONE", source, swings, rates, state)
-         && state.setupStatus == "WATCH" && engine.BaseTime() == 1000,
-         "PPF_02_NO_NEW_CLOSED_BAR_NO_TRANSITION");
-
-   AddSetupBar(rates, SetupBar(1060, 109.0, 101.0, 108.0));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "NONE", source, swings, rates, state);
-   Check(state.setupStatus == "WATCH" && engine.BaseHigh() == 109.0
-         && engine.BaseLow() == 101.0 && engine.BaseTime() == 1060,
-         "PPF_03_BULL_WATCH_ROLLS_BASE");
-
-   AddSetupBar(rates, SetupBar(1120, 111.0, 108.0, 109.5));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "NONE", source, swings, rates, state);
-   Check(state.setup == "revs-ppf" && state.setupStatus == "ACTIVE"
-         && engine.TriggerBarTime() == 1120,
-         "PPF_04_BULL_CLOSE_ABOVE_PREVIOUS_BASE_HIGH_ACTIVE");
-
-   AddSetupBar(rates, SetupBar(1180, 110.0, 105.0, 106.0));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "NONE", source, swings, rates, state);
-   Check(state.setup == "revs-ppf" && state.setupStatus == "INVALID",
-         "PPF_05_ACTIVE_NEXT_BAR_INVALID");
-
-   CPullbackSetupEngine bearEngine;
-   PriceStructureState bearSource = SetupSource(MARKET_CYCLE_BEAR);
-   MqlRates bearRates[];
-   SymbolState bearState;
-   bearState.setup = "-";
-   bearState.setupStatus = "NONE";
-   AddSetupBar(bearRates, SetupBar(2000, 110.0, 100.0, 105.0));
-   ApplySetup(bearEngine, "IMPULSE", JINPA_STATE_CORRECTION,
-              "NONE", bearSource, swings, bearRates, bearState);
-   AddSetupBar(bearRates, SetupBar(2060, 102.0, 98.0, 99.0));
-   ApplySetup(bearEngine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "NONE", bearSource, swings, bearRates, bearState);
-   Check(bearState.setup == "revs-ppf"
-         && bearState.setupStatus == "ACTIVE",
-         "PPF_06_BEAR_CLOSE_BELOW_PREVIOUS_BASE_LOW_ACTIVE");
+   CPullbackBaseRenderer renderer;string high="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3000_HIGH";string low="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3000_LOW";
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",3000,3000,3180,110,100);
+   Check(ObjectFind(0,high)>=0&&ObjectFind(0,low)>=0&&(color)ObjectGetInteger(0,high,OBJPROP_COLOR)==clrWhite&&ObjectGetInteger(0,high,OBJPROP_WIDTH)==1,"VISUAL_22_WHITE_THIN_READY_BASE");
+   string highB="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3240_HIGH";string lowB="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3240_LOW";
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",3240,3240,3420,108,98);
+   Check(ObjectFind(0,high)>=0&&ObjectFind(0,highB)>=0&&(datetime)ObjectGetInteger(0,high,OBJPROP_TIME,1)==3420,"VISUAL_23_REPLACEMENT_FREEZES_A_AND_CREATES_B");
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","ACTIVE",3240,3240,3480,108,98);
+   Check(ObjectFind(0,highB)>=0&&ObjectFind(0,lowB)>=0&&(datetime)ObjectGetInteger(0,highB,OBJPROP_TIME,1)==3480,"VISUAL_24_ACTIVE_FREEZES_AND_PRESERVES_BASE");
+   string highC="JINPA_PULLBACK_BASE_revs-pps_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3600_HIGH";
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","READY",3600,3600,3780,120,105);renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","INVALID",0,0,3840,0,0);
+   Check(ObjectFind(0,highC)>=0&&(datetime)ObjectGetInteger(0,highC,OBJPROP_TIME,1)==3840,"VISUAL_25_INVALID_FREEZES_AND_PRESERVES_BASE");
+   string highD="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3900_HIGH";
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",3900,3900,3960,130,115);renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",3900,3900,4020,130,115);
+   Check((datetime)ObjectGetInteger(0,highD,OBJPROP_TIME,1)==4020&&ObjectGetDouble(0,highD,OBJPROP_PRICE,0)==130&&ObjectGetDouble(0,highD,OBJPROP_PRICE,1)==130,"VISUAL_38_INSIDE_BAR_EXTENDS_ENDPOINT_WITHOUT_LEVEL_CHANGE");
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","WATCH",0,0,4080,0,0);renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","WATCH",0,0,4140,0,0);
+   Check(ObjectFind(0,highD)>=0&&(datetime)ObjectGetInteger(0,highD,OBJPROP_TIME,1)==4080,"VISUAL_39_FAILURE_FREEZES_PAIR_AND_WATCH_HAS_NO_ACTIVE_PAIR");
+   string highE="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_4200_HIGH";
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",4200,4200,4260,128,112);
+   Check(ObjectFind(0,highD)>=0&&ObjectFind(0,highE)>=0,"VISUAL_40_NEW_CANDIDATE_CREATES_UNIQUE_PAIR_AND_PRESERVES_FAILED_HISTORY");renderer.Destroy();
 }
 
-void TestPpsLifecycle(void)
+void TestRadarReady()
 {
-   CPullbackSetupEngine engine;
-   PriceStructureState source = SetupSource(MARKET_CYCLE_BULL);
-   SwingPoint swings[];
-   MqlRates rates[];
-   SymbolState state;
-   state.setup = "-";
-   state.setupStatus = "NONE";
-
-   AddSetupBar(rates, SetupBar(3000, 110.0, 100.0, 105.0));
-   ApplySetup(engine, "IMPULSE", JINPA_STATE_CORRECTION,
-              "NONE", source, swings, rates, state);
-   source.sidewayBox.leg1Confirmed = true;
-   source.sidewayBox.leg1Swing = SetupSwing(SWING_LOW, 3020, 3060, 99.0);
-
-   AddSetupBar(rates, SetupBar(3060, 109.0, 101.0, 105.0));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "LEG 1", source, swings, rates, state);
-   Check(state.setup == "revs-ppf" && state.setupStatus == "WATCH",
-         "PPS_07_LEG1_WITHOUT_MINOR_SWING_STAYS_PPF");
-
-   ArrayResize(swings, 1);
-   swings[0] = SetupSwing(SWING_HIGH, 2900, 3120, 108.0);
-   AddSetupBar(rates, SetupBar(3120, 108.0, 102.0, 104.0));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "LEG 1", source, swings, rates, state);
-   Check(state.setup == "revs-ppf",
-         "PPS_08_OLD_SWING_BEFORE_LEG1_EXCLUDED");
-
-   ArrayResize(swings, 2);
-   swings[1] = SetupSwing(SWING_HIGH, 3080, 3180, 109.0);
-   AddSetupBar(rates, SetupBar(3180, 109.0, 103.0, 105.0));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "LEG 1", source, swings, rates, state);
-   Check(state.setup == "revs-pps" && state.setupStatus == "WATCH"
-         && engine.BaseTime() == 3180,
-         "PPS_09_BULL_CONFIRMED_SWING_HIGH_AFTER_LEG1_WATCH");
-
-   AddSetupBar(rates, SetupBar(3240, 111.0, 106.0, 110.0));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "LEG 1", source, swings, rates, state);
-   Check(state.setup == "revs-pps" && state.setupStatus == "ACTIVE",
-         "PPS_10_ROLLING_BASE_BREAK_ACTIVE");
-
-   AddSetupBar(rates, SetupBar(3300, 110.0, 104.0, 106.0));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "LEG 1", source, swings, rates, state);
-   Check(state.setup == "revs-pps" && state.setupStatus == "INVALID",
-         "PPS_11_ACTIVE_NEXT_BAR_INVALID");
-
-   CPullbackSetupEngine bearEngine;
-   PriceStructureState bearSource = SetupSource(MARKET_CYCLE_BEAR);
-   MqlRates bearRates[];
-   SwingPoint bearSwings[];
-   SymbolState bearState;
-   bearState.setup = "-";
-   bearState.setupStatus = "NONE";
-   AddSetupBar(bearRates, SetupBar(4000, 110.0, 100.0, 105.0));
-   ApplySetup(bearEngine, "IMPULSE", JINPA_STATE_CORRECTION,
-              "NONE", bearSource, bearSwings, bearRates, bearState);
-   bearSource.sidewayBox.leg1Confirmed = true;
-   bearSource.sidewayBox.leg1Swing =
-      SetupSwing(SWING_HIGH, 4020, 4060, 111.0);
-   ArrayResize(bearSwings, 1);
-   bearSwings[0] = SetupSwing(SWING_LOW, 4080, 4120, 101.0);
-   AddSetupBar(bearRates, SetupBar(4120, 108.0, 101.0, 104.0));
-   ApplySetup(bearEngine, "CORRECTION", JINPA_STATE_CORRECTION,
-              "LEG 1", bearSource, bearSwings, bearRates, bearState);
-   Check(bearState.setup == "revs-pps"
-         && bearState.setupStatus == "WATCH",
-         "PPS_12_BEAR_CONFIRMED_SWING_LOW_AFTER_LEG1_WATCH");
+   SymbolState s[1];s[0].symbol=_Symbol;s[0].timeframe=(ENUM_TIMEFRAMES)_Period;s[0].cycle="BULL";s[0].regime="TREND";s[0].state="CORRECTION";s[0].structure="NONE";s[0].setup="revs-ppf";s[0].setupStatus="READY";s[0].isReady=true;
+   CMarketRadar r;r.Configure(true,CORNER_RIGHT_LOWER,15,20,20,9);bool made=r.Create(s);r.Update(s,true);Check(made&&ObjectGetString(0,"JINPA_RADAR_ROW_000_COL_07",OBJPROP_TEXT)=="READY","RADAR_18_READY_VISIBLE");r.Destroy();
 }
-
-void TestContextAndRadar(void)
-{
-   CPullbackSetupEngine engine;
-   PriceStructureState source = SetupSource(MARKET_CYCLE_BULL);
-   SwingPoint swings[];
-   MqlRates rates[];
-   SymbolState state;
-   state.setup = "-";
-   state.setupStatus = "NONE";
-   AddSetupBar(rates, SetupBar(5000, 110.0, 100.0, 105.0));
-   ApplySetup(engine, "IMPULSE", JINPA_STATE_CORRECTION,
-              "NONE", source, swings, rates, state);
-   AddSetupBar(rates, SetupBar(5060, 109.0, 101.0, 105.0));
-   ApplySetup(engine, "CORRECTION", JINPA_STATE_IMPULSE,
-              "CONTINUATION", source, swings, rates, state);
-   Check(state.setup == "revs-ppf" && state.setupStatus == "INVALID",
-         "CONTEXT_13_LEAVING_CORRECTION_INVALIDATES_SETUP");
-
-   SymbolState panelStates[1];
-   panelStates[0].symbol = _Symbol;
-   panelStates[0].timeframe = (ENUM_TIMEFRAMES)_Period;
-   panelStates[0].cycle = "BULL";
-   panelStates[0].regime = "TREND";
-   panelStates[0].state = "CORRECTION";
-   panelStates[0].structure = "LEG 1";
-   panelStates[0].setup = "revs-ppf";
-   panelStates[0].setupStatus = "WATCH";
-   panelStates[0].isReady = true;
-   CMarketRadar radar;
-   radar.Configure(true, CORNER_RIGHT_LOWER, 15, 20, 20, 9);
-   const bool created = radar.Create(panelStates);
-   radar.Update(panelStates, true);
-   const bool ppf = ObjectGetString(
-      0, "JINPA_RADAR_ROW_000_COL_06", OBJPROP_TEXT) == "revs-ppf"
-      && ObjectGetString(0, "JINPA_RADAR_ROW_000_COL_07", OBJPROP_TEXT)
-         == "WATCH";
-   panelStates[0].setup = "revs-pps";
-   panelStates[0].setupStatus = "ACTIVE";
-   radar.Update(panelStates, true);
-   const bool pps = ObjectGetString(
-      0, "JINPA_RADAR_ROW_000_COL_06", OBJPROP_TEXT) == "revs-pps"
-      && ObjectGetString(0, "JINPA_RADAR_ROW_000_COL_07", OBJPROP_TEXT)
-         == "ACTIVE";
-   panelStates[0].setupStatus = "INVALID";
-   radar.Update(panelStates, true);
-   const bool invalid = ObjectGetString(
-      0, "JINPA_RADAR_ROW_000_COL_07", OBJPROP_TEXT) == "INVALID";
-   Check(created && ppf && pps && invalid,
-         "RADAR_14_PULLBACK_SETUP_AND_STATUS_VALUES");
-   radar.Destroy();
-}
-
-int OnInit(void)
-{
-   TestPpfLifecycle();
-   TestPpsLifecycle();
-   TestContextAndRadar();
-   Print("[PULLBACK_SETUP_TEST][SUMMARY] passed=", g_passed,
-         " failed=", g_failed,
-         " trades=0 pending=0 cancels=0 closes=0 push=0");
-   return g_failed == 0 ? INIT_SUCCEEDED : INIT_FAILED;
-}
-
-void OnTick(void) { ExpertRemove(); }
+int OnInit(){TestBullUnifiedLifecycle();TestBearAndInvalidation();TestBullBaseFailureAndPpsRecovery();TestBearBaseFailureAndPpsRecovery();TestSameBarOldBasePriority();TestFourBarBaseBuilder();TestBaseVisual();TestRadarReady();Print("[PULLBACK_SETUP_TEST][SUMMARY] passed=",g_passed," failed=",g_failed," trades=0 pending=0 cancels=0 closes=0 push=0");return g_failed==0?INIT_SUCCEEDED:INIT_FAILED;}
+void OnTick(){ExpertRemove();}

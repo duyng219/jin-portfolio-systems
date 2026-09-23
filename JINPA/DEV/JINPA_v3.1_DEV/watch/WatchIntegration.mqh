@@ -7,6 +7,7 @@
 #include "state/MarketStateEngine.mqh"
 #include "state/MarketStructureEngine.mqh"
 #include "setup/PullbackSetupEngine.mqh"
+#include "setup/PullbackBaseRenderer.mqh"
 #include "ui/MarketRadar.mqh"
 
 // Read-only boundary for the future single-symbol WATCH engine.
@@ -24,6 +25,7 @@ private:
     CMarketStateEngine m_marketStateEngine;
     CMarketStructureEngine m_marketStructureEngine;
     CPullbackSetupEngine m_pullbackSetupEngine;
+    CPullbackBaseRenderer m_pullbackBaseRenderer;
     string          m_lastMarketStructure;
     CMarketRadar    m_marketRadar;
     SymbolState     m_states[1];
@@ -76,8 +78,8 @@ public:
 
 CWatchIntegration::CWatchIntegration(void)
 {
-    m_watchSwingLeftBars             = 5;
-    m_watchSwingRightBars            = 5;
+    m_watchSwingLeftBars             = 3;
+    m_watchSwingRightBars            = 3;
     m_watchUseMinSwingDistanceATR    = true;
     m_watchMinSwingDistanceATR       = 1.2;
     m_watchATRPeriod                 = 14;
@@ -111,6 +113,7 @@ bool CWatchIntegration::ConfigureStructure(const int swingLeftBars,
     m_watchCoreBreakATRBuffer     = coreBreakATRBuffer;
     m_watchCoreBreakConfirmCloses = coreBreakConfirmCloses;
     m_watchShowStructureSwings    = showStructureSwings;
+    m_pullbackSetupEngine.ConfigureSwingRightBars(swingRightBars);
     return true;
 }
 
@@ -212,13 +215,12 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                      m_watchATRPeriod,
                                      m_watchCoreBreakATRBuffer,
                                      m_states[0]);
-       structureChanged = previousStructure != m_states[0].structure;
-       m_lastMarketStructure = m_states[0].structure;
        setupChanged = m_pullbackSetupEngine.Apply(
           previousState, m_marketStateEngine.State(),
-          m_states[0].structure, m_structureState,
-          m_structureSwings, stateRates, lastClosedBarTime,
+          m_structureState, m_structureSwings, stateRates, lastClosedBarTime,
           m_states[0]);
+       structureChanged = previousStructure != m_states[0].structure;
+       m_lastMarketStructure = m_states[0].structure;
     }
 
     if(stateChanged)
@@ -277,10 +279,16 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                m_states[0].cycle, m_states[0].state,
                m_states[0].structure,
                m_pullbackSetupEngine.BaseHigh(),
-               m_pullbackSetupEngine.BaseLow());
+               m_pullbackSetupEngine.BaseLow(),
+               m_pullbackSetupEngine.CandidateSwingTime());
     }
 
     // Rendering is a separate read-only consumer of the same Stage 2 snapshot.
+    m_pullbackBaseRenderer.Update(
+       m_symbol, m_timeframe, m_states[0].setup, m_states[0].setupStatus,
+       m_pullbackSetupEngine.CandidateSwingTime(),
+       m_pullbackSetupEngine.BaseTime(), lastClosedBarTime,
+       m_pullbackSetupEngine.BaseHigh(), m_pullbackSetupEngine.BaseLow());
     m_structureRenderer.Update(m_structureState,
                                m_structureSwings,
                                m_brokenCores,
@@ -406,6 +414,7 @@ void CWatchIntegration::OnChartChange(void)
 void CWatchIntegration::Shutdown(void)
 {
     m_marketRadar.Destroy();
+    m_pullbackBaseRenderer.Destroy();
     m_structureRenderer.Destroy();
     ResetContext();
 }

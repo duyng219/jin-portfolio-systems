@@ -394,7 +394,7 @@ void TestWatchConfigurationAndValidation()
    bool showSwings = false;
    watch.GetStructureConfiguration(left, right, atrPeriod, buffer, closes,
                                    showSwings);
-   const bool defaults = left == 5 && right == 5 && atrPeriod == 14
+   const bool defaults = left == 3 && right == 3 && atrPeriod == 14
                          && SamePrice(buffer, 0.10) && closes == 2
                          && showSwings;
    const bool accepted = watch.ConfigureStructure(4, 3, 10, 0.25, 3, false);

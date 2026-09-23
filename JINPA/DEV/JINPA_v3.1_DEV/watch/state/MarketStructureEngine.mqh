@@ -249,14 +249,6 @@ public:
       if(marketState == JINPA_STATE_IMPULSE)
          return JINPA_STRUCTURE_CONTINUATION;
 
-      if(marketState == JINPA_STATE_CORRECTION)
-      {
-         if(structureState.sidewayBox.leg2Confirmed)
-            return JINPA_STRUCTURE_LEG_2;
-         if(structureState.sidewayBox.leg1Confirmed)
-            return JINPA_STRUCTURE_LEG_1;
-      }
-
       return JINPA_STRUCTURE_NONE;
    }
 
