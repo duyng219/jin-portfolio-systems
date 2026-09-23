@@ -113,7 +113,9 @@ public:
       if(m_status==JINPA_SETUP_STATUS_ACTIVE&&bar.time>m_triggerTime)
       {
          bool ppfLegArmed=m_setup==JINPA_SETUP_REVS_PPF&&m_leg1Bar>0;
-         bool preservePpsContext=(ppfLegArmed||m_setup==JINPA_SETUP_REVS_PPS)
+         // Only the PPF terminal handoff may preserve LEG 1.  A PPS ACTIVE
+         // bar has already consumed that arm by confirming LEG 2.
+         bool preservePpsContext=ppfLegArmed
                                  &&!cycleChanged&&cycle!=MARKET_CYCLE_UNKNOWN
                                  &&PpsStateAllowed(marketState);
          Invalidate(bar.time);

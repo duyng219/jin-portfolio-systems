@@ -33,7 +33,7 @@ void TestBullUnifiedLifecycle()
    AddBar(rates,Bar(160,108,101,106));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
    Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 1"&&e.Leg1ConfirmedBarTime()==160,"PPF_07_BREAK_CONFIRMS_LEG1_AND_ACTIVE_SAME_BAR");
    AddBar(rates,Bar(170,107,100,103));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
-   Check(out.setupStatus=="INVALID"&&out.structure!="LEG 1","PPF_08_ACTIVE_NEXT_BAR_INVALID");
+   Check(out.setupStatus=="INVALID"&&out.structure!="LEG 1"&&e.Leg1ConfirmedBarTime()==160,"PPF_08_ACTIVE_NEXT_BAR_INVALID_PRESERVES_LEG1_ARM");
    AddBar(rates,Bar(180,106,99,102));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
    Check(out.setupStatus=="NONE","PPF_09_INVALID_NEXT_BAR_NONE");
    AddBar(rates,Bar(190,109,101,105));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
@@ -46,7 +46,16 @@ void TestBullUnifiedLifecycle()
    AddBar(rates,Bar(230,109,101,107));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
    Check(out.setup=="revs-pps"&&out.setupStatus=="ACTIVE"&&out.structure=="LEG 2"&&e.Leg2ConfirmedBarTime()==230,"PPS_13_BREAK_CONFIRMS_LEG2_AND_ACTIVE_SAME_BAR");
    AddBar(rates,Bar(240,108,100,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
-   Check(out.setupStatus=="INVALID","PPS_14_ACTIVE_NEXT_BAR_INVALID");
+   Check(out.setupStatus=="INVALID"&&e.Leg1ConfirmedBarTime()==0&&e.Leg2ConfirmedBarTime()==0&&e.PpsTurningSwingTime()==0,"PPS_14_ACTIVE_NEXT_BAR_INVALID_CONSUMES_CHAIN_CONTEXT");
+   AddBar(rates,Bar(250,107,99,103));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="-"&&out.setupStatus=="NONE","PPS_15_TERMINAL_INVALID_CLEARS_TO_NONE");
+   AddBar(rates,Bar(260,112,101,106));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   AddSwing(swings,Swing(SWING_HIGH,260,270,112));AddBar(rates,Bar(270,110,102,105));bool rearmed=Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(!rearmed&&out.setup=="-"&&out.setupStatus=="NONE","PPS_16_LATER_BULL_HIGH_CANNOT_REARM_OR_SOURCE_WATCH_PUSH");
+   AddBar(rates,Bar(280,109,100,104));Apply(e,"CORRECTION",JINPA_STATE_IMPULSE,source,swings,rates,out);AddBar(rates,Bar(290,108,99,103));Apply(e,"IMPULSE",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-ppf"&&out.setupStatus=="WATCH","PPS_17_NEW_CORRECTION_STARTS_GENUINE_NEW_PPF_CHAIN");
+   AddBar(rates,Bar(300,106,95,100));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddSwing(swings,Swing(SWING_LOW,300,310,95));AddBar(rates,Bar(310,105,97,101));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(320,109,102,108));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(330,108,100,104));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(340,107,99,103));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddBar(rates,Bar(350,113,101,107));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);AddSwing(swings,Swing(SWING_HIGH,350,360,113));AddBar(rates,Bar(360,111,102,106));Apply(e,"CORRECTION",JINPA_STATE_CORRECTION,source,swings,rates,out);
+   Check(out.setup=="revs-pps"&&out.setupStatus=="WATCH"&&e.Leg1ConfirmedBarTime()==320&&e.PpsTurningSwingTime()==350,"PPS_18_NEW_LEG1_CAN_ARM_ONE_NEW_PPS");
 }
 
 void TestBearAndInvalidation()
@@ -190,6 +199,12 @@ void TestBullPpsCompressionLifecycle()
    AddSwing(swings,Swing(SWING_LOW,13130,13140,90));AddBar(rates,Bar(13140,107,93,100));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
    out.structure="SIDEWAY";AddBar(rates,Bar(13150,111,101,109));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
    Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 2"&&e.Leg2ConfirmedBarTime()==13150,"COMPRESSION_45_BULL_PPS_ACTIVE_AND_CURRENT_LEG2_PRECEDENCE");
+   AddBar(rates,Bar(13160,109,99,104));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setupStatus=="INVALID"&&e.Leg1ConfirmedBarTime()==0&&e.PpsTurningSwingTime()==0,"TERMINAL_46_BULL_COMPRESSION_INVALID_CONSUMES_CONTEXT");
+   AddBar(rates,Bar(13170,108,98,103));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setup=="-"&&out.setupStatus=="NONE","TERMINAL_47_BULL_COMPRESSION_CLEARS_TO_NONE");
+   AddBar(rates,Bar(13180,114,100,107));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);AddSwing(swings,Swing(SWING_HIGH,13180,13190,114));AddBar(rates,Bar(13190,112,102,106));bool rearmed=Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(!rearmed&&out.setup=="-"&&out.setupStatus=="NONE","TERMINAL_48_BULL_SIDEWAY_HIGH_CANNOT_REARM_PPS");
 }
 
 void TestBearPpsCompressionLifecycle()
@@ -208,6 +223,12 @@ void TestBearPpsCompressionLifecycle()
    AddSwing(swings,Swing(SWING_HIGH,14120,14130,215));AddBar(rates,Bar(14130,213,200,206));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
    AddBar(rates,Bar(14140,201,195,197));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
    Check(out.setupStatus=="ACTIVE"&&out.structure=="LEG 2"&&e.Leg2ConfirmedBarTime()==14140,"COMPRESSION_48_BEAR_PPS_ACTIVE");
+   AddBar(rates,Bar(14150,203,194,199));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setupStatus=="INVALID"&&e.Leg1ConfirmedBarTime()==0&&e.PpsTurningSwingTime()==0,"TERMINAL_49_BEAR_COMPRESSION_INVALID_CONSUMES_CONTEXT");
+   AddBar(rates,Bar(14160,204,193,200));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(out.setup=="-"&&out.setupStatus=="NONE","TERMINAL_50_BEAR_COMPRESSION_CLEARS_TO_NONE");
+   AddBar(rates,Bar(14170,205,185,192));Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);AddSwing(swings,Swing(SWING_LOW,14170,14180,185));AddBar(rates,Bar(14180,203,188,195));bool rearmed=Apply(e,"COMPRESSION",JINPA_STATE_COMPRESSION,source,swings,rates,out);
+   Check(!rearmed&&out.setup=="-"&&out.setupStatus=="NONE","TERMINAL_51_BEAR_SIDEWAY_LOW_CANNOT_REARM_PPS");
 }
 
 void TestCompressionEdgesAndInvalidation()

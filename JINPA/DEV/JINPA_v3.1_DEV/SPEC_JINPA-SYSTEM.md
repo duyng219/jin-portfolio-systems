@@ -469,11 +469,21 @@ second swing detector.
   precedence remains unchanged: on the PPS ACTIVE bar, the Pullback authority
   writes `Structure = LEG 2`, overriding the previously derived `SIDEWAY` value
   for that bar. This patch does not redesign Structure precedence.
+- One unified LEG 1 can arm at most one PPS lifecycle. PPF ACTIVE terminal
+  processing preserves LEG 1 long enough for the first valid turning Swing to
+  start PPS. After PPS confirms LEG 2, the next closed bar changes PPS ACTIVE
+  to INVALID and consumes the complete LEG 1/LEG 2/turning context. When the
+  INVALID lifecycle subsequently clears to NONE, later Swing Highs/Lows cannot
+  re-arm PPS from that old LEG 1. A new PPS requires a genuinely new upstream
+  PPF and unified LEG 1 chain.
 
 ## 9. Setup Status Lifecycle
 
 - `ACTIVE` remains for the trigger closed-bar cycle only; the next later
   closed bar changes it to `INVALID`.
+- PPF ACTIVE terminal transition preserves its confirmed LEG 1 arm. PPS ACTIVE
+  terminal transition clears LEG 1, LEG 2 and PPS turning metadata only after
+  the ACTIVE/LEG 2 bar has already been output and notified.
 - `INVALID` remains for that closed-bar cycle; the next later closed bar clears
   to `NONE` unless another valid start occurs through normal logic.
 - No-new-bar calls are rejected by `m_lastProcessedBarTime`.
@@ -725,7 +735,7 @@ pending, cancel and close counters are zero.
 | `CoreBoxDevDeterministicProbe.mq5` | Stage 2 Local Swing/Core Box/Cycle/Sideway, bootstrap, renderer, configuration and legacy StructureEvent notification regression | `128/128 PASS` |
 | `MarketStateDeterministicProbe.mq5` | Compression/Expansion/Impulse/Correction lifecycle, guards, bootstrap and Radar contract | `23/23 PASS` |
 | `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, Micro Base and Radar value | `41/41 PASS` |
-| `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, PPS survival and activation in Compression, same-bar Sideway edges, PPF strictness, cycle guards, historical freeze and Radar coexistence | `67 checks` |
+| `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, historical freeze and Radar coexistence | `77 checks` |
 | `NotificationPolicyDeterministicProbe.mq5` | Eligible policy including unified Leg, READY candidate identity, Base-failure WATCH suppression, READY formatting, FIFO/dedup and Tester guard | `31 checks` |
 
 All engines and probes use deterministic closed-bar timestamps. The notification
