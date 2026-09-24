@@ -286,24 +286,39 @@ void TestFourBarBaseBuilder()
 void TestBaseVisual()
 {
    CPullbackBaseRenderer renderer;string high="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3000_HIGH";string low="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3000_LOW";
+   renderer.Destroy();
    renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",3000,3000,3180,110,100);
    Check(ObjectFind(0,high)>=0&&ObjectFind(0,low)>=0&&(color)ObjectGetInteger(0,high,OBJPROP_COLOR)==clrWhite&&ObjectGetInteger(0,high,OBJPROP_WIDTH)==1,"VISUAL_22_WHITE_THIN_READY_BASE");
    string highB="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3240_HIGH";string lowB="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3240_LOW";
    renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",3240,3240,3420,108,98);
-   Check(ObjectFind(0,high)>=0&&ObjectFind(0,highB)>=0&&(datetime)ObjectGetInteger(0,high,OBJPROP_TIME,1)==3420,"VISUAL_23_REPLACEMENT_FREEZES_A_AND_CREATES_B");
+   Check(ObjectFind(0,high)<0&&ObjectFind(0,low)<0&&ObjectFind(0,highB)>=0&&ObjectFind(0,lowB)>=0,"VISUAL_23_REPLACEMENT_DELETES_A_AND_CREATES_B");
    renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","ACTIVE",3240,3240,3480,108,98);
    Check(ObjectFind(0,highB)>=0&&ObjectFind(0,lowB)>=0&&(datetime)ObjectGetInteger(0,highB,OBJPROP_TIME,1)==3480,"VISUAL_24_ACTIVE_FREEZES_AND_PRESERVES_BASE");
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","INVALID",0,0,3540,0,0);
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"-","NONE",0,0,3600,0,0);
+   Check(ObjectFind(0,highB)>=0&&ObjectFind(0,lowB)>=0&&(datetime)ObjectGetInteger(0,highB,OBJPROP_TIME,1)==3480,"VISUAL_25_PPF_CONFIRMED_SURVIVES_AND_IS_IMMUTABLE");
    string highC="JINPA_PULLBACK_BASE_revs-pps_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3600_HIGH";
-   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","READY",3600,3600,3780,120,105);renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","INVALID",0,0,3840,0,0);
-   Check(ObjectFind(0,highC)>=0&&(datetime)ObjectGetInteger(0,highC,OBJPROP_TIME,1)==3840,"VISUAL_25_INVALID_FREEZES_AND_PRESERVES_BASE");
+   string lowC="JINPA_PULLBACK_BASE_revs-pps_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3600_LOW";
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","READY",3600,3600,3780,120,105);renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","WATCH",0,0,3840,0,0);
+   Check(ObjectFind(0,highC)<0&&ObjectFind(0,lowC)<0,"VISUAL_26_FAILURE_DELETES_UNCONFIRMED_BASE");
    string highD="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3900_HIGH";
+   string lowD="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_3900_LOW";
    renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",3900,3900,3960,130,115);renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",3900,3900,4020,130,115);
    Check((datetime)ObjectGetInteger(0,highD,OBJPROP_TIME,1)==4020&&ObjectGetDouble(0,highD,OBJPROP_PRICE,0)==130&&ObjectGetDouble(0,highD,OBJPROP_PRICE,1)==130,"VISUAL_38_INSIDE_BAR_EXTENDS_ENDPOINT_WITHOUT_LEVEL_CHANGE");
-   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","WATCH",0,0,4080,0,0);renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","WATCH",0,0,4140,0,0);
-   Check(ObjectFind(0,highD)>=0&&(datetime)ObjectGetInteger(0,highD,OBJPROP_TIME,1)==4080,"VISUAL_39_FAILURE_FREEZES_PAIR_AND_WATCH_HAS_NO_ACTIVE_PAIR");
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","INVALID",0,0,4080,0,0);
+   Check(ObjectFind(0,highD)<0&&ObjectFind(0,lowD)<0,"VISUAL_39_PRE_ACTIVE_INVALIDATION_DELETES_PAIR");
    string highE="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_4200_HIGH";
+   string lowE="JINPA_PULLBACK_BASE_revs-ppf_"+_Symbol+"_"+IntegerToString((int)_Period)+"_4200_LOW";
    renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","READY",4200,4200,4260,128,112);
-   Check(ObjectFind(0,highD)>=0&&ObjectFind(0,highE)>=0,"VISUAL_40_NEW_CANDIDATE_CREATES_UNIQUE_PAIR_AND_PRESERVES_FAILED_HISTORY");renderer.Destroy();
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-ppf","ACTIVE",4200,4200,4320,128,112);
+   string highF="JINPA_PULLBACK_BASE_revs-pps_"+_Symbol+"_"+IntegerToString((int)_Period)+"_4500_HIGH";
+   string lowF="JINPA_PULLBACK_BASE_revs-pps_"+_Symbol+"_"+IntegerToString((int)_Period)+"_4500_LOW";
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","READY",4500,4500,4560,126,114);
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","ACTIVE",4500,4500,4620,126,114);
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"revs-pps","INVALID",0,0,4680,0,0);
+   renderer.Update(_Symbol,(ENUM_TIMEFRAMES)_Period,"-","NONE",0,0,4740,0,0);
+   Check(ObjectFind(0,highE)>=0&&ObjectFind(0,lowE)>=0&&ObjectFind(0,highF)>=0&&ObjectFind(0,lowF)>=0,"VISUAL_40_PPF_AND_PPS_CONFIRMED_BASES_REMAIN_UNIQUE");
+   Check((datetime)ObjectGetInteger(0,highF,OBJPROP_TIME,1)==4620&&ObjectFind(0,highB)>=0,"VISUAL_41_PPS_CONFIRMED_SURVIVES_AND_IS_IMMUTABLE");renderer.Destroy();
 }
 
 void TestRadarReady()

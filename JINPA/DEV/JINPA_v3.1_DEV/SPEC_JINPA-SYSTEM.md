@@ -543,11 +543,16 @@ High). `ShowStructureSwings=false` removes only swing annotations.
 
 `PullbackBaseRenderer.mqh` draws each READY Base as a deterministic pair of
 white, solid, width-1 `OBJ_TREND` segments. The active pair starts at pivot
-time and extends to the latest closed bar. Replacement freezes the old pair at
-the replacement bar and creates a new candidate identity. ACTIVE, candidate
-failure (`READY` to `WATCH`), INVALID and cycle/context reset freeze the active
-pair at that closed bar. Failed and other historical pairs remain visible and
-are never extended again; post-failure WATCH owns no active pair. Explicit EA
+time and extends to the latest closed bar. A READY Base is temporary:
+replacement deletes the old pair before drawing the new candidate, and Base
+failure (`READY` to `WATCH`) or any pre-ACTIVE invalidation/reset deletes the
+active pair. WATCH without a candidate has no Base visual. Only a successful
+directional breakout that produces `ACTIVE` together with confirmed `LEG 1`
+(PPF) or `LEG 2` (PPS) freezes the pair at the trigger bar and preserves it as
+immutable historical chart structure. Later `ACTIVE -> INVALID -> NONE`
+transitions do not delete, extend, overwrite or reuse that confirmed pair.
+Future confirmed pullback chains use their own deterministic candidate
+identities, so multiple confirmed PPF/PPS Bases may coexist. Explicit EA
 shutdown/deinit still follows the project renderer convention and removes all
 owned Base objects.
 
@@ -735,7 +740,7 @@ pending, cancel and close counters are zero.
 | `CoreBoxDevDeterministicProbe.mq5` | Stage 2 Local Swing/Core Box/Cycle/Sideway, bootstrap, renderer, configuration and legacy StructureEvent notification regression | `128/128 PASS` |
 | `MarketStateDeterministicProbe.mq5` | Compression/Expansion/Impulse/Correction lifecycle, guards, bootstrap and Radar contract | `23/23 PASS` |
 | `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, Micro Base and Radar value | `41/41 PASS` |
-| `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, historical freeze and Radar coexistence | `77 checks` |
+| `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, confirmed-only Base history and Radar coexistence | `79 checks` |
 | `NotificationPolicyDeterministicProbe.mq5` | Eligible policy including unified Leg, READY candidate identity, Base-failure WATCH suppression, READY formatting, FIFO/dedup and Tester guard | `31 checks` |
 
 All engines and probes use deterministic closed-bar timestamps. The notification

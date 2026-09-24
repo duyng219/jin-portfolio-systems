@@ -372,7 +372,7 @@ private:
       ObjectSetInteger(m_chartId, name, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
       ObjectSetInteger(m_chartId, name, OBJPROP_CORNER, m_corner);
       ObjectSetInteger(m_chartId, name, OBJPROP_XDISTANCE, m_x + 10);
-      ObjectSetInteger(m_chartId, name, OBJPROP_YDISTANCE, ObjectY(8));
+      ObjectSetInteger(m_chartId, name, OBJPROP_YDISTANCE, ObjectY(5));
       ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 8);
    }
 
@@ -500,7 +500,7 @@ public:
       Destroy();
       m_rowCount = ArraySize(states);
       CalculateResponsiveLayout();
-      m_panelHeight = 60 + (m_rowCount * m_rowHeight) + 36;
+      m_panelHeight = 60 + (m_rowCount * m_rowHeight) + 27;
 
       if(!CreateBackground())
          return false;
@@ -634,17 +634,17 @@ public:
       ObjectSetInteger(m_chartId, background, OBJPROP_XSIZE, m_panelWidth);
       ObjectSetInteger(m_chartId, background, OBJPROP_YSIZE, m_panelHeight);
 
-      SetLabelPosition(TitleName(), 10, 8);
+      SetLabelPosition(TitleName(), 10, 5);
       SetUpdatedHeaderPosition();
       for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
-         SetLabelPosition(HeaderName(column), ColumnOffset(column), 36);
+         SetLabelPosition(HeaderName(column), ColumnOffset(column), 34);
 
-      SetRectangleGeometry(HorizontalLineName(0), 10, 31, m_panelWidth - 20, 1);
-      SetRectangleGeometry(HorizontalLineName(1), 10, 55, m_panelWidth - 20, 1);
+      SetRectangleGeometry(HorizontalLineName(0), 10, 25, m_panelWidth - 20, 1);
+      SetRectangleGeometry(HorizontalLineName(1), 10, 52, m_panelWidth - 20, 1);
 
       for(int row = 0; row < m_rowCount; row++)
       {
-         const int top = 61 + (row * m_rowHeight);
+         const int top = 59 + (row * m_rowHeight);
          for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
             SetLabelPosition(CellName(row, column), ColumnOffset(column), top);
       }

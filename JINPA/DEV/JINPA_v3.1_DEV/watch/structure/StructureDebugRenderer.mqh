@@ -43,8 +43,8 @@ private:
 
          const bool isHigh = point.type == SWING_HIGH;
          ObjectSetInteger(m_chartId, name, OBJPROP_COLOR,
-                          isHigh ? C'255,110,110' : C'80,220,150');
-         ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 5);
+                          isHigh ? C'80,220,150' : C'80,220,150');
+         ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 4);
          ObjectSetInteger(m_chartId, name, OBJPROP_ANCHOR,
                           isHigh ? ANCHOR_LOWER : ANCHOR_UPPER);
          ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, false);
@@ -284,7 +284,7 @@ private:
                        isCoreHigh ? priceY - verticalGapPixels
                                   : priceY + verticalGapPixels);
       ObjectSetInteger(m_chartId, name, OBJPROP_COLOR, textColor);
-      ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 9);
+      ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 8);
       ObjectSetInteger(m_chartId, name, OBJPROP_ANCHOR,
                        isCoreHigh ? ANCHOR_RIGHT_LOWER
                                   : ANCHOR_RIGHT_UPPER);
@@ -322,14 +322,14 @@ public:
    void RefreshActiveCoreLabelPosition()
    {
       const color coreColor = C'255,165,0';
-      const string generation = " G" + IntegerToString(m_activeGeneration);
+      // const string generation = " G" + IntegerToString(m_activeGeneration);
       const string transition =
          m_activeLifecycle == CORE_BOX_PENDING_HIGH ? " | Pending High"
          : m_activeLifecycle == CORE_BOX_PENDING_LOW ? " | Pending Low" : "";
       UpdateCoreScreenLabel(m_prefix + "CORE_HIGH_LABEL", m_activeCoreHigh,
-                            coreColor, "Core High" + generation + transition, true);
+                            coreColor, "Core High" + transition, true);
       UpdateCoreScreenLabel(m_prefix + "CORE_LOW_LABEL", m_activeCoreLow,
-                            coreColor, "Core Low" + generation + transition, false);
+                            coreColor, "Core Low" + transition, false);
       ChartRedraw(m_chartId);
    }
 
