@@ -58,6 +58,8 @@ class CMarketStructureEngine
 {
 private:
    MicroBaseCandidateState m_microBase;
+   datetime                m_microBaseImpulseStartTime;
+   bool                    m_microBaseConsumed;
 
    void ResetMicroBase(void)
    {
@@ -99,6 +101,8 @@ private:
 
       if(!m_microBase.active)
       {
+         if(m_microBaseConsumed)
+            return JINPA_STRUCTURE_CONTINUATION;
          if(previousStructure == "CONTINUATION")
             SelectMicroBaseAnchor(closedBar);
          return JINPA_STRUCTURE_CONTINUATION;
@@ -132,10 +136,47 @@ private:
       }
 
       if(m_microBase.barCount >= 3)
+      {
          m_microBase.confirmed = true;
+         m_microBaseConsumed = true;
+      }
       return m_microBase.confirmed
              ? JINPA_STRUCTURE_MICRO_BASE
              : JINPA_STRUCTURE_CONTINUATION;
+   }
+
+   ENUM_JINPA_MARKET_STRUCTURE RebuildMicroBaseImpulse(
+      const ENUM_MARKET_CYCLE cycle,
+      const MqlRates &rates[],
+      const datetime impulseStartTime,
+      const datetime lastClosedBarTime)
+   {
+      ResetMicroBase();
+      m_microBaseConsumed = false;
+      string previousStructure = "BREAKOUT";
+      ENUM_JINPA_MARKET_STRUCTURE structure =
+         JINPA_STRUCTURE_CONTINUATION;
+      bool firstEligibleBar = true;
+
+      for(int index = 0; index < ArraySize(rates); index++)
+      {
+         if(rates[index].time < impulseStartTime)
+            continue;
+         if(rates[index].time > lastClosedBarTime)
+            break;
+
+         // If the exact impulse-start bar is outside available history, the
+         // first available later bar follows an already established
+         // CONTINUATION projection.
+         if(firstEligibleBar && rates[index].time > impulseStartTime)
+            previousStructure = "CONTINUATION";
+         structure = ResolveMicroBase(
+            JINPA_REGIME_TREND, JINPA_STATE_IMPULSE, cycle,
+            previousStructure, rates[index], JINPA_STRUCTURE_CONTINUATION);
+         previousStructure = JinpaMarketStructureToString(structure);
+         firstEligibleBar = false;
+      }
+      return structure;
    }
 
    bool IsSidewayActive(const PriceStructureState &structureState) const
@@ -233,7 +274,12 @@ private:
 public:
    CMarketStructureEngine(void) { Reset(); }
 
-   void Reset(void) { ResetMicroBase(); }
+   void Reset(void)
+   {
+      ResetMicroBase();
+      m_microBaseImpulseStartTime = 0;
+      m_microBaseConsumed = false;
+   }
 
    ENUM_JINPA_MARKET_STRUCTURE Derive(
       const ENUM_JINPA_MARKET_STATE marketState,
@@ -315,6 +361,7 @@ public:
 
    bool Apply(const ENUM_JINPA_MARKET_REGIME marketRegime,
               const ENUM_JINPA_MARKET_STATE marketState,
+              const datetime impulseStartTime,
               const string previousStructure,
               const PriceStructureState &structureState,
               const StructureEvent &events[],
@@ -340,7 +387,21 @@ public:
                                        CORE_BREAK_FAILED));
       }
 
-      if(closedIndex >= 0)
+      const bool impulseContext = marketRegime == JINPA_REGIME_TREND
+                                  && marketState == JINPA_STATE_IMPULSE
+                                  && structureState.cycleState.cycle
+                                     != MARKET_CYCLE_UNKNOWN;
+      const bool newImpulse = impulseContext && impulseStartTime > 0
+                              && impulseStartTime
+                                 != m_microBaseImpulseStartTime;
+      if(newImpulse)
+      {
+         m_microBaseImpulseStartTime = impulseStartTime;
+         structure = RebuildMicroBaseImpulse(
+            structureState.cycleState.cycle, rates, impulseStartTime,
+            lastClosedBarTime);
+      }
+      else if(closedIndex >= 0)
          structure = ResolveMicroBase(
             marketRegime, marketState, structureState.cycleState.cycle,
             previousStructure, rates[closedIndex], structure);
@@ -372,6 +433,16 @@ public:
    double MicroBaseLow(void) const
    {
       return m_microBase.anchorLow;
+   }
+
+   bool MicroBaseConsumed(void) const
+   {
+      return m_microBaseConsumed;
+   }
+
+   datetime MicroBaseImpulseStartTime(void) const
+   {
+      return m_microBaseImpulseStartTime;
    }
 };
 

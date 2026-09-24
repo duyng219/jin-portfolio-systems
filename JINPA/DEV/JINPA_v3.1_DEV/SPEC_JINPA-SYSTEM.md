@@ -354,6 +354,18 @@ Micro Base is an instance-scoped overlay allowed only in Regime `TREND`, State
 - Leaving Trend/Impulse or losing Cycle resets the candidate.
 - Wick excursions do not break the candidate; only Close is tested.
 
+Each stable `MarketStateEngine.ImpulseStartTime()` owns one acceptance latch.
+Zero or more candidates may fail without consuming that Impulse. The latch is
+set only when the first candidate reaches the existing `barCount >= 3`
+confirmation point. That accepted Micro Base continues its normal active and
+break/timeout lifecycle, but its later reset to `CONTINUATION` does not clear
+the latch. Further candidates and confirmations are blocked for the same
+Impulse. A different non-zero `impulseStartTime` resets the latch and permits
+one first confirmed Micro Base for the new Impulse. On startup, closed bars for
+the current Impulse are replayed through the same detection function so the
+consumed latch matches forward processing. This is explicitly the first
+**confirmed** Micro Base, not the first candidate.
+
 Current implementation does not use ATR, volume or MACD for Micro Base.
 The detection rule, anchor selection, confirmation count, timeout and break
 semantics remain owned exclusively by `MarketStructureEngine.mqh`.
@@ -759,7 +771,7 @@ pending, cancel and close counters are zero.
 |---|---|---:|
 | `CoreBoxDevDeterministicProbe.mq5` | Stage 2 Local Swing/Core Box/Cycle/Sideway, bootstrap, renderer, configuration and legacy StructureEvent notification regression | `128/128 PASS` |
 | `MarketStateDeterministicProbe.mq5` | Compression/Expansion/Impulse/Correction lifecycle, guards, bootstrap and Radar contract | `23/23 PASS` |
-| `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, unchanged Micro Base detection, confirmed-only Micro Base visualization and Radar value | `47 checks` |
+| `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, first-confirmed-per-Impulse Micro Base gate, confirmed-only visualization and Radar value | `57 checks` |
 | `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, confirmed-only Base history and Radar coexistence | `79 checks` |
 | `NotificationPolicyDeterministicProbe.mq5` | Eligible policy including unified Leg, READY candidate identity, Base-failure WATCH suppression, READY formatting, FIFO/dedup and Tester guard | `31 checks` |
 

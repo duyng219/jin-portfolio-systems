@@ -69,18 +69,31 @@ void AppendBar(MqlRates &rates[], const MqlRates &bar)
    rates[index] = bar;
 }
 
-string ApplyRuntimeStructure(CMarketStructureEngine &engine,
+string ApplyImpulseStructure(CMarketStructureEngine &engine,
                              const ENUM_JINPA_MARKET_REGIME regime,
                              const ENUM_JINPA_MARKET_STATE state,
+                             const datetime impulseStartTime,
                              PriceStructureState &source,
                              MqlRates &rates[], SymbolState &symbolState)
 {
    StructureEvent events[];
    const string previousStructure = symbolState.structure;
    const datetime closedTime = rates[ArraySize(rates) - 1].time;
-   engine.Apply(regime, state, previousStructure, source, events, rates,
-                closedTime, 1, 0.10, symbolState);
+   engine.Apply(regime, state, impulseStartTime, previousStructure,
+                source, events, rates, closedTime, 1, 0.10, symbolState);
    return symbolState.structure;
+}
+
+string ApplyRuntimeStructure(CMarketStructureEngine &engine,
+                             const ENUM_JINPA_MARKET_REGIME regime,
+                             const ENUM_JINPA_MARKET_STATE state,
+                             PriceStructureState &source,
+                             MqlRates &rates[], SymbolState &symbolState)
+{
+   // Legacy geometry cases intentionally exercise the pre-existing rule
+   // directly; Phase 4B identity behavior has dedicated tests below.
+   return ApplyImpulseStructure(engine, regime, state, 0,
+                                source, rates, symbolState);
 }
 
 void TestRequiredCases(void)
@@ -515,6 +528,179 @@ void TestMicroBaseVisualOnly(void)
    renderer.Destroy();
 }
 
+void TestFirstMicroBasePerImpulse(void)
+{
+   PriceStructureState source = BaseStructureState();
+   source.cycleState.cycle = MARKET_CYCLE_BULL;
+   CMarketStructureEngine engine;
+   CMicroBaseRenderer renderer;
+   renderer.Destroy();
+   MqlRates rates[];
+   SymbolState state;
+   state.structure = "BREAKOUT";
+   const datetime firstImpulse = 1000;
+
+   AppendBar(rates, ClosedBar(1000, 112.0, 102.0, 110.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   Check(!engine.MicroBaseConsumed()
+         && engine.MicroBaseImpulseStartTime() == firstImpulse,
+         "MICRO_FIRST_01_NEW_IMPULSE_STARTS_UNCONSUMED");
+
+   AppendBar(rates, ClosedBar(1060, 110.0, 100.0, 108.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   AppendBar(rates, ClosedBar(1120, 112.0, 109.0, 111.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   Check(!engine.MicroBaseConsumed() && !engine.MicroBaseConfirmed(),
+         "MICRO_FIRST_02_FAILED_CANDIDATE_DOES_NOT_CONSUME");
+
+   AppendBar(rates, ClosedBar(1180, 109.0, 101.0, 105.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   AppendBar(rates, ClosedBar(1240, 111.0, 99.0, 106.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   AppendBar(rates, ClosedBar(1300, 110.0, 100.0, 107.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   engine.MicroBaseConfirmed(),
+                   engine.MicroBaseAnchorTime(), 1300,
+                   engine.MicroBaseHigh(), engine.MicroBaseLow());
+   const string prefix = "JINPA_MICRO_BASE_" + _Symbol + "_"
+                         + IntegerToString((int)_Period) + "_";
+   const string firstHigh = prefix + "1180_HIGH";
+   Check(state.structure == "MICRO BASE"
+         && engine.MicroBaseConfirmed()
+         && engine.MicroBaseConsumed()
+         && ObjectFind(0, firstHigh) >= 0,
+         "MICRO_FIRST_03_LATER_CONFIRMED_BASE_CONSUMES_IMPULSE");
+
+   AppendBar(rates, ClosedBar(1360, 111.0, 109.5, 110.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   engine.MicroBaseConfirmed(),
+                   engine.MicroBaseAnchorTime(), 1360,
+                   engine.MicroBaseHigh(), engine.MicroBaseLow());
+   Check(state.structure == "CONTINUATION"
+         && engine.MicroBaseConsumed()
+         && (datetime)ObjectGetInteger(0, firstHigh,
+                                       OBJPROP_TIME, 1) == 1360,
+         "MICRO_FIRST_04_BREAK_KEEPS_CONSUMED_AND_FREEZES_VISUAL");
+
+   AppendBar(rates, ClosedBar(1420, 120.0, 110.0, 115.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   AppendBar(rates, ClosedBar(1480, 121.0, 109.0, 116.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   AppendBar(rates, ClosedBar(1540, 122.0, 108.0, 117.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, state);
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   engine.MicroBaseConfirmed(),
+                   engine.MicroBaseAnchorTime(), 1540,
+                   engine.MicroBaseHigh(), engine.MicroBaseLow());
+   Check(state.structure == "CONTINUATION"
+         && engine.MicroBaseConsumed()
+         && !engine.MicroBaseConfirmed(),
+         "MICRO_FIRST_05_SECOND_PATTERN_SAME_IMPULSE_IS_BLOCKED");
+   Check(ObjectFind(0, prefix + "1420_HIGH") < 0
+         && ObjectFind(0, firstHigh) >= 0,
+         "MICRO_FIRST_06_NO_SECOND_VISUAL_IN_SAME_IMPULSE");
+
+   CMarketStructureEngine rebuiltEngine;
+   SymbolState rebuiltState;
+   rebuiltState.structure = "UNKNOWN";
+   ApplyImpulseStructure(rebuiltEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, firstImpulse,
+                         source, rates, rebuiltState);
+   Check(rebuiltState.structure == "CONTINUATION"
+         && rebuiltEngine.MicroBaseConsumed()
+         && !rebuiltEngine.MicroBaseConfirmed(),
+         "MICRO_FIRST_07_REBUILD_RESTORES_CONSUMED_LATCH");
+
+   AppendBar(rates, ClosedBar(1600, 118.0, 108.0, 112.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_CORRECTION, firstImpulse,
+                         source, rates, state);
+   const datetime secondImpulse = 2000;
+   AppendBar(rates, ClosedBar(2000, 132.0, 122.0, 130.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, secondImpulse,
+                         source, rates, state);
+   Check(!engine.MicroBaseConsumed()
+         && engine.MicroBaseImpulseStartTime() == secondImpulse,
+         "MICRO_FIRST_08_NEW_IMPULSE_RESETS_CONSUMED");
+
+   AppendBar(rates, ClosedBar(2060, 130.0, 120.0, 125.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, secondImpulse,
+                         source, rates, state);
+   AppendBar(rates, ClosedBar(2120, 131.0, 119.0, 126.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, secondImpulse,
+                         source, rates, state);
+   AppendBar(rates, ClosedBar(2180, 132.0, 118.0, 127.0));
+   ApplyImpulseStructure(engine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, secondImpulse,
+                         source, rates, state);
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   engine.MicroBaseConfirmed(),
+                   engine.MicroBaseAnchorTime(), 2180,
+                   engine.MicroBaseHigh(), engine.MicroBaseLow());
+   Check(state.structure == "MICRO BASE"
+         && engine.MicroBaseConsumed()
+         && ObjectFind(0, prefix + "2060_HIGH") >= 0
+         && ObjectFind(0, firstHigh) >= 0,
+         "MICRO_FIRST_09_NEW_IMPULSE_ACCEPTS_ONE_NEW_BASE");
+   renderer.Destroy();
+
+   PriceStructureState bearSource = BaseStructureState();
+   bearSource.cycleState.cycle = MARKET_CYCLE_BEAR;
+   CMarketStructureEngine bearEngine;
+   MqlRates bearRates[];
+   SymbolState bearState;
+   bearState.structure = "BREAKOUT";
+   AppendBar(bearRates, ClosedBar(3000, 210.0, 198.0, 200.0));
+   ApplyImpulseStructure(bearEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, 3000,
+                         bearSource, bearRates, bearState);
+   AppendBar(bearRates, ClosedBar(3060, 210.0, 200.0, 205.0));
+   ApplyImpulseStructure(bearEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, 3000,
+                         bearSource, bearRates, bearState);
+   AppendBar(bearRates, ClosedBar(3120, 211.0, 199.0, 204.0));
+   ApplyImpulseStructure(bearEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, 3000,
+                         bearSource, bearRates, bearState);
+   AppendBar(bearRates, ClosedBar(3180, 212.0, 198.0, 203.0));
+   ApplyImpulseStructure(bearEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, 3000,
+                         bearSource, bearRates, bearState);
+   AppendBar(bearRates, ClosedBar(3240, 200.0, 198.0, 199.0));
+   ApplyImpulseStructure(bearEngine, JINPA_REGIME_TREND,
+                         JINPA_STATE_IMPULSE, 3000,
+                         bearSource, bearRates, bearState);
+   Check(bearState.structure == "CONTINUATION"
+         && bearEngine.MicroBaseConsumed()
+         && !bearEngine.MicroBaseConfirmed(),
+         "MICRO_FIRST_10_BEAR_CONFIRM_AND_BREAK_IS_SYMMETRIC");
+}
+
 void TestPanelValue(void)
 {
    SymbolState states[1];
@@ -572,6 +758,7 @@ int OnInit(void)
    TestRangeContextExtensions();
    TestMicroBaseLifecycle();
    TestMicroBaseVisualOnly();
+   TestFirstMicroBasePerImpulse();
    TestPanelValue();
    Print("[MARKET_STRUCTURE_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,

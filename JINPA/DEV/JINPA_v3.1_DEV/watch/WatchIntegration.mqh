@@ -209,6 +209,7 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                                 m_states[0]);
        m_marketStructureEngine.Apply(m_marketStateEngine.Regime(),
                                      m_marketStateEngine.State(),
+                                     m_marketStateEngine.ImpulseStartTime(),
                                      previousStructure,
                                      m_structureState,
                                      m_structureEventHistory,

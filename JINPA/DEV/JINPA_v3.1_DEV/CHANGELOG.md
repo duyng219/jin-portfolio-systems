@@ -1,5 +1,12 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 4B first Micro Base per Impulse
+
+- Limited `MICRO BASE` acceptance to the first confirmed Base of each stable `impulseStartTime` lifecycle.
+- Failed candidates do not consume the Impulse; confirmation sets the latch, and a later Base break does not reset it.
+- A genuinely new Impulse identity resets the latch, with closed-bar replay restoring the same consumed state after startup.
+- Existing anchor geometry, containment, minimum/maximum bars, close-based break, Bull/Bear behavior and Phase 4A renderer style remain unchanged.
+
 ## v3.1 DEV — Phase 4A Micro Base visual only
 
 - Added dedicated white BaseHigh/BaseLow chart lines for confirmed `MICRO BASE` zones.
