@@ -353,6 +353,26 @@ public:
       symbolState.structure = structureText;
       return changed;
    }
+
+   bool MicroBaseConfirmed(void) const
+   {
+      return m_microBase.active && m_microBase.confirmed;
+   }
+
+   datetime MicroBaseAnchorTime(void) const
+   {
+      return m_microBase.anchorTime;
+   }
+
+   double MicroBaseHigh(void) const
+   {
+      return m_microBase.anchorHigh;
+   }
+
+   double MicroBaseLow(void) const
+   {
+      return m_microBase.anchorLow;
+   }
 };
 
 #endif

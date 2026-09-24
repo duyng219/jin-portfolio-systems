@@ -25,6 +25,7 @@ Primary audited sources:
 | Structure chart renderer | `watch/structure/StructureDebugRenderer.mqh` |
 | Market Regime and State | `watch/state/MarketStateEngine.mqh` |
 | Market Structure projection | `watch/state/MarketStructureEngine.mqh` |
+| Confirmed Micro Base visualization | `watch/structure/MicroBaseRenderer.mqh` |
 | Pullback Setup and unified Pullback Leg authority | `watch/setup/PullbackSetupEngine.mqh` |
 | Active READY Base visualization | `watch/setup/PullbackBaseRenderer.mqh` |
 | Notification Policy v1.0 | `watch/structure/StructureNotificationManager.mqh` |
@@ -354,6 +355,16 @@ Micro Base is an instance-scoped overlay allowed only in Regime `TREND`, State
 - Wick excursions do not break the candidate; only Close is tested.
 
 Current implementation does not use ATR, volume or MACD for Micro Base.
+The detection rule, anchor selection, confirmation count, timeout and break
+semantics remain owned exclusively by `MarketStructureEngine.mqh`.
+
+Confirmed Micro Base visualization is a read-only enhancement. Once the
+existing engine reports `confirmed=true`, `MicroBaseRenderer.mqh` draws the
+engine-owned `anchorHigh` and `anchorLow` as white, solid, width-1 `OBJ_TREND`
+segments beginning at `anchorTime`. The active pair extends to each latest
+closed bar. When the engine no longer reports the confirmed Base, the pair
+freezes at that closed bar and remains as immutable visual history. Candidate
+and failed unconfirmed Micro Bases never create chart objects.
 
 ### 7.4 Transition behavior
 
@@ -556,6 +567,15 @@ identities, so multiple confirmed PPF/PPS Bases may coexist. Explicit EA
 shutdown/deinit still follows the project renderer convention and removes all
 owned Base objects.
 
+### 10.4 Micro Base renderer
+
+`MicroBaseRenderer.mqh` owns the separate `JINPA_MICRO_BASE_` object prefix.
+Identity contains symbol, timeframe, anchor time and HIGH/LOW side. It consumes
+only the existing engine's read-only confirmed flag, anchor time and Base
+bounds; it does not calculate, confirm, reject or otherwise modify Micro Base
+semantics. `Destroy()` follows the project convention and removes all objects
+under its prefix on shutdown/reinitialization.
+
 ## 11. Notification Policy
 
 Owned by `watch/structure/StructureNotificationManager.mqh` and connected in
@@ -739,7 +759,7 @@ pending, cancel and close counters are zero.
 |---|---|---:|
 | `CoreBoxDevDeterministicProbe.mq5` | Stage 2 Local Swing/Core Box/Cycle/Sideway, bootstrap, renderer, configuration and legacy StructureEvent notification regression | `128/128 PASS` |
 | `MarketStateDeterministicProbe.mq5` | Compression/Expansion/Impulse/Correction lifecycle, guards, bootstrap and Radar contract | `23/23 PASS` |
-| `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, Micro Base and Radar value | `41/41 PASS` |
+| `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, unchanged Micro Base detection, confirmed-only Micro Base visualization and Radar value | `47 checks` |
 | `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, confirmed-only Base history and Radar coexistence | `79 checks` |
 | `NotificationPolicyDeterministicProbe.mq5` | Eligible policy including unified Leg, READY candidate identity, Base-failure WATCH suppression, READY formatting, FIFO/dedup and Tester guard | `31 checks` |
 

@@ -1,5 +1,12 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 4A Micro Base visual only
+
+- Added dedicated white BaseHigh/BaseLow chart lines for confirmed `MICRO BASE` zones.
+- Confirmed lines extend on closed bars, then freeze and remain as visual history when the Micro Base ends.
+- Unconfirmed candidates create no chart objects; object identity is isolated from Pullback Base visualization.
+- Display-only enhancement: Micro Base detection, anchor, confirmation, lifecycle, structure precedence and setup semantics are unchanged.
+
 ## v3.1 DEV — Phase 3 Patch 6
 
 - Pullback Base visualization now retains only confirmed PPF/PPS Bases that reach `ACTIVE` with confirmed `LEG 1`/`LEG 2`.

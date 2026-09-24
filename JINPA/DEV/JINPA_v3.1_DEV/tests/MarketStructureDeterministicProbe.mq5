@@ -3,6 +3,7 @@
 #property description "JINPA v3.1 DEV Stage 3 Market Structure deterministic probe"
 
 #include "../watch/state/MarketStructureEngine.mqh"
+#include "../watch/structure/MicroBaseRenderer.mqh"
 #include "../watch/ui/MarketRadar.mqh"
 
 int g_passed = 0;
@@ -330,6 +331,11 @@ void TestMicroBaseLifecycle(void)
          "MICRO_BASE_02_ANCHOR_PLUS_TWO_INSIDE_CLOSES");
    Check(symbolState.structure == "MICRO BASE",
          "MICRO_BASE_03_WICKS_OUTSIDE_CLOSE_INSIDE_PERSISTS");
+   Check(engine.MicroBaseConfirmed()
+         && engine.MicroBaseAnchorTime() == 1000
+         && engine.MicroBaseHigh() == 110.0
+         && engine.MicroBaseLow() == 100.0,
+         "MICRO_BASE_11_CONFIRMED_VISUAL_AUTHORITY_EXPOSED");
 
    CMarketStructureEngine earlyBreakEngine;
    MqlRates earlyRates[];
@@ -457,6 +463,58 @@ void TestMicroBaseLifecycle(void)
          "MICRO_BASE_10_REQUIRES_PRIOR_CONTINUATION_BEFORE_ANCHOR");
 }
 
+void TestMicroBaseVisualOnly(void)
+{
+   CMicroBaseRenderer renderer;
+   renderer.Destroy();
+   const string prefix = "JINPA_MICRO_BASE_" + _Symbol + "_"
+                         + IntegerToString((int)_Period) + "_";
+   const string highA = prefix + "5000_HIGH";
+   const string lowA = prefix + "5000_LOW";
+
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   false, 5000, 5120, 110.0, 100.0);
+   Check(ObjectFind(0, highA) < 0 && ObjectFind(0, lowA) < 0,
+         "MICRO_VISUAL_01_UNCONFIRMED_HAS_NO_OBJECTS");
+
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   true, 5000, 5120, 110.0, 100.0);
+   Check(ObjectFind(0, highA) >= 0 && ObjectFind(0, lowA) >= 0
+         && ObjectGetDouble(0, highA, OBJPROP_PRICE, 0) == 110.0
+         && ObjectGetDouble(0, lowA, OBJPROP_PRICE, 0) == 100.0
+         && (color)ObjectGetInteger(0, highA, OBJPROP_COLOR) == clrWhite
+         && ObjectGetInteger(0, highA, OBJPROP_STYLE) == STYLE_SOLID
+         && ObjectGetInteger(0, highA, OBJPROP_WIDTH) == 1,
+         "MICRO_VISUAL_02_CONFIRMED_DRAWS_WHITE_BASE_PAIR");
+
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   true, 5000, 5180, 110.0, 100.0);
+   Check((datetime)ObjectGetInteger(0, highA, OBJPROP_TIME, 1) == 5180
+         && (datetime)ObjectGetInteger(0, lowA,
+                                       OBJPROP_TIME, 1) == 5180,
+         "MICRO_VISUAL_03_CONFIRMED_PAIR_EXTENDS");
+
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   false, 0, 5240, 0.0, 0.0);
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   false, 0, 5300, 0.0, 0.0);
+   Check(ObjectFind(0, highA) >= 0 && ObjectFind(0, lowA) >= 0
+         && (datetime)ObjectGetInteger(0, highA,
+                                       OBJPROP_TIME, 1) == 5240,
+         "MICRO_VISUAL_04_ENDED_PAIR_FREEZES_AND_REMAINS");
+
+   const string highB = prefix + "6000_HIGH";
+   const string lowB = prefix + "6000_LOW";
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   true, 6000, 6120, 120.0, 115.0);
+   renderer.Update(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                   false, 0, 6180, 0.0, 0.0);
+   Check(ObjectFind(0, highA) >= 0 && ObjectFind(0, lowA) >= 0
+         && ObjectFind(0, highB) >= 0 && ObjectFind(0, lowB) >= 0,
+         "MICRO_VISUAL_05_CONFIRMED_HISTORIES_HAVE_UNIQUE_IDENTITIES");
+   renderer.Destroy();
+}
+
 void TestPanelValue(void)
 {
    SymbolState states[1];
@@ -513,6 +571,7 @@ int OnInit(void)
    TestFlowsAndAuthority();
    TestRangeContextExtensions();
    TestMicroBaseLifecycle();
+   TestMicroBaseVisualOnly();
    TestPanelValue();
    Print("[MARKET_STRUCTURE_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,

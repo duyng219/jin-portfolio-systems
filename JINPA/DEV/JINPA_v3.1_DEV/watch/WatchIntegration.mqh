@@ -6,6 +6,7 @@
 #include "structure/StructureNotificationManager.mqh"
 #include "state/MarketStateEngine.mqh"
 #include "state/MarketStructureEngine.mqh"
+#include "structure/MicroBaseRenderer.mqh"
 #include "setup/PullbackSetupEngine.mqh"
 #include "setup/PullbackBaseRenderer.mqh"
 #include "ui/MarketRadar.mqh"
@@ -24,6 +25,7 @@ private:
     CStructureNotificationManager m_structureNotificationManager;
     CMarketStateEngine m_marketStateEngine;
     CMarketStructureEngine m_marketStructureEngine;
+    CMicroBaseRenderer m_microBaseRenderer;
     CPullbackSetupEngine m_pullbackSetupEngine;
     CPullbackBaseRenderer m_pullbackBaseRenderer;
     string          m_lastMarketStructure;
@@ -215,6 +217,13 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                      m_watchATRPeriod,
                                      m_watchCoreBreakATRBuffer,
                                      m_states[0]);
+       m_microBaseRenderer.Update(
+          m_symbol, m_timeframe,
+          m_marketStructureEngine.MicroBaseConfirmed(),
+          m_marketStructureEngine.MicroBaseAnchorTime(),
+          lastClosedBarTime,
+          m_marketStructureEngine.MicroBaseHigh(),
+          m_marketStructureEngine.MicroBaseLow());
        setupChanged = m_pullbackSetupEngine.Apply(
           previousState, m_marketStateEngine.State(),
           m_structureState, m_structureSwings, stateRates, lastClosedBarTime,
@@ -415,6 +424,7 @@ void CWatchIntegration::Shutdown(void)
 {
     m_marketRadar.Destroy();
     m_pullbackBaseRenderer.Destroy();
+    m_microBaseRenderer.Destroy();
     m_structureRenderer.Destroy();
     ResetContext();
 }
