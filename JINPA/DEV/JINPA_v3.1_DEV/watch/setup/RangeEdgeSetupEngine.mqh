@@ -354,47 +354,16 @@ public:
              || oldEntry != m_edgeEntryTime;
    }
 
-   void ProjectPrimaryOutput(const string pullbackSetup,
-                             const string pullbackStatus,
-                             SymbolState &state) const
+   string SetupText(void) const
    {
-      const bool pullbackActive = pullbackStatus == "ACTIVE";
-      const bool rangeActive = m_status == JINPA_RANGE_STATUS_ACTIVE;
-      const bool pullbackOwned = pullbackSetup != "-"
-                                 && pullbackStatus != "NONE";
-
-      if(pullbackActive)
-      {
-         state.setup = pullbackSetup;
-         state.setupStatus = pullbackStatus;
-         return;
-      }
-      if(rangeActive)
-      {
-         state.setup = JinpaRangeEdgeSetupToString(m_setup);
-         state.setupStatus = "ACTIVE";
-         return;
-      }
-      if(pullbackOwned)
-      {
-         state.setup = pullbackSetup;
-         state.setupStatus = pullbackStatus;
-         return;
-      }
       if(m_status == JINPA_RANGE_STATUS_WATCH && m_armed)
-      {
-         state.setup = "edge-mix";
-         state.setupStatus = "WATCH";
-         return;
-      }
-      if(m_status == JINPA_RANGE_STATUS_INVALID)
-      {
-         state.setup = JinpaRangeEdgeSetupToString(m_setup);
-         state.setupStatus = "INVALID";
-         return;
-      }
-      state.setup = "-";
-      state.setupStatus = "NONE";
+         return "edge-mix";
+      return JinpaRangeEdgeSetupToString(m_setup);
+   }
+
+   string StatusText(void) const
+   {
+      return JinpaRangeEdgeStatusToString(m_status);
    }
 
    bool IsArmed(void) const { return m_armed; }

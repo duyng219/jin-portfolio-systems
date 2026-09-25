@@ -1,5 +1,15 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 4D bres-pma Setup lifecycle
+
+- Added a dedicated `bres-pma` Impulse setup lifecycle keyed by the existing `ImpulseStartTime` authority.
+- A new Impulse arms WATCH; its first confirmed Micro Base snapshots immutable bounds and enters READY.
+- A strict cycle-direction closed-bar Base break activates PMA, while an opposite break or expired/lost confirmed Base invalidates it.
+- Added trigger-bar outcome-before-State-exit ordering, `ACTIVE -> INVALID -> NONE`, and one PMA lifecycle per Impulse.
+- Reused the existing first-confirmed-per-Impulse Micro Base authority and `MicroBaseRenderer`; no detection or chart-object semantics changed.
+- Added common single-output arbitration so valid PMA WATCH/READY/ACTIVE is not hidden by stale terminal output from another setup branch.
+- Notification transport, execution, Pullback, Range Edge, Market State, Market Structure and LIVE remain unchanged.
+
 ## v3.1 DEV — Phase 4C Range Edge Setup engine
 
 - Added deterministic upper/lower Range Edge side authority without changing existing edge or rejection geometry; overlapping edge bands remain `RANGE EDGE` but expose no arbitrary side.

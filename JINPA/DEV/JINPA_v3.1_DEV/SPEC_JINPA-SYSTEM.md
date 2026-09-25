@@ -27,7 +27,9 @@ Primary audited sources:
 | Market Structure projection | `watch/state/MarketStructureEngine.mqh` |
 | Confirmed Micro Base visualization | `watch/structure/MicroBaseRenderer.mqh` |
 | Pullback Setup and unified Pullback Leg authority | `watch/setup/PullbackSetupEngine.mqh` |
-| Range Edge Setup and single-output arbitration | `watch/setup/RangeEdgeSetupEngine.mqh` |
+| Range Edge Setup | `watch/setup/RangeEdgeSetupEngine.mqh` |
+| Impulse/Micro Base PMA Setup | `watch/setup/PmaSetupEngine.mqh` |
+| Single Setup/Status output arbitration | `watch/setup/SetupOutputArbitrator.mqh` |
 | Active READY Base visualization | `watch/setup/PullbackBaseRenderer.mqh` |
 | Notification Policy v1.0 | `watch/structure/StructureNotificationManager.mqh` |
 | WATCH Radar | `watch/ui/MarketRadar.mqh` |
@@ -53,8 +55,8 @@ MT5 market data
     → Core Box / Cycle / Sideway / StructureEvent history
   → CMarketStateEngine
   → CMarketStructureEngine
-  → CPullbackSetupEngine + CRangeEdgeSetupEngine
-  → single primary Setup/Status projection
+  → CPullbackSetupEngine + CRangeEdgeSetupEngine + CPmaSetupEngine
+  → CSetupOutputArbitrator
   → SymbolState
   → CMarketRadar + CStructureDebugRenderer
 ```
@@ -551,16 +553,21 @@ next strictly later closed bar, and `NONE` on the following later bar. A valid
 ACTIVE consumes its episode; terminal cleanup cannot re-arm the same
 continuous episode. Integration reset/shutdown clears all Range Edge context.
 
-Pullback and Range Edge engines always process independently. Their one-column
-Radar projection uses this precedence:
+Pullback, Range Edge and PMA engines always process independently. Their
+one-column Radar projection uses the common Setup output arbitrator. The full
+precedence is:
 
 ```text
 Pullback ACTIVE
 > Range Edge ACTIVE
+> PMA ACTIVE
+> PMA READY
 > Pullback READY
+> PMA WATCH
 > Pullback WATCH
-> Pullback INVALID
 > edge-mix WATCH
+> PMA INVALID
+> Pullback INVALID
 > Range Edge INVALID
 > NONE
 ```
@@ -571,6 +578,61 @@ ACTIVE; Range Edge ACTIVE wins over PPS INVALID, while same-bar PPS ACTIVE
 remains the highest confirmed-signal display. The arbitration changes neither
 PPS eligibility nor its lifecycle. Range Edge setup transitions are not added
 to notification transport in Phase 4C.
+
+### 8.5 `bres-pma`
+
+Owned by `watch/setup/PmaSetupEngine.mqh`. PMA is the Setup expression of the
+existing Expansion → Impulse → Continuation → first confirmed Micro Base →
+directional Base breakout path. It neither detects Micro Bases nor creates a
+new Market Structure type.
+
+A different non-zero `MarketStateEngine.ImpulseStartTime()` while current State
+is `IMPULSE` arms exactly one `bres-pma / WATCH` lifecycle. The stable Impulse
+identity prevents repeated arming on later Impulse bars and prevents a
+terminal lifecycle from restarting on the same old Impulse. Cycle supplies
+direction: Bull is BUY and Bear is SELL.
+
+PMA consumes only these read-only `MarketStructureEngine` authorities:
+`MicroBaseConfirmed`, `MicroBaseConsumed`, `MicroBaseImpulseStartTime`,
+`MicroBaseAnchorTime`, `MicroBaseHigh` and `MicroBaseLow`. The first confirmed
+Micro Base belonging to the same Impulse changes WATCH to READY. At that point
+PMA snapshots immutable `baseTime`, `baseHigh`, `baseLow`, Cycle and
+`impulseStartTime`; later reset of the upstream Micro Base cannot mutate the
+stored Setup Base.
+
+READY evaluates only strict closed-bar Close comparisons:
+
+- Bull: `Close > BaseHigh` activates BUY; `Close < BaseLow` invalidates.
+- Bear: `Close < BaseLow` activates SELL; `Close > BaseHigh` invalidates.
+- Equality at either boundary and wick-only excursions do not trigger an
+  outcome.
+
+The immutable Base outcome is evaluated before generic context validity. A
+directional success therefore remains `ACTIVE` on its breakout bar even when
+that same bar has already moved Market State from `IMPULSE` to `CORRECTION`.
+An opposite break becomes INVALID. With no Base outcome, READY becomes INVALID
+when the upstream confirmed Micro Base disappears through its existing timeout
+or reset, or when State leaves Impulse, Cycle becomes unknown/changes, or the
+Impulse identity ceases to match. WATCH has the same context guards.
+
+PMA terminal timing is trigger-bar `ACTIVE`, next strictly later bar
+`INVALID`, then next later bar `NONE`. A new lifecycle requires a genuinely
+different Impulse identity. Phase 4B remains authoritative: one Impulse can
+produce at most one confirmed Micro Base and therefore at most one PMA READY
+Base.
+
+PMA never rewrites `SymbolState.structure`. WATCH normally coexists with
+`CONTINUATION`, READY with `MICRO BASE`, and its ACTIVE breakout bar may already
+project `CONTINUATION` after the upstream Base resets. The existing
+`MicroBaseRenderer` remains the sole visual owner: it draws READY bounds and
+freezes them through the existing Phase 4A behavior after break/reset. No PMA
+renderer or new chart objects are added.
+
+At actual State boundaries PMA WATCH/READY/ACTIVE wins over stale terminal
+INVALID output from Pullback or Range Edge. A same-bar PMA ACTIVE also wins
+over a newly armed PPF WATCH. The owning engines remain independent and only
+the final `SymbolState.setup/setupStatus` projection is arbitrated. PMA is not
+added to notification eligibility in Phase 4D.
 
 ## 9. Setup Status Lifecycle
 
@@ -847,6 +909,7 @@ pending, cancel and close counters are zero.
 | `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, confirmed-only Base history and Radar coexistence | `79 checks` |
 | `NotificationPolicyDeterministicProbe.mq5` | Eligible policy including unified Leg, READY candidate identity, Base-failure WATCH suppression, READY formatting, FIFO/dedup and Tester guard | `31 checks` |
 | `RangeEdgeSetupDeterministicProbe.mq5` | Edge-side authority, episode identity, guards, PMB/PFB/PMR outcome/direction, consumption, lifecycle, replay symmetry and PPS single-output conflict policy | `46 checks` |
+| `PmaSetupDeterministicProbe.mq5` | Impulse identity, immutable Micro Base snapshot, Bull/Bear Close outcomes, timeout/context guards, same-bar State exit ordering, one-per-Impulse, arbitration and replay | `40 checks` |
 
 All engines and probes use deterministic closed-bar timestamps. The notification
 probe requires `MQL_TESTER=true`, drains the queue, and asserts zero real

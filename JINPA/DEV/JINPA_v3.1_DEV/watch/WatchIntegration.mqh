@@ -9,6 +9,8 @@
 #include "structure/MicroBaseRenderer.mqh"
 #include "setup/PullbackSetupEngine.mqh"
 #include "setup/RangeEdgeSetupEngine.mqh"
+#include "setup/PmaSetupEngine.mqh"
+#include "setup/SetupOutputArbitrator.mqh"
 #include "setup/PullbackBaseRenderer.mqh"
 #include "ui/MarketRadar.mqh"
 
@@ -29,6 +31,8 @@ private:
     CMicroBaseRenderer m_microBaseRenderer;
     CPullbackSetupEngine m_pullbackSetupEngine;
     CRangeEdgeSetupEngine m_rangeEdgeSetupEngine;
+    CPmaSetupEngine m_pmaSetupEngine;
+    CSetupOutputArbitrator m_setupOutputArbitrator;
     CPullbackBaseRenderer m_pullbackBaseRenderer;
     string          m_lastMarketStructure;
     string          m_lastPullbackSetup;
@@ -177,6 +181,7 @@ void CWatchIntegration::ResetContext(void)
     m_marketStructureEngine.Reset();
     m_pullbackSetupEngine.Reset();
     m_rangeEdgeSetupEngine.Reset();
+    m_pmaSetupEngine.Reset();
 }
 
 void CWatchIntegration::UpdateStructureConsumers(void)
@@ -249,9 +254,23 @@ void CWatchIntegration::UpdateStructureConsumers(void)
           m_marketStateEngine.State(), m_structureState,
           m_structureEventHistory, lastClosedBarTime, marketStructure,
           m_marketStructureEngine.RangeEdgeSide());
+       m_pmaSetupEngine.Apply(
+          m_marketStateEngine.State(),
+          m_marketStateEngine.ImpulseStartTime(),
+          m_structureState.cycleState.cycle,
+          m_marketStructureEngine.MicroBaseConfirmed(),
+          m_marketStructureEngine.MicroBaseConsumed(),
+          m_marketStructureEngine.MicroBaseImpulseStartTime(),
+          m_marketStructureEngine.MicroBaseAnchorTime(),
+          m_marketStructureEngine.MicroBaseHigh(),
+          m_marketStructureEngine.MicroBaseLow(),
+          stateRates, lastClosedBarTime);
        m_states[0].structure = pullbackProjection.structure;
-       m_rangeEdgeSetupEngine.ProjectPrimaryOutput(
-          m_lastPullbackSetup, m_lastPullbackStatus, m_states[0]);
+       m_setupOutputArbitrator.Project(
+          m_lastPullbackSetup, m_lastPullbackStatus,
+          m_pmaSetupEngine.SetupText(), m_pmaSetupEngine.StatusText(),
+          m_rangeEdgeSetupEngine.SetupText(),
+          m_rangeEdgeSetupEngine.StatusText(), m_states[0]);
        setupChanged = previousSetup != m_states[0].setup
                       || previousSetupStatus != m_states[0].setupStatus;
        structureChanged = previousStructure != m_states[0].structure;

@@ -4,6 +4,7 @@
 
 #include "../watch/setup/RangeEdgeSetupEngine.mqh"
 #include "../watch/setup/PullbackSetupEngine.mqh"
+#include "../watch/setup/SetupOutputArbitrator.mqh"
 
 int g_passed = 0;
 int g_failed = 0;
@@ -158,9 +159,12 @@ void Project(CRangeEdgeSetupEngine &engine,
              const string pullbackStatus,
              SymbolState &output)
 {
+   CSetupOutputArbitrator arbitrator;
    output.setup = "-";
    output.setupStatus = "NONE";
-   engine.ProjectPrimaryOutput(pullbackSetup, pullbackStatus, output);
+   arbitrator.Project(pullbackSetup, pullbackStatus,
+                      "-", "NONE",
+                      engine.SetupText(), engine.StatusText(), output);
 }
 
 void TestEdgeSideAuthority(void)
