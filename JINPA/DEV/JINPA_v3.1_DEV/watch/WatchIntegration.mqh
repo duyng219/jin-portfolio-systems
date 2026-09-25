@@ -8,6 +8,7 @@
 #include "state/MarketStructureEngine.mqh"
 #include "structure/MicroBaseRenderer.mqh"
 #include "setup/PullbackSetupEngine.mqh"
+#include "setup/RangeEdgeSetupEngine.mqh"
 #include "setup/PullbackBaseRenderer.mqh"
 #include "ui/MarketRadar.mqh"
 
@@ -27,8 +28,11 @@ private:
     CMarketStructureEngine m_marketStructureEngine;
     CMicroBaseRenderer m_microBaseRenderer;
     CPullbackSetupEngine m_pullbackSetupEngine;
+    CRangeEdgeSetupEngine m_rangeEdgeSetupEngine;
     CPullbackBaseRenderer m_pullbackBaseRenderer;
     string          m_lastMarketStructure;
+    string          m_lastPullbackSetup;
+    string          m_lastPullbackStatus;
     CMarketRadar    m_marketRadar;
     SymbolState     m_states[1];
     PriceStructureState m_structureState;
@@ -142,6 +146,8 @@ void CWatchIntegration::ResetContext(void)
     m_enabled     = false;
     m_lastBarTime = 0;
     m_lastMarketStructure = "UNKNOWN";
+    m_lastPullbackSetup = "-";
+    m_lastPullbackStatus = "NONE";
 
     m_states[0].symbol              = "";
     m_states[0].timeframe           = PERIOD_CURRENT;
@@ -170,6 +176,7 @@ void CWatchIntegration::ResetContext(void)
     m_marketStateEngine.Reset();
     m_marketStructureEngine.Reset();
     m_pullbackSetupEngine.Reset();
+    m_rangeEdgeSetupEngine.Reset();
 }
 
 void CWatchIntegration::UpdateStructureConsumers(void)
@@ -196,9 +203,12 @@ void CWatchIntegration::UpdateStructureConsumers(void)
     const string previousStructure = m_lastMarketStructure;
     const string previousSetup = m_states[0].setup;
     const string previousSetupStatus = m_states[0].setupStatus;
+    const string previousPullbackSetup = m_lastPullbackSetup;
+    const string previousPullbackStatus = m_lastPullbackStatus;
     bool stateChanged = false;
     bool structureChanged = false;
     bool setupChanged = false;
+    bool pullbackSetupChanged = false;
     if(copied > 0 && lastClosedBarTime > 0)
     {
        stateChanged = m_marketStateEngine.Apply(m_structureState,
@@ -225,10 +235,25 @@ void CWatchIntegration::UpdateStructureConsumers(void)
           lastClosedBarTime,
           m_marketStructureEngine.MicroBaseHigh(),
           m_marketStructureEngine.MicroBaseLow());
-       setupChanged = m_pullbackSetupEngine.Apply(
+       const string marketStructure = m_states[0].structure;
+       SymbolState pullbackProjection = m_states[0];
+       pullbackProjection.setup = m_lastPullbackSetup;
+       pullbackProjection.setupStatus = m_lastPullbackStatus;
+       pullbackSetupChanged = m_pullbackSetupEngine.Apply(
           previousState, m_marketStateEngine.State(),
           m_structureState, m_structureSwings, stateRates, lastClosedBarTime,
-          m_states[0]);
+          pullbackProjection);
+       m_lastPullbackSetup = pullbackProjection.setup;
+       m_lastPullbackStatus = pullbackProjection.setupStatus;
+       m_rangeEdgeSetupEngine.Apply(
+          m_marketStateEngine.State(), m_structureState,
+          m_structureEventHistory, lastClosedBarTime, marketStructure,
+          m_marketStructureEngine.RangeEdgeSide());
+       m_states[0].structure = pullbackProjection.structure;
+       m_rangeEdgeSetupEngine.ProjectPrimaryOutput(
+          m_lastPullbackSetup, m_lastPullbackStatus, m_states[0]);
+       setupChanged = previousSetup != m_states[0].setup
+                      || previousSetupStatus != m_states[0].setupStatus;
        structureChanged = previousStructure != m_states[0].structure;
        m_lastMarketStructure = m_states[0].structure;
     }
@@ -281,21 +306,24 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                    + " | " + transition
                    + " | status=" + m_states[0].setupStatus);
 
-        if(m_enabled)
-            m_structureNotificationManager.EnqueueSetupTransition(
-               m_symbol, m_timeframe, lastClosedBarTime,
-               previousSetup, previousSetupStatus,
-               m_states[0].setup, m_states[0].setupStatus,
-               m_states[0].cycle, m_states[0].state,
-               m_states[0].structure,
-               m_pullbackSetupEngine.BaseHigh(),
-               m_pullbackSetupEngine.BaseLow(),
-               m_pullbackSetupEngine.CandidateSwingTime());
     }
+
+    // Phase 4C does not expand notification policy. Queue only genuine
+    // Pullback engine transitions, independent from single-output projection.
+    if(pullbackSetupChanged && m_enabled)
+        m_structureNotificationManager.EnqueueSetupTransition(
+           m_symbol, m_timeframe, lastClosedBarTime,
+           previousPullbackSetup, previousPullbackStatus,
+           m_lastPullbackSetup, m_lastPullbackStatus,
+           m_states[0].cycle, m_states[0].state,
+           m_states[0].structure,
+           m_pullbackSetupEngine.BaseHigh(),
+           m_pullbackSetupEngine.BaseLow(),
+           m_pullbackSetupEngine.CandidateSwingTime());
 
     // Rendering is a separate read-only consumer of the same Stage 2 snapshot.
     m_pullbackBaseRenderer.Update(
-       m_symbol, m_timeframe, m_states[0].setup, m_states[0].setupStatus,
+       m_symbol, m_timeframe, m_lastPullbackSetup, m_lastPullbackStatus,
        m_pullbackSetupEngine.CandidateSwingTime(),
        m_pullbackSetupEngine.BaseTime(), lastClosedBarTime,
        m_pullbackSetupEngine.BaseHigh(), m_pullbackSetupEngine.BaseLow());

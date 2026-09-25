@@ -27,6 +27,7 @@ Primary audited sources:
 | Market Structure projection | `watch/state/MarketStructureEngine.mqh` |
 | Confirmed Micro Base visualization | `watch/structure/MicroBaseRenderer.mqh` |
 | Pullback Setup and unified Pullback Leg authority | `watch/setup/PullbackSetupEngine.mqh` |
+| Range Edge Setup and single-output arbitration | `watch/setup/RangeEdgeSetupEngine.mqh` |
 | Active READY Base visualization | `watch/setup/PullbackBaseRenderer.mqh` |
 | Notification Policy v1.0 | `watch/structure/StructureNotificationManager.mqh` |
 | WATCH Radar | `watch/ui/MarketRadar.mqh` |
@@ -52,7 +53,8 @@ MT5 market data
     → Core Box / Cycle / Sideway / StructureEvent history
   → CMarketStateEngine
   → CMarketStructureEngine
-  → CPullbackSetupEngine
+  → CPullbackSetupEngine + CRangeEdgeSetupEngine
+  → single primary Setup/Status projection
   → SymbolState
   → CMarketRadar + CStructureDebugRenderer
 ```
@@ -339,6 +341,12 @@ On a normal closed Compression bar, priority is:
 On the exact `SIDEWAY_CONFIRMED` event bar, the extensions are skipped and the
 output is `SIDEWAY`.
 
+`MarketStructureEngine` also exposes the deterministic boundary side from the
+same geometry: `EDGE_UPPER`, `EDGE_LOWER`, or `EDGE_NONE`. It does not run a
+second threshold calculation. If an unusually narrow range makes both edge
+bands overlap, the existing `RANGE EDGE` classification is preserved while
+the side is explicitly `EDGE_NONE`; no setup episode is assigned arbitrarily.
+
 ### 7.3 Micro Base
 
 Micro Base is an instance-scoped overlay allowed only in Regime `TREND`, State
@@ -499,6 +507,70 @@ second swing detector.
   INVALID lifecycle subsequently clears to NONE, later Swing Highs/Lows cannot
   re-arm PPS from that old LEG 1. A new PPS requires a genuinely new upstream
   PPF and unified LEG 1 chain.
+
+### 8.4 Range Edge Setup branch
+
+Owned independently by `watch/setup/RangeEdgeSetupEngine.mqh`. It is armed
+only by a known Cycle in `COMPRESSION`, an active/confirmed Sideway and a
+deterministic `RANGE EDGE` side. Price Structure and Market Structure remain
+the only authorities for Core events, Range Edge and Rejection geometry.
+
+An Edge Episode identity is:
+
+```text
+Sideway/Core owner generation + edge side + edge entry closed-bar time
+```
+
+Continuous bars at the same edge keep the identity. Leaving and returning,
+changing edge side, or changing owner generation starts a new episode. The
+internal armed representation has no resolved setup type; Radar maps it to
+the display-only alias `edge-mix / WATCH`. `edge-mix` is not a seventh setup
+in the trading taxonomy and this branch has no `READY` state.
+
+Exactly one outcome can resolve and consume an episode:
+
+- `bres-pmb`: authoritative `CORE_BOX_TRANSITION_STARTED`. Upper edge is BUY;
+  lower edge is SELL. It is valid for either armed Cycle and activates on the
+  confirmed-break/`EXPANSION` bar, not the first `CORE_BREAK_CANDIDATE` and
+  not a later Impulse bar.
+- `revs-pfb`: authoritative `CORE_BREAK_FAILED`, only Bull + lower edge (BUY)
+  or Bear + upper edge (SELL).
+- `revs-pmr`: authoritative Market Structure `REJECTION`, with the same
+  Bull/lower BUY and Bear/upper SELL filter.
+
+Resolution priority is confirmed breakout, eligible false break, eligible
+rejection, then continued armed WATCH. Outcome resolution runs before generic
+State/Cycle/Sideway cleanup, so same-bar `CYCLE_CHANGED` plus
+`CORE_BOX_TRANSITION_STARTED` can still activate PMB and a retained episode can
+consume `CORE_BREAK_FAILED` after its pending-break interval. Ineligible
+opposite-cycle rejection/false-break outcomes do not consume the episode.
+`ACCUMULATION` and `DISTRIBUTION` are intentionally not used.
+
+A resolved setup follows `ACTIVE` on its trigger closed bar, `INVALID` on the
+next strictly later closed bar, and `NONE` on the following later bar. A valid
+ACTIVE consumes its episode; terminal cleanup cannot re-arm the same
+continuous episode. Integration reset/shutdown clears all Range Edge context.
+
+Pullback and Range Edge engines always process independently. Their one-column
+Radar projection uses this precedence:
+
+```text
+Pullback ACTIVE
+> Range Edge ACTIVE
+> Pullback READY
+> Pullback WATCH
+> Pullback INVALID
+> edge-mix WATCH
+> Range Edge INVALID
+> NONE
+```
+
+Thus PPS can remain internally armed in Compression while an Edge Episode is
+also armed. PPS WATCH/READY remains visible until a Range Edge outcome becomes
+ACTIVE; Range Edge ACTIVE wins over PPS INVALID, while same-bar PPS ACTIVE
+remains the highest confirmed-signal display. The arbitration changes neither
+PPS eligibility nor its lifecycle. Range Edge setup transitions are not added
+to notification transport in Phase 4C.
 
 ## 9. Setup Status Lifecycle
 
@@ -774,6 +846,7 @@ pending, cancel and close counters are zero.
 | `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, first-confirmed-per-Impulse Micro Base gate, confirmed-only visualization and Radar value | `57 checks` |
 | `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, confirmed-only Base history and Radar coexistence | `79 checks` |
 | `NotificationPolicyDeterministicProbe.mq5` | Eligible policy including unified Leg, READY candidate identity, Base-failure WATCH suppression, READY formatting, FIFO/dedup and Tester guard | `31 checks` |
+| `RangeEdgeSetupDeterministicProbe.mq5` | Edge-side authority, episode identity, guards, PMB/PFB/PMR outcome/direction, consumption, lifecycle, replay symmetry and PPS single-output conflict policy | `46 checks` |
 
 All engines and probes use deterministic closed-bar timestamps. The notification
 probe requires `MQL_TESTER=true`, drains the queue, and asserts zero real

@@ -1,5 +1,14 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 4C Range Edge Setup engine
+
+- Added deterministic upper/lower Range Edge side authority without changing existing edge or rejection geometry; overlapping edge bands remain `RANGE EDGE` but expose no arbitrary side.
+- Added one owner-generation/side/entry-time Edge Episode lifecycle with the display-only `edge-mix / WATCH` alias and no READY state.
+- Added `bres-pmb` from confirmed `CORE_BOX_TRANSITION_STARTED`, `revs-pfb` from eligible `CORE_BREAK_FAILED`, and `revs-pmr` from eligible retained-edge `REJECTION`, including explicit BUY/SELL metadata.
+- Added trigger-bar `ACTIVE -> INVALID -> NONE`, outcome-only episode consumption, same-bar breakout-before-cleanup ordering, and chronological replay parity coverage.
+- Added single-output arbitration that preserves internal PPS semantics: Pullback ACTIVE wins, otherwise Range Edge ACTIVE can replace PPS terminal INVALID; PPS READY/WATCH hides an unresolved `edge-mix` context.
+- Kept notification transport, execution, Pullback rules, Market State, Core break detection, Micro Base, LIVE and chart UI unchanged.
+
 ## v3.1 DEV — Phase 4B first Micro Base per Impulse
 
 - Limited `MICRO BASE` acceptance to the first confirmed Base of each stable `impulseStartTime` lifecycle.

@@ -17,6 +17,22 @@ enum ENUM_JINPA_MARKET_STRUCTURE
    JINPA_STRUCTURE_MICRO_BASE
 };
 
+enum ENUM_JINPA_RANGE_EDGE_SIDE
+{
+   JINPA_EDGE_NONE = 0,
+   JINPA_EDGE_UPPER,
+   JINPA_EDGE_LOWER
+};
+
+string JinpaRangeEdgeSideToString(const ENUM_JINPA_RANGE_EDGE_SIDE side)
+{
+   if(side == JINPA_EDGE_UPPER)
+      return "UPPER";
+   if(side == JINPA_EDGE_LOWER)
+      return "LOWER";
+   return "NONE";
+}
+
 string JinpaMarketStructureToString(
    const ENUM_JINPA_MARKET_STRUCTURE structure)
 {
@@ -57,9 +73,10 @@ struct MicroBaseCandidateState
 class CMarketStructureEngine
 {
 private:
-   MicroBaseCandidateState m_microBase;
-   datetime                m_microBaseImpulseStartTime;
-   bool                    m_microBaseConsumed;
+   MicroBaseCandidateState     m_microBase;
+   datetime                    m_microBaseImpulseStartTime;
+   bool                        m_microBaseConsumed;
+   ENUM_JINPA_RANGE_EDGE_SIDE  m_rangeEdgeSide;
 
    void ResetMicroBase(void)
    {
@@ -207,6 +224,27 @@ private:
                 <= structureState.sidewayBox.boxLow + edgeDistance;
    }
 
+   ENUM_JINPA_RANGE_EDGE_SIDE ResolveRangeEdgeSide(
+      const PriceStructureState &structureState,
+      const MqlRates &closedBar,
+      const double edgeDistance) const
+   {
+      if(!HasValidSidewayBounds(structureState) || edgeDistance < 0.0)
+         return JINPA_EDGE_NONE;
+
+      const bool upper = closedBar.close
+                         >= structureState.sidewayBox.boxHigh
+                            - edgeDistance;
+      const bool lower = closedBar.close
+                         <= structureState.sidewayBox.boxLow
+                            + edgeDistance;
+      // Preserve the existing RANGE EDGE bool geometry. An overlapping band
+      // has no unique downstream setup side, so it is explicitly ambiguous.
+      if(upper == lower)
+         return JINPA_EDGE_NONE;
+      return upper ? JINPA_EDGE_UPPER : JINPA_EDGE_LOWER;
+   }
+
    bool IsRejection(const PriceStructureState &structureState,
                     const MqlRates &closedBar) const
    {
@@ -279,6 +317,7 @@ public:
       ResetMicroBase();
       m_microBaseImpulseStartTime = 0;
       m_microBaseConsumed = false;
+      m_rangeEdgeSide = JINPA_EDGE_NONE;
    }
 
    ENUM_JINPA_MARKET_STRUCTURE Derive(
@@ -371,6 +410,7 @@ public:
               const double edgeATRMultiplier,
               SymbolState &symbolState)
    {
+      m_rangeEdgeSide = JINPA_EDGE_NONE;
       ENUM_JINPA_MARKET_STRUCTURE structure =
          Derive(marketState, structureState);
       const int closedIndex = FindClosedBarIndex(rates, lastClosedBarTime);
@@ -381,6 +421,8 @@ public:
       {
          const double atr = CalculateATR(rates, closedIndex, atrPeriod);
          const double edgeDistance = atr * MathMax(0.0, edgeATRMultiplier);
+         m_rangeEdgeSide = ResolveRangeEdgeSide(
+            structureState, rates[closedIndex], edgeDistance);
          structure = Derive(marketState, structureState,
                             rates[closedIndex], edgeDistance,
                             HasEventAt(events, lastClosedBarTime,
@@ -443,6 +485,19 @@ public:
    datetime MicroBaseImpulseStartTime(void) const
    {
       return m_microBaseImpulseStartTime;
+   }
+
+   ENUM_JINPA_RANGE_EDGE_SIDE RangeEdgeSide(void) const
+   {
+      return m_rangeEdgeSide;
+   }
+
+   ENUM_JINPA_RANGE_EDGE_SIDE DeriveRangeEdgeSide(
+      const PriceStructureState &structureState,
+      const MqlRates &closedBar,
+      const double edgeDistance) const
+   {
+      return ResolveRangeEdgeSide(structureState, closedBar, edgeDistance);
    }
 };
 
