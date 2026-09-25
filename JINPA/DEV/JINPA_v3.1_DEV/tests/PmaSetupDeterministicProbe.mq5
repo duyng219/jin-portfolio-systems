@@ -423,6 +423,38 @@ void TestReplayParity(void)
          "REPLAY_40_CHRONOLOGICAL_FORWARD_REPLAY_PARITY");
 }
 
+void TestStartupConsumedLatch(void)
+{
+   CPmaSetupEngine bull;
+   MqlRates bullRates[];
+   AddBar(bullRates, Bar(2400, 109, 101, 105));
+   Apply(bull, JINPA_STATE_IMPULSE, 2300, MARKET_CYCLE_BULL,
+         false, true, 2300, 0, 0, 0, bullRates);
+   Check(bull.Status() == JINPA_PMA_STATUS_NONE
+         && bull.ImpulseStartTime() == 2300
+         && bull.LifecycleUsed(),
+         "REPLAY_41_CONSUMED_BULL_IMPULSE_CANNOT_REARM_WATCH");
+
+   CPmaSetupEngine bear;
+   MqlRates bearRates[];
+   AddBar(bearRates, Bar(2500, 209, 201, 205));
+   Apply(bear, JINPA_STATE_IMPULSE, 2400, MARKET_CYCLE_BEAR,
+         false, true, 2400, 0, 0, 0, bearRates);
+   Check(bear.Status() == JINPA_PMA_STATUS_NONE
+         && bear.ImpulseStartTime() == 2400
+         && bear.LifecycleUsed(),
+         "REPLAY_42_CONSUMED_BEAR_IMPULSE_CANNOT_REARM_WATCH");
+
+   CPmaSetupEngine currentBase;
+   MqlRates currentRates[];
+   AddBar(currentRates, Bar(2600, 109, 101, 105));
+   Apply(currentBase, JINPA_STATE_IMPULSE, 2500, MARKET_CYCLE_BULL,
+         true, true, 2500, 2550, 110, 100, currentRates);
+   Check(currentBase.Status() == JINPA_PMA_STATUS_READY
+         && currentBase.BaseTime() == 2550,
+         "REPLAY_43_CURRENT_CONFIRMED_BASE_STILL_REBUILDS_READY");
+}
+
 int OnInit(void)
 {
    TestImpulseArming();
@@ -434,6 +466,7 @@ int OnInit(void)
    TestOnePerImpulseAndGuards();
    TestOutputArbitration();
    TestReplayParity();
+   TestStartupConsumedLatch();
    Print("[PMA_SETUP_TEST][SUMMARY] passed=", g_passed,
          " failed=", g_failed,
          " trades=0 pending=0 cancels=0 closes=0 push=0");

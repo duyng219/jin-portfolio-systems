@@ -1,5 +1,13 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 4E setup/event/output audit
+
+- Prevented startup from re-arming `bres-pma / WATCH` when the current
+  Impulse's first Micro Base has already been consumed and is no longer active.
+- Preserved startup reconstruction to `READY` when that consumed Micro Base is
+  still the currently confirmed Base for the same `ImpulseStartTime`.
+- Added Bull/Bear consumed-latch and current-Base replay regression coverage.
+
 ## v3.1 DEV — Phase 4D bres-pma Setup lifecycle
 
 - Added a dedicated `bres-pma` Impulse setup lifecycle keyed by the existing `ImpulseStartTime` authority.

@@ -634,6 +634,13 @@ over a newly armed PPF WATCH. The owning engines remain independent and only
 the final `SymbolState.setup/setupStatus` projection is arbitrated. PMA is not
 added to notification eligibility in Phase 4D.
 
+Startup rebuild uses the upstream first-confirmed-per-Impulse consumed latch.
+If the accepted Micro Base is still confirmed, PMA reconstructs `READY` from
+its current bounds. If that Base has already ended, the same
+`ImpulseStartTime` remains spent and PMA stays `NONE`; it must not re-arm a
+stale `WATCH`. Already elapsed one-bar `ACTIVE`/`INVALID` terminal displays are
+not reconstructed after restart.
+
 ## 9. Setup Status Lifecycle
 
 - `ACTIVE` remains for the trigger closed-bar cycle only; the next later
@@ -643,6 +650,21 @@ added to notification eligibility in Phase 4D.
   the ACTIVE/LEG 2 bar has already been output and notified.
 - `INVALID` remains for that closed-bar cycle; the next later closed bar clears
   to `NONE` unless another valid start occurs through normal logic.
+
+### 9.1 Startup reconstruction boundary
+
+Market State rebuilds its transition history chronologically, and Market
+Structure replays the current Impulse to restore the Micro Base consumed latch.
+The setup engines themselves are not fully event-sourced by
+`CWatchIntegration`: after initialization they receive the latest closed-bar
+snapshot once. Consequently, a current Correction can reconstruct PPF WATCH,
+but an older PPF READY candidate and a retained LEG 1/PPS chain are not
+recreated. A current Range Edge reconstructs `edge-mix / WATCH`, using the
+restart bar as its entry time; already elapsed Range ACTIVE/INVALID displays
+are not recreated. PMA reconstructs WATCH before the first accepted Micro Base,
+READY while that Base is still confirmed, and NONE after its consumed Base has
+ended. One-bar setup ACTIVE/INVALID displays that elapsed before restart are
+not replayed as current signals.
 - No-new-bar calls are rejected by `m_lastProcessedBarTime`.
 - Cycle change or unknown Cycle invalidates PPF/PPS and clears their stored
   context. PPF WATCH/READY additionally requires State `CORRECTION`. Armed PPS,

@@ -248,6 +248,18 @@ public:
          return true;
       }
 
+      // Startup can rebuild an Impulse after its first accepted Micro Base has
+      // already ended. The upstream consumed latch proves that this Impulse's
+      // single PMA opportunity is spent, so a fresh engine must not expose a
+      // new WATCH lifecycle for the same Impulse identity.
+      if(m_status == JINPA_PMA_STATUS_WATCH && microBaseConsumed)
+      {
+         m_status = JINPA_PMA_STATUS_NONE;
+         m_direction = JINPA_PMA_DIRECTION_NONE;
+         ClearBase();
+         return true;
+      }
+
       if(m_status == JINPA_PMA_STATUS_READY)
       {
          const bool sameConfirmedBase = microBaseConfirmed
