@@ -60,6 +60,9 @@ private:
     bool            m_watchEnableCoreBreakAuditLog;
     bool            m_watchShowStructureSwings;
     bool            m_watchEnableStructureNotifications;
+    bool            m_enableTelegramPush;
+    string          m_telegramBotToken;
+    string          m_telegramChatId;
 
     void            ResetContext(void);
     void            UpdateStructureConsumers(void);
@@ -73,6 +76,10 @@ public:
                                        const double coreBreakATRBuffer,
                                        const int coreBreakConfirmCloses,
                                        const bool showStructureSwings);
+    void            ConfigureNotificationTransport(
+                                       const bool enableTelegramPush,
+                                       const string telegramBotToken,
+                                       const string telegramChatId);
     void            GetStructureConfiguration(int &swingLeftBars,
                                               int &swingRightBars,
                                               int &structureATRPeriod,
@@ -101,6 +108,9 @@ CWatchIntegration::CWatchIntegration(void)
     m_watchEnableCoreBreakAuditLog   = false;
     m_watchShowStructureSwings       = true;
     m_watchEnableStructureNotifications = true;
+    m_enableTelegramPush             = false;
+    m_telegramBotToken               = "";
+    m_telegramChatId                 = "";
 
     ResetContext();
 }
@@ -125,6 +135,16 @@ bool CWatchIntegration::ConfigureStructure(const int swingLeftBars,
     m_watchShowStructureSwings    = showStructureSwings;
     m_pullbackSetupEngine.ConfigureSwingRightBars(swingRightBars);
     return true;
+}
+
+void CWatchIntegration::ConfigureNotificationTransport(
+    const bool enableTelegramPush,
+    const string telegramBotToken,
+    const string telegramChatId)
+{
+    m_enableTelegramPush = enableTelegramPush;
+    m_telegramBotToken = telegramBotToken;
+    m_telegramChatId = telegramChatId;
 }
 
 void CWatchIntegration::GetStructureConfiguration(
@@ -441,6 +461,8 @@ bool CWatchIntegration::Initialize(const string symbol, const ENUM_TIMEFRAMES ti
     m_structureNotificationManager.Configure(
         m_watchEnableStructureNotifications,
         m_watchEnableStructureAuditLog);
+    m_structureNotificationManager.ConfigureTelegram(
+        m_enableTelegramPush, m_telegramBotToken, m_telegramChatId);
 
     m_structureRenderer.Configure(m_watchShowStructureSwings);
     m_structureRenderer.Destroy();

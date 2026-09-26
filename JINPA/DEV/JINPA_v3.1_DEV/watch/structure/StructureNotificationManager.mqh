@@ -4,6 +4,7 @@
 #include "StructureTypes.mqh"
 #include "../core/WatcherTypes.mqh"
 #include "../core/WatcherLogger.mqh"
+#include "../notification/TelegramNotificationTransport.mqh"
 
 // Notification Policy v1.0. Detectors remain notification-agnostic; this
 // class owns eligibility, formatting, session deduplication and bounded send.
@@ -17,6 +18,7 @@ private:
    string m_queueIdentities[];
    string m_knownIdentities[];
    int    m_realSendAttempts;
+   CTelegramNotificationTransport m_telegramTransport;
    datetime m_policyBarTime;
    bool   m_suppressBreakout;
    bool   m_suppressCoreUpdated;
@@ -365,6 +367,12 @@ public:
       ResetClosedBarPolicy(0);
    }
 
+   void ConfigureTelegram(const bool enabled, const string botToken,
+                          const string chatId)
+   {
+      m_telegramTransport.Configure(enabled, botToken, chatId);
+   }
+
    void BeginClosedBarPolicy(const datetime closedBarTime)
    {
       if(closedBarTime != m_policyBarTime)
@@ -477,9 +485,25 @@ public:
       RemoveFirstQueuedMessage();
 
       // Eligibility and queueing still run in Strategy Tester, but the real
-      // terminal Push API is never called there.
+      // HTTP/terminal Push APIs are never called there.
       if((bool)MQLInfoInteger(MQL_TESTER))
          return;
+
+      // Phase 5C selection is intentionally not the Phase 5D fallback router:
+      // Telegram enabled means Telegram-only; disabled preserves legacy MT5.
+      if(m_telegramTransport.IsEnabled())
+      {
+         if(m_telegramTransport.Send(message))
+         {
+            if(m_enableAuditLog)
+               WatcherLog("TELEGRAM", "SEND SUCCESS | " + label);
+            return;
+         }
+         WatcherLogError("TELEGRAM | "
+                         + m_telegramTransport.StatusText()
+                         + " | event=" + identity);
+         return;
+      }
 
       ResetLastError();
       m_realSendAttempts++;
@@ -521,6 +545,11 @@ public:
    int LabProbeRealSendAttempts() const
    {
       return m_realSendAttempts;
+   }
+
+   string LabProbeTelegramStatus(void) const
+   {
+      return m_telegramTransport.StatusText();
    }
 
    void LabProbeDrainMessages(string &messages[])

@@ -1,5 +1,17 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 5C Telegram transport
+
+- Added user-configurable Telegram enable, Bot Token and Chat ID inputs and a
+  dedicated POST `WebRequest()` transport with a bounded 3000 ms timeout.
+- Added UTF-8 application/x-www-form-urlencoded encoding and HTTP plus Telegram
+  API response classification without exposing credentials in diagnostics.
+- Added deterministic configuration, encoding, security, response and Strategy
+  Tester guard coverage; tests never perform live HTTP requests.
+- Phase 5C uses Telegram-only dispatch when enabled and preserves legacy MT5
+  Push when disabled; Telegram-to-MT5 fallback and startup `[4/4]` remain for
+  Phase 5D.
+
 ## v3.1 DEV — Phase 5B unified notification policy
 
 - Added internal-lifecycle setup notifications for `bres-pmb`, `bres-pma`,

@@ -32,6 +32,7 @@ Primary audited sources:
 | Single Setup/Status output arbitration | `watch/setup/SetupOutputArbitrator.mqh` |
 | Active READY Base visualization | `watch/setup/PullbackBaseRenderer.mqh` |
 | Unified Notification Policy (Phase 5B) | `watch/structure/StructureNotificationManager.mqh` |
+| Telegram delivery transport (Phase 5C) | `watch/notification/TelegramNotificationTransport.mqh` |
 | WATCH Radar | `watch/ui/MarketRadar.mqh` |
 | Manual order bridge | `_core/infrastructure/order_executor.mqh` |
 | Risk and position/trailing management | `_core/managers/risk_manager.mqh`, `_core/managers/position_manager.mqh` |
@@ -831,19 +832,41 @@ emitted only after a valid Pivot..R3 Base is built.
   RANGE EDGE remain eligible context notifications.
 - Multiple eligible items on a bar remain queued in deterministic enqueue
   order; only one is removed/dispatched per subsequent new-bar cycle.
-- The queue item is removed before calling MT5 Push. A failed live
-  `SendNotification` is logged and is not automatically retried.
+- The queue item is removed before transport delivery. A failed live Telegram
+  or MT5 send is logged and is not automatically retried.
 - The master notification flag currently defaults to enabled internally and
   is not a user-facing input.
-- Phase 5B retains the existing direct MT5 `SendNotification()` transport. It
-  adds no Telegram transport, fallback, retry or notification Inputs.
+- Phase 5C selects Telegram-only delivery when `EnableTelegramPush=true`; it
+  does not send a duplicate MT5 Push and does not fall back after Telegram
+  failure. When Telegram is disabled, the legacy direct MT5
+  `SendNotification()` path remains unchanged. Phase 5D owns the final
+  Telegram-primary/MT5-fallback router.
 
-### 11.4 Strategy Tester
+### 11.4 Telegram transport
+
+`watch/notification/TelegramNotificationTransport.mqh` owns Telegram delivery
+only. It receives the same already formatted message used by MT5 Push and does
+not own eligibility, formatting, FIFO, dedup or market semantics. It sends a
+UTF-8, `application/x-www-form-urlencoded` POST to the Telegram Bot API
+`sendMessage` endpoint with a bounded 3000 ms timeout. Success requires a 2xx
+HTTP result and a Telegram response containing `"ok":true`.
+
+The terminal user must whitelist `https://api.telegram.org` under Tools →
+Options → Expert Advisors → Allow WebRequest for listed URL. No code tries
+to modify this terminal setting.
+
+Bot Token and Chat ID are never included in public diagnostics, Watcher logs,
+error logs or repository fixtures. The full request URL is private to the
+transport and is never logged. Configuration can report only DISABLED, missing
+Token, missing Chat ID or READY; READY means configured to attempt delivery,
+not verified connectivity. No real credentials are stored in this repository.
+
+### 11.5 Strategy Tester
 
 Tester follows the same eligibility, formatting, queue and dedup paths.
-`DispatchNext()` removes the bounded item but returns before
-`SendNotification`; therefore real Push attempts remain zero. This is a second
-guard at the transport boundary rather than a separate Tester policy.
+`DispatchNext()` removes the bounded item but returns before Telegram
+`WebRequest()` or MT5 `SendNotification`; therefore real transport attempts
+remain zero. Telegram also carries its own Tester guard as a second boundary.
 
 ## 12. Inputs / Configuration
 
@@ -875,6 +898,9 @@ guard at the transport boundary rather than a separate Tester policy.
 | `CoreBreakATRBuffer` | `0.10` | Core break threshold and Market Structure edge-distance ATR multiplier |
 | `CoreBreakConfirmCloses` | `2` | Required consecutive Core-boundary closes |
 | `ShowStructureSwings` | `true` | HH/HL/LH/LL chart annotations |
+| `EnableTelegramPush` | `true` | Select Telegram-only Phase 5C dispatch when enabled |
+| `TelegramBotToken` | `""` | Secret Telegram Bot credential; never logged |
+| `TelegramChatId` | `""` | String-safe Telegram destination; never logged by default |
 | `LogLevel` | `LOG_INFO` | Manual order-result logging |
 
 The MA is currently initialized and refreshed, but it does not drive the WATCH
@@ -951,11 +977,12 @@ pending, cancel and close counters are zero.
 | `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, confirmed-only Base history and Radar coexistence | `79 checks` |
 | `NotificationPolicyDeterministicProbe.mq5` | Six-setup eligibility, internal-lifecycle authority, same-bar semantic suppression, READY candidate identity, Base-failure WATCH suppression, formatting, FIFO/dedup and Tester guard | `54 checks` |
 | `RangeEdgeSetupDeterministicProbe.mq5` | Edge-side authority, episode identity, guards, PMB/PFB/PMR outcome/direction, consumption, lifecycle, replay symmetry and PPS single-output conflict policy | `46 checks` |
-| `PmaSetupDeterministicProbe.mq5` | Impulse identity, immutable Micro Base snapshot, Bull/Bear Close outcomes, timeout/context guards, same-bar State exit ordering, one-per-Impulse, arbitration and replay | `40 checks` |
+| `PmaSetupDeterministicProbe.mq5` | Impulse identity, immutable Micro Base snapshot, Bull/Bear Close outcomes, timeout/context guards, same-bar State exit ordering, one-per-Impulse, arbitration and replay | `43 checks` |
+| `TelegramTransportDeterministicProbe.mq5` | Configuration states, UTF-8/form encoding, secret-safe diagnostics, response classification and Tester HTTP guard | `14 checks` |
 
 All engines and probes use deterministic closed-bar timestamps. The notification
 probe requires `MQL_TESTER=true`, drains the queue, and asserts zero real
-`SendNotification` attempts. Probe summaries expect execution counters zero.
+`SendNotification`/HTTP attempts. Probe summaries expect execution counters zero.
 
 ## 15. Source Traceability
 
@@ -998,7 +1025,7 @@ baseline**:
 2. Clean up inputs and lock selected parameters.
 3. Add Auto Trade with an enable/disable input.
 4. Add trade arrows.
-5. Add Telegram transport alongside MT5 Push.
+5. Finalize Telegram-primary/MT5-fallback routing and startup `[4/4]` status.
 6. Update this SPEC after every behavior change.
 
 ## 18. Code ↔ SPEC Consistency Checklist

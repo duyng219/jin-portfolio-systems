@@ -149,6 +149,11 @@ input int                                 CoreBreakConfirmCloses     = 2;     //
 sinput group                              "──────────── STRUCTURE DISPLAY ──────────────"
 input bool                                ShowStructureSwings        = true;  // Show HH/HL/LH/LL
 
+sinput group                              "──────────── NOTIFICATIONS ─────────────"
+input bool                                EnableTelegramPush         = true;
+input string                              TelegramBotToken           = "";
+input string                              TelegramChatId             = "";
+
 sinput group                              "────────────────── LOGGING ─────────────────"
 input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;              // Log Level
 
@@ -238,6 +243,8 @@ int OnInit()
 
     orderExecutor.Initialize(_Symbol, &RM, &PM, &trade, &uiManager, params);
 
+    watchIntegration.ConfigureNotificationTransport(
+        EnableTelegramPush, TelegramBotToken, TelegramChatId);
     if(!watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period))
         Print("[JINPA][WATCH][WARN] Integration disabled — initialization failed.");
 
