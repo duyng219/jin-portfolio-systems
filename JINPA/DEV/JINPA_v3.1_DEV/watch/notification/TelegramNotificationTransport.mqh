@@ -8,6 +8,13 @@ enum ENUM_JINPA_TELEGRAM_STATE
    JINPA_TELEGRAM_READY
 };
 
+enum ENUM_JINPA_TELEGRAM_FAILURE_CLASS
+{
+   JINPA_TELEGRAM_FAILURE_NONE = 0,
+   JINPA_TELEGRAM_FAILURE_TEMPORARY,
+   JINPA_TELEGRAM_FAILURE_PERMANENT
+};
+
 // Telegram delivery only. Notification policy, formatting, FIFO and dedup
 // remain owned by CStructureNotificationManager.
 class CTelegramNotificationTransport
@@ -21,6 +28,7 @@ private:
    int    m_lastWebRequestError;
    int    m_realRequestAttempts;
    string m_lastDiagnostic;
+   ENUM_JINPA_TELEGRAM_FAILURE_CLASS m_lastFailureClass;
 
    bool IsUnreserved(const uchar value) const
    {
@@ -81,23 +89,29 @@ private:
       m_lastHttpCode = webRequestResult;
       if(webRequestResult < 0)
       {
+         m_lastFailureClass = JINPA_TELEGRAM_FAILURE_TEMPORARY;
          m_lastDiagnostic = "SEND FAILED | error="
                             + IntegerToString(m_lastWebRequestError);
          return false;
       }
       if(webRequestResult < 200 || webRequestResult >= 300)
       {
+         m_lastFailureClass = webRequestResult >= 500
+                              ? JINPA_TELEGRAM_FAILURE_TEMPORARY
+                              : JINPA_TELEGRAM_FAILURE_PERMANENT;
          m_lastDiagnostic = "SEND FAILED | HTTP="
                             + IntegerToString(webRequestResult);
          return false;
       }
       if(StringFind(CompactJson(response), "\"ok\":true") < 0)
       {
+         m_lastFailureClass = JINPA_TELEGRAM_FAILURE_PERMANENT;
          m_lastDiagnostic = "SEND FAILED | HTTP="
                             + IntegerToString(webRequestResult)
                             + " | API response not ok";
          return false;
       }
+      m_lastFailureClass = JINPA_TELEGRAM_FAILURE_NONE;
       m_lastDiagnostic = "SEND SUCCESS";
       return true;
    }
@@ -118,6 +132,7 @@ public:
       m_lastHttpCode = 0;
       m_lastWebRequestError = 0;
       m_realRequestAttempts = 0;
+      m_lastFailureClass = JINPA_TELEGRAM_FAILURE_NONE;
       if(!m_enabled)
          m_lastDiagnostic = "DISABLED";
       else if(m_botToken == "")
@@ -144,26 +159,34 @@ public:
    int LastHttpCode(void) const { return m_lastHttpCode; }
    int LastWebRequestError(void) const { return m_lastWebRequestError; }
    int RealRequestAttempts(void) const { return m_realRequestAttempts; }
+   ENUM_JINPA_TELEGRAM_FAILURE_CLASS FailureClass(void) const
+   {
+      return m_lastFailureClass;
+   }
 
    bool Send(const string message)
    {
       if(!m_enabled)
       {
+         m_lastFailureClass = JINPA_TELEGRAM_FAILURE_PERMANENT;
          m_lastDiagnostic = "DISABLED";
          return false;
       }
       if(m_botToken == "")
       {
+         m_lastFailureClass = JINPA_TELEGRAM_FAILURE_PERMANENT;
          m_lastDiagnostic = "NOT CONFIGURED | Bot Token missing";
          return false;
       }
       if(m_chatId == "")
       {
+         m_lastFailureClass = JINPA_TELEGRAM_FAILURE_PERMANENT;
          m_lastDiagnostic = "NOT CONFIGURED | Chat ID missing";
          return false;
       }
       if((bool)MQLInfoInteger(MQL_TESTER))
       {
+         m_lastFailureClass = JINPA_TELEGRAM_FAILURE_NONE;
          m_lastDiagnostic = "SUPPRESSED | Strategy Tester";
          return false;
       }

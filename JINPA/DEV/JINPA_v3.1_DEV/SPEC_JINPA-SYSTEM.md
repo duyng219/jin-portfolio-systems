@@ -4,7 +4,7 @@
 
 **Product version:** `3.10` / JINPA v3.1 DEV
 
-**Source baseline:** commit `7064e59d8b640770bd54a387d0c3da17cc79b3da` plus the Phase 5D DEV working tree
+**Source baseline:** commit `4aafffbd3bbb5d5b0bddc41d5a2769b48e9d35ef` plus the Phase 5E DEV working tree
 **Authority:** runtime source under `JINPA/DEV/JINPA_v3.1_DEV/`
 
 This is the single source-of-truth specification for JINPA v3.1 DEV. It
@@ -102,7 +102,7 @@ newer than `m_lastBarTime`. On a new current bar:
    applies Market State, Market Structure and Setup in that order.
 5. `SymbolState` and Radar are updated.
 6. New Price Structure events are consumed into the notification queue.
-7. At most one queued notification is dispatched per new-bar cycle.
+7. Up to three distinct queued notifications are dispatched per new-bar cycle.
 
 No new closed bar means no Price Structure processing, State/Structure/Setup
 transition, Radar semantic update, or notification dispatch.
@@ -831,10 +831,27 @@ emitted only after a valid Pivot..R3 Base is built.
   LEG 1; and PPS ACTIVE suppresses LEG 2. Suppression never crosses bar
   boundaries. `CYCLE_CHANGED`, `CORE_BREAK_CANDIDATE`, `SIDEWAY_CONFIRMED` and
   RANGE EDGE remain eligible context notifications.
-- Multiple eligible items on a bar remain queued in deterministic enqueue
-  order; only one is removed/dispatched per subsequent new-bar cycle.
-- The queue item is removed before transport delivery. A failed live Telegram
-  or MT5 send is logged and is not automatically retried.
+- Multiple eligible items remain queued in deterministic FIFO order. Each
+  subsequent new-bar cycle attempts at most three distinct head items.
+- Delivery peeks rather than removes the head. Success removes it. A retryable
+  failure retains the same item/identity at the head and stops that cycle, so
+  the same message is never hammered repeatedly in one cycle.
+- `retryCount` starts at zero. The first and second retryable failures set it
+  to one and two; the third failure drops the item. This is one initial attempt
+  plus two later retries, or three total attempts. There is no timer, backoff,
+  thread or immediate same-cycle retry.
+- Telegram WebRequest/network errors and HTTP 5xx are retryable. Telegram
+  client/config HTTP 4xx and non-success API responses are non-retryable. MT5
+  `SendNotification()` failure is retryable by default. No available
+  transport is non-retryable. A non-retryable head or retry-exhausted head is
+  dropped and the cycle may continue with the next item, still within the
+  three-item cap.
+- Queue capacity is 50. Enqueue at capacity drops the oldest queued item and
+  retains the newest; no event-type priority is applied.
+- Existing event/setup messages remain concise and unchanged. The current
+  formatter adds only symbol/timeframe, semantic labels/context and at most one
+  price-detail line; the audit found no transport-length risk requiring a new
+  truncation rule.
 - The master notification flag currently defaults to enabled internally and
   is not a user-facing input.
 - Phase 5D routes Telegram as primary when it is enabled and configured. A
@@ -844,8 +861,9 @@ emitted only after a valid Pivot..R3 Base is built.
 - Telegram and MT5 both disabled is a valid DEV/Tester configuration. It logs
   `WARNING: No available notification transport`, never blocks EA
   initialization, and does not stop WATCH, Radar or setup processing.
-- The queue item is still consumed before the one routing attempt. There is no
-  retry, retry queue, backoff or persistent dedup in Phase 5D.
+- Phase 5E reliability state is memory/session-only. Queue items, retry counts,
+  known identities and failed messages are not persisted across EA restart.
+  Dedup identity is unchanged during retry; retry never re-enqueues an event.
 
 ### 11.4 Telegram transport
 
@@ -881,14 +899,18 @@ initialized, one concise system notification per initialization is delivered
 directly through the router rather than the market-event FIFO. It identifies
 the symbol/timeframe and reports the resolved Telegram and MT5 enable states.
 WATCH initialization failure remains non-fatal but suppresses this ready
-message so the notification subsystem is not falsely reported as ready.
+message so the notification subsystem is not falsely reported as ready. The
+startup message remains a direct, one-shot router call: it never enters the
+market FIFO and has no Phase 5E retry queue.
 
 ### 11.6 Strategy Tester
 
 Tester follows the same eligibility, formatting, queue and dedup paths.
 The router reports `TESTER_SUPPRESSED` before Telegram `WebRequest()` or MT5
 `SendNotification()`, including for the startup message, so both real attempt
-counters remain zero. Telegram also carries its own Tester guard as a second
+counters remain zero. A suppressed FIFO head is consumed as a terminal
+test-only outcome, without retry accumulation; up to three queued items drain
+per Tester cycle. Telegram also carries its own Tester guard as a second
 boundary.
 
 ## 12. Inputs / Configuration
@@ -1004,6 +1026,7 @@ pending, cancel and close counters are zero.
 | `PmaSetupDeterministicProbe.mq5` | Impulse identity, immutable Micro Base snapshot, Bull/Bear Close outcomes, timeout/context guards, same-bar State exit ordering, one-per-Impulse, arbitration and replay | `43 checks` |
 | `TelegramTransportDeterministicProbe.mq5` | Configuration states, UTF-8/form encoding, secret-safe diagnostics, response classification and Tester HTTP guard | `14 checks` |
 | `NotificationTransportRouterDeterministicProbe.mq5` | Six-case routing matrix, attempt counts, no-broadcast rule, sanitized startup status/message, one-shot startup helper and Tester suppression | `31 checks` |
+| `NotificationReliabilityDeterministicProbe.mq5` | Success removal, bounded retry/drop, temporary/permanent classification, Tester consumption, three-item dispatch, FIFO blocking, queue cap/oldest drop, dedup and direct startup isolation | `26 checks` |
 
 All engines and probes use deterministic closed-bar timestamps. The notification
 probe requires `MQL_TESTER=true`, drains the queue, and asserts zero real
@@ -1033,8 +1056,8 @@ These are implementation facts that differ from common prior assumptions:
 This specification originated from the audited implementation baseline before
 Phase 2 and now incorporates the Phase 2 Local Swing default change:
 
-- Source commit before Phase 5D: `7064e59`
-  (full SHA `7064e59d8b640770bd54a387d0c3da17cc79b3da`).
+- Source commit before Phase 5E: `4aafffb`
+  (full SHA `4aafffbd3bbb5d5b0bddc41d5a2769b48e9d35ef`).
 - Baseline date: `2026-09-27`.
 - Product version: `3.10` / JINPA v3.1 DEV.
 - Phase 2 effective Local Swing default: `3/3`.
@@ -1050,8 +1073,8 @@ baseline**:
 2. Clean up inputs and lock selected parameters.
 3. Add Auto Trade with an enable/disable input.
 4. Add trade arrows.
-5. Add retry/error-handling semantics in a later phase; Phase 5D intentionally
-   performs one attempt with at most one MT5 fallback.
+5. Perform Phase 5F end-to-end runtime validation of the in-memory reliability
+   behavior under live transport failures.
 6. Update this SPEC after every behavior change.
 
 ## 18. Code ↔ SPEC Consistency Checklist

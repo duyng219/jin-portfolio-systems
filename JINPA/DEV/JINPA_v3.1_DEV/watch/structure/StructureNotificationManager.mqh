@@ -6,6 +6,10 @@
 #include "../core/WatcherLogger.mqh"
 #include "../notification/NotificationTransportRouter.mqh"
 
+#define JINPA_NOTIFICATION_MAX_RETRY          2
+#define JINPA_NOTIFICATION_MAX_DISPATCH       3
+#define JINPA_NOTIFICATION_MAX_QUEUE_SIZE    50
+
 // Notification Policy v1.0. Detectors remain notification-agnostic; this
 // class owns eligibility, formatting, session deduplication and bounded send.
 class CStructureNotificationManager
@@ -16,6 +20,7 @@ private:
    string m_queueMessages[];
    string m_queueLabels[];
    string m_queueIdentities[];
+   int    m_queueRetryCounts[];
    string m_knownIdentities[];
    CNotificationTransportRouter m_transportRouter;
    datetime m_policyBarTime;
@@ -313,6 +318,15 @@ private:
          || IsKnownIdentity(identity))
          return false;
 
+      if(ArraySize(m_queueMessages) >= JINPA_NOTIFICATION_MAX_QUEUE_SIZE)
+      {
+         RemoveFirstQueuedMessage();
+         WatcherLogWarning("NOTIFICATION QUEUE FULL | dropped oldest"
+                           " | size="
+                           + IntegerToString(
+                              JINPA_NOTIFICATION_MAX_QUEUE_SIZE));
+      }
+
       int index = ArraySize(m_knownIdentities);
       ArrayResize(m_knownIdentities, index + 1);
       m_knownIdentities[index] = identity;
@@ -321,9 +335,11 @@ private:
       ArrayResize(m_queueMessages, index + 1);
       ArrayResize(m_queueLabels, index + 1);
       ArrayResize(m_queueIdentities, index + 1);
+      ArrayResize(m_queueRetryCounts, index + 1);
       m_queueMessages[index] = message;
       m_queueLabels[index] = label;
       m_queueIdentities[index] = identity;
+      m_queueRetryCounts[index] = 0;
 
       if(m_enableAuditLog)
          WatcherLog("PUSH_QUEUE", label);
@@ -338,11 +354,72 @@ private:
          m_queueMessages[index - 1] = m_queueMessages[index];
          m_queueLabels[index - 1] = m_queueLabels[index];
          m_queueIdentities[index - 1] = m_queueIdentities[index];
+         m_queueRetryCounts[index - 1] = m_queueRetryCounts[index];
       }
       const int nextSize = MathMax(0, count - 1);
       ArrayResize(m_queueMessages, nextSize);
       ArrayResize(m_queueLabels, nextSize);
       ArrayResize(m_queueIdentities, nextSize);
+      ArrayResize(m_queueRetryCounts, nextSize);
+   }
+
+   bool ApplyHeadOutcome(
+      const ENUM_JINPA_NOTIFICATION_ROUTE_RESULT result,
+      const ENUM_JINPA_NOTIFICATION_DELIVERY_CLASS classification,
+      const string failureReason = "")
+   {
+      if(ArraySize(m_queueMessages) == 0)
+         return true;
+
+      const string label = m_queueLabels[0];
+      const string identity = m_queueIdentities[0];
+      if(classification == JINPA_DELIVERY_SUCCESS)
+      {
+         RemoveFirstQueuedMessage();
+         if(m_enableAuditLog)
+            WatcherLog("PUSH_SEND", label + " | "
+                       + JinpaNotificationRouteResultText(result));
+         return true;
+      }
+
+      // Tester suppression is a terminal test-only outcome. Consuming it
+      // prevents an intentionally disabled real transport from building an
+      // endless retry queue during deterministic replay.
+      if(classification == JINPA_DELIVERY_TESTER_SUPPRESSED)
+      {
+         RemoveFirstQueuedMessage();
+         return true;
+      }
+
+      if(classification == JINPA_DELIVERY_NON_RETRYABLE_FAILURE)
+      {
+         WatcherLogWarning(
+            "NOTIFICATION | DROPPED | non-retryable failure | event="
+            + identity + " | result="
+            + JinpaNotificationRouteResultText(result)
+            + (failureReason == "" ? "" : " | reason=" + failureReason));
+         RemoveFirstQueuedMessage();
+         return true;
+      }
+
+      // retryCount is retries consumed after the initial attempt. Values 1
+      // and 2 retain the head; the next failure is total attempt 3 and drops.
+      if(m_queueRetryCounts[0] < JINPA_NOTIFICATION_MAX_RETRY)
+      {
+         m_queueRetryCounts[0]++;
+         WatcherLogWarning("NOTIFICATION | RETRY | event=" + identity
+                           + " | retry="
+                           + IntegerToString(m_queueRetryCounts[0]) + "/"
+                           + IntegerToString(
+                              JINPA_NOTIFICATION_MAX_RETRY));
+         return false;
+      }
+
+      WatcherLogWarning(
+         "NOTIFICATION | DROPPED | retry limit exceeded | event="
+         + identity);
+      RemoveFirstQueuedMessage();
+      return true;
    }
 
 public:
@@ -360,6 +437,7 @@ public:
       ArrayResize(m_queueMessages, 0);
       ArrayResize(m_queueLabels, 0);
       ArrayResize(m_queueIdentities, 0);
+      ArrayResize(m_queueRetryCounts, 0);
       ArrayResize(m_knownIdentities, 0);
       ResetClosedBarPolicy(0);
    }
@@ -476,39 +554,19 @@ public:
 
    void DispatchNext()
    {
-      if(ArraySize(m_queueMessages) == 0)
-         return;
-
-      const string message = m_queueMessages[0];
-      const string label = m_queueLabels[0];
-      const string identity = m_queueIdentities[0];
-      RemoveFirstQueuedMessage();
-
-      const ENUM_JINPA_NOTIFICATION_ROUTE_RESULT result =
-         m_transportRouter.Route(message);
-      if(result == JINPA_ROUTE_TESTER_SUPPRESSED)
-         return;
-      if(result == JINPA_ROUTE_NO_TRANSPORT_AVAILABLE)
+      int processed = 0;
+      while(processed < JINPA_NOTIFICATION_MAX_DISPATCH
+            && ArraySize(m_queueMessages) > 0)
       {
-         WatcherLogWarning("No available notification transport");
-         return;
+         const ENUM_JINPA_NOTIFICATION_ROUTE_RESULT result =
+            m_transportRouter.Route(m_queueMessages[0]);
+         const ENUM_JINPA_NOTIFICATION_DELIVERY_CLASS classification =
+            m_transportRouter.Classify(result);
+         processed++;
+         if(!ApplyHeadOutcome(result, classification,
+                              m_transportRouter.FailureReason(result)))
+            break;
       }
-      if(result == JINPA_ROUTE_ALL_TRANSPORTS_FAILED)
-      {
-         if(m_transportRouter.LastTelegramAttempted())
-            WatcherLogError("TELEGRAM | "
-                            + m_transportRouter.TelegramDiagnostic()
-                            + " | event=" + identity);
-         if(m_transportRouter.LastMt5Attempted())
-            WatcherLogError("MT5 PUSH | SEND FAILED | error="
-                            + IntegerToString(
-                               m_transportRouter.LastMt5Error())
-                            + " | event=" + identity);
-         return;
-      }
-      if(m_enableAuditLog)
-         WatcherLog("PUSH_SEND", label + " | "
-                    + JinpaNotificationRouteResultText(result));
    }
 
    string TransportStatus(void) const
@@ -570,6 +628,52 @@ public:
    int LabProbeKnownIdentityCount() const
    {
       return ArraySize(m_knownIdentities);
+   }
+
+   int LabProbeHeadRetryCount(void) const
+   {
+      return ArraySize(m_queueRetryCounts) > 0 ? m_queueRetryCounts[0] : -1;
+   }
+
+   string LabProbeQueueIdentity(const int index) const
+   {
+      if(index < 0 || index >= ArraySize(m_queueIdentities))
+         return "";
+      return m_queueIdentities[index];
+   }
+
+   int LabProbeMaxRetry(void) const
+   {
+      return JINPA_NOTIFICATION_MAX_RETRY;
+   }
+
+   int LabProbeMaxDispatchPerCycle(void) const
+   {
+      return JINPA_NOTIFICATION_MAX_DISPATCH;
+   }
+
+   int LabProbeMaxQueueSize(void) const
+   {
+      return JINPA_NOTIFICATION_MAX_QUEUE_SIZE;
+   }
+
+   void LabProbeDispatchCycle(
+      const ENUM_JINPA_NOTIFICATION_ROUTE_RESULT &results[],
+      const ENUM_JINPA_NOTIFICATION_DELIVERY_CLASS &classifications[])
+   {
+      const int available = MathMin(ArraySize(results),
+                                    ArraySize(classifications));
+      int processed = 0;
+      while(processed < JINPA_NOTIFICATION_MAX_DISPATCH
+            && processed < available
+            && ArraySize(m_queueMessages) > 0)
+      {
+         const bool keepDispatching = ApplyHeadOutcome(
+            results[processed], classifications[processed]);
+         processed++;
+         if(!keepDispatching)
+            break;
+      }
    }
 
    int LabProbeRealSendAttempts() const

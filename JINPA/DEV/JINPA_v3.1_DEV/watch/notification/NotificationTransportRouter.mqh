@@ -13,6 +13,14 @@ enum ENUM_JINPA_NOTIFICATION_ROUTE_RESULT
    JINPA_ROUTE_TESTER_SUPPRESSED
 };
 
+enum ENUM_JINPA_NOTIFICATION_DELIVERY_CLASS
+{
+   JINPA_DELIVERY_SUCCESS = 0,
+   JINPA_DELIVERY_RETRYABLE_FAILURE,
+   JINPA_DELIVERY_NON_RETRYABLE_FAILURE,
+   JINPA_DELIVERY_TESTER_SUPPRESSED
+};
+
 // Delivery routing only. Policy, formatting, FIFO and dedup remain owned by
 // CStructureNotificationManager.
 class CNotificationTransportRouter
@@ -25,15 +33,19 @@ private:
    int    m_lastMt5Error;
    bool   m_lastTelegramAttempted;
    bool   m_lastMt5Attempted;
+   ENUM_JINPA_TELEGRAM_FAILURE_CLASS m_lastTelegramFailureClass;
    bool   m_startupHandled;
    ENUM_JINPA_NOTIFICATION_ROUTE_RESULT m_startupResult;
 
    ENUM_JINPA_NOTIFICATION_ROUTE_RESULT RouteInternal(
       const string message, const bool injected,
-      const bool telegramSuccess, const bool mt5Success)
+      const bool telegramSuccess, const bool mt5Success,
+      const ENUM_JINPA_TELEGRAM_FAILURE_CLASS injectedTelegramFailure)
    {
       m_lastTelegramAttempted = false;
       m_lastMt5Attempted = false;
+      m_lastTelegramFailureClass = JINPA_TELEGRAM_FAILURE_NONE;
+      m_lastMt5Error = 0;
       if(!injected && (bool)MQLInfoInteger(MQL_TESTER))
          return JINPA_ROUTE_TESTER_SUPPRESSED;
 
@@ -45,6 +57,9 @@ private:
                                     : m_telegram.Send(message);
          if(sent)
             return JINPA_ROUTE_TELEGRAM_SUCCESS;
+         m_lastTelegramFailureClass = injected
+                                      ? injectedTelegramFailure
+                                      : m_telegram.FailureClass();
          if(!m_enableMt5Push)
             return JINPA_ROUTE_ALL_TRANSPORTS_FAILED;
 
@@ -79,6 +94,7 @@ public:
       m_lastMt5Error = 0;
       m_lastTelegramAttempted = false;
       m_lastMt5Attempted = false;
+      m_lastTelegramFailureClass = JINPA_TELEGRAM_FAILURE_NONE;
       m_startupHandled = false;
       m_startupResult = JINPA_ROUTE_NO_TRANSPORT_AVAILABLE;
    }
@@ -96,13 +112,15 @@ public:
       m_lastMt5Error = 0;
       m_lastTelegramAttempted = false;
       m_lastMt5Attempted = false;
+      m_lastTelegramFailureClass = JINPA_TELEGRAM_FAILURE_NONE;
       m_startupHandled = false;
       m_startupResult = JINPA_ROUTE_NO_TRANSPORT_AVAILABLE;
    }
 
    ENUM_JINPA_NOTIFICATION_ROUTE_RESULT Route(const string message)
    {
-      return RouteInternal(message, false, false, false);
+      return RouteInternal(message, false, false, false,
+                           JINPA_TELEGRAM_FAILURE_NONE);
    }
 
    ENUM_JINPA_NOTIFICATION_ROUTE_RESULT RouteStartup(const string message)
@@ -170,11 +188,53 @@ public:
    int Mt5AttemptCount(void) const { return m_mt5Attempts; }
    bool StartupHandled(void) const { return m_startupHandled; }
 
+   string FailureReason(
+      const ENUM_JINPA_NOTIFICATION_ROUTE_RESULT result) const
+   {
+      if(result == JINPA_ROUTE_NO_TRANSPORT_AVAILABLE)
+         return "NO TRANSPORT AVAILABLE";
+      if(m_lastTelegramAttempted && !m_lastMt5Attempted)
+         return "TELEGRAM " + m_telegram.StatusText();
+      if(m_lastMt5Attempted)
+         return "MT5 PUSH SEND FAILED error="
+                + IntegerToString(m_lastMt5Error);
+      return "ALL TRANSPORTS FAILED";
+   }
+
+   ENUM_JINPA_NOTIFICATION_DELIVERY_CLASS Classify(
+      const ENUM_JINPA_NOTIFICATION_ROUTE_RESULT result) const
+   {
+      if(result == JINPA_ROUTE_TELEGRAM_SUCCESS
+         || result == JINPA_ROUTE_MT5_SUCCESS
+         || result == JINPA_ROUTE_TELEGRAM_FAILED_MT5_SUCCESS)
+         return JINPA_DELIVERY_SUCCESS;
+      if(result == JINPA_ROUTE_TESTER_SUPPRESSED)
+         return JINPA_DELIVERY_TESTER_SUPPRESSED;
+      if(result == JINPA_ROUTE_NO_TRANSPORT_AVAILABLE)
+         return JINPA_DELIVERY_NON_RETRYABLE_FAILURE;
+      if(m_lastMt5Attempted)
+         return JINPA_DELIVERY_RETRYABLE_FAILURE;
+      if(m_lastTelegramAttempted
+         && m_lastTelegramFailureClass
+            == JINPA_TELEGRAM_FAILURE_TEMPORARY)
+         return JINPA_DELIVERY_RETRYABLE_FAILURE;
+      return JINPA_DELIVERY_NON_RETRYABLE_FAILURE;
+   }
+
    // Deterministic injection seams: no HTTP or terminal Push API is called.
    ENUM_JINPA_NOTIFICATION_ROUTE_RESULT LabProbeRoute(
       const bool telegramSuccess, const bool mt5Success)
    {
-      return RouteInternal("probe", true, telegramSuccess, mt5Success);
+      return RouteInternal("probe", true, telegramSuccess, mt5Success,
+                           JINPA_TELEGRAM_FAILURE_TEMPORARY);
+   }
+
+   ENUM_JINPA_NOTIFICATION_ROUTE_RESULT LabProbeRouteClassified(
+      const bool telegramSuccess, const bool mt5Success,
+      const ENUM_JINPA_TELEGRAM_FAILURE_CLASS telegramFailure)
+   {
+      return RouteInternal("probe", true, telegramSuccess, mt5Success,
+                           telegramFailure);
    }
 
    ENUM_JINPA_NOTIFICATION_ROUTE_RESULT LabProbeRouteStartup(
@@ -184,7 +244,8 @@ public:
          return m_startupResult;
       m_startupHandled = true;
       m_startupResult = RouteInternal("startup probe", true,
-                                      telegramSuccess, mt5Success);
+                                      telegramSuccess, mt5Success,
+                                      JINPA_TELEGRAM_FAILURE_TEMPORARY);
       return m_startupResult;
    }
 };

@@ -1,5 +1,21 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 5E notification reliability
+
+- Changed FIFO delivery to remove only after success or terminal handling;
+  retryable failure retains the same head item and identity.
+- Added two bounded retries after the initial attempt, for three maximum total
+  attempts on later closed-bar dispatch opportunities.
+- Added minimal temporary/permanent failure classification: network/HTTP 5xx
+  and MT5 failures retry; clear Telegram 4xx/config and no-transport outcomes
+  do not.
+- Increased bounded processing to three distinct FIFO items per closed-bar
+  cycle while preserving head blocking on retryable failure.
+- Capped the in-memory queue at 50 items; overflow drops the oldest and keeps
+  the newest. Queue, retry and dedup state remain non-persistent.
+- Added deterministic reliability coverage. Startup remains direct and
+  non-retried; Phase 5B policy, Phase 5D routing and LIVE remain unchanged.
+
 ## v3.1 DEV — Phase 5D transport router and startup validation
 
 - Added the final Telegram-primary/MT5-fallback router and the
