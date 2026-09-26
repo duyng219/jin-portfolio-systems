@@ -63,6 +63,7 @@ private:
     bool            m_enableTelegramPush;
     string          m_telegramBotToken;
     string          m_telegramChatId;
+    bool            m_enableMt5Push;
 
     void            ResetContext(void);
     void            UpdateStructureConsumers(void);
@@ -79,7 +80,12 @@ public:
     void            ConfigureNotificationTransport(
                                        const bool enableTelegramPush,
                                        const string telegramBotToken,
-                                       const string telegramChatId);
+                                       const string telegramChatId,
+                                       const bool enableMt5Push);
+    string          NotificationTransportStatus(void) const;
+    string          NotificationConfigurationReason(void) const;
+    bool            HasAvailableNotificationTransport(void) const;
+    ENUM_JINPA_NOTIFICATION_ROUTE_RESULT SendStartupNotification(void);
     void            GetStructureConfiguration(int &swingLeftBars,
                                               int &swingRightBars,
                                               int &structureATRPeriod,
@@ -111,6 +117,7 @@ CWatchIntegration::CWatchIntegration(void)
     m_enableTelegramPush             = false;
     m_telegramBotToken               = "";
     m_telegramChatId                 = "";
+    m_enableMt5Push                  = false;
 
     ResetContext();
 }
@@ -140,11 +147,40 @@ bool CWatchIntegration::ConfigureStructure(const int swingLeftBars,
 void CWatchIntegration::ConfigureNotificationTransport(
     const bool enableTelegramPush,
     const string telegramBotToken,
-    const string telegramChatId)
+    const string telegramChatId,
+    const bool enableMt5Push)
 {
     m_enableTelegramPush = enableTelegramPush;
     m_telegramBotToken = telegramBotToken;
     m_telegramChatId = telegramChatId;
+    m_enableMt5Push = enableMt5Push;
+    m_structureNotificationManager.ConfigureTransports(
+       m_enableTelegramPush, m_telegramBotToken, m_telegramChatId,
+       m_enableMt5Push);
+}
+
+string CWatchIntegration::NotificationTransportStatus(void) const
+{
+    return m_structureNotificationManager.TransportStatus();
+}
+
+string CWatchIntegration::NotificationConfigurationReason(void) const
+{
+    return m_structureNotificationManager.TransportConfigurationReason();
+}
+
+bool CWatchIntegration::HasAvailableNotificationTransport(void) const
+{
+    return m_structureNotificationManager.HasAvailableTransport();
+}
+
+ENUM_JINPA_NOTIFICATION_ROUTE_RESULT
+CWatchIntegration::SendStartupNotification(void)
+{
+    if(!m_enabled)
+        return JINPA_ROUTE_NO_TRANSPORT_AVAILABLE;
+    return m_structureNotificationManager.SendStartupNotification(
+       m_symbol, m_timeframe);
 }
 
 void CWatchIntegration::GetStructureConfiguration(
@@ -461,8 +497,9 @@ bool CWatchIntegration::Initialize(const string symbol, const ENUM_TIMEFRAMES ti
     m_structureNotificationManager.Configure(
         m_watchEnableStructureNotifications,
         m_watchEnableStructureAuditLog);
-    m_structureNotificationManager.ConfigureTelegram(
-        m_enableTelegramPush, m_telegramBotToken, m_telegramChatId);
+    m_structureNotificationManager.ConfigureTransports(
+        m_enableTelegramPush, m_telegramBotToken, m_telegramChatId,
+        m_enableMt5Push);
 
     m_structureRenderer.Configure(m_watchShowStructureSwings);
     m_structureRenderer.Destroy();

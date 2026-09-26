@@ -1,5 +1,19 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 5D transport router and startup validation
+
+- Added the final Telegram-primary/MT5-fallback router and the
+  `EnableMT5Push=false` input. Telegram success never broadcasts to MT5;
+  Telegram failure falls back only when MT5 Push is enabled.
+- Added sanitized startup `INPUT 4/4` transport status and a one-shot startup
+  system notification routed outside the normal market-event FIFO.
+- Made Telegram/MT5 both OFF a valid warning-only DEV/Tester mode that never
+  blocks EA initialization, WATCH, Radar or setup processing.
+- Added deterministic six-case router, attempt-count, no-broadcast, startup
+  format/one-shot and Tester-suppression coverage without live transport calls.
+- Preserved Phase 5B policy, FIFO/dedup and one-dispatch-per-bar behavior. No
+  retry/backoff was added; LIVE remains unchanged.
+
 ## v3.1 DEV — Phase 5C Telegram transport
 
 - Added user-configurable Telegram enable, Bot Token and Chat ID inputs and a

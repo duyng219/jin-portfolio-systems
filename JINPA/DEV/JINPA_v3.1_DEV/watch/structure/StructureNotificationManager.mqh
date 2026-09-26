@@ -4,7 +4,7 @@
 #include "StructureTypes.mqh"
 #include "../core/WatcherTypes.mqh"
 #include "../core/WatcherLogger.mqh"
-#include "../notification/TelegramNotificationTransport.mqh"
+#include "../notification/NotificationTransportRouter.mqh"
 
 // Notification Policy v1.0. Detectors remain notification-agnostic; this
 // class owns eligibility, formatting, session deduplication and bounded send.
@@ -17,8 +17,7 @@ private:
    string m_queueLabels[];
    string m_queueIdentities[];
    string m_knownIdentities[];
-   int    m_realSendAttempts;
-   CTelegramNotificationTransport m_telegramTransport;
+   CNotificationTransportRouter m_transportRouter;
    datetime m_policyBarTime;
    bool   m_suppressBreakout;
    bool   m_suppressCoreUpdated;
@@ -351,7 +350,6 @@ public:
    {
       m_enabled = true;
       m_enableAuditLog = false;
-      m_realSendAttempts = 0;
       ResetClosedBarPolicy(0);
    }
 
@@ -359,7 +357,6 @@ public:
    {
       m_enabled = enabled;
       m_enableAuditLog = enableAuditLog;
-      m_realSendAttempts = 0;
       ArrayResize(m_queueMessages, 0);
       ArrayResize(m_queueLabels, 0);
       ArrayResize(m_queueIdentities, 0);
@@ -367,10 +364,13 @@ public:
       ResetClosedBarPolicy(0);
    }
 
-   void ConfigureTelegram(const bool enabled, const string botToken,
-                          const string chatId)
+   void ConfigureTransports(const bool enableTelegramPush,
+                            const string telegramBotToken,
+                            const string telegramChatId,
+                            const bool enableMt5Push)
    {
-      m_telegramTransport.Configure(enabled, botToken, chatId);
+      m_transportRouter.Configure(enableTelegramPush, telegramBotToken,
+                                  telegramChatId, enableMt5Push);
    }
 
    void BeginClosedBarPolicy(const datetime closedBarTime)
@@ -484,42 +484,72 @@ public:
       const string identity = m_queueIdentities[0];
       RemoveFirstQueuedMessage();
 
-      // Eligibility and queueing still run in Strategy Tester, but the real
-      // HTTP/terminal Push APIs are never called there.
-      if((bool)MQLInfoInteger(MQL_TESTER))
+      const ENUM_JINPA_NOTIFICATION_ROUTE_RESULT result =
+         m_transportRouter.Route(message);
+      if(result == JINPA_ROUTE_TESTER_SUPPRESSED)
          return;
-
-      // Phase 5C selection is intentionally not the Phase 5D fallback router:
-      // Telegram enabled means Telegram-only; disabled preserves legacy MT5.
-      if(m_telegramTransport.IsEnabled())
+      if(result == JINPA_ROUTE_NO_TRANSPORT_AVAILABLE)
       {
-         if(m_telegramTransport.Send(message))
-         {
-            if(m_enableAuditLog)
-               WatcherLog("TELEGRAM", "SEND SUCCESS | " + label);
-            return;
-         }
-         WatcherLogError("TELEGRAM | "
-                         + m_telegramTransport.StatusText()
-                         + " | event=" + identity);
+         WatcherLogWarning("No available notification transport");
          return;
       }
-
-      ResetLastError();
-      m_realSendAttempts++;
-      if(SendNotification(message))
+      if(result == JINPA_ROUTE_ALL_TRANSPORTS_FAILED)
       {
-         if(m_enableAuditLog)
-            WatcherLog("PUSH_SEND", label + " | SUCCESS");
+         if(m_transportRouter.LastTelegramAttempted())
+            WatcherLogError("TELEGRAM | "
+                            + m_transportRouter.TelegramDiagnostic()
+                            + " | event=" + identity);
+         if(m_transportRouter.LastMt5Attempted())
+            WatcherLogError("MT5 PUSH | SEND FAILED | error="
+                            + IntegerToString(
+                               m_transportRouter.LastMt5Error())
+                            + " | event=" + identity);
          return;
       }
-
-      const int errorCode = GetLastError();
-      WatcherLogError("Notification failed | event=" + identity
-                      + " | error=" + IntegerToString(errorCode));
       if(m_enableAuditLog)
-         WatcherLog("PUSH_SEND", label + " | FAILED | error="
-                    + IntegerToString(errorCode));
+         WatcherLog("PUSH_SEND", label + " | "
+                    + JinpaNotificationRouteResultText(result));
+   }
+
+   string TransportStatus(void) const
+   {
+      return m_transportRouter.StatusText();
+   }
+
+   string TransportConfigurationReason(void) const
+   {
+      return m_transportRouter.ConfigurationReason();
+   }
+
+   bool HasAvailableTransport(void) const
+   {
+      return m_transportRouter.HasAvailableTransport();
+   }
+
+   ENUM_JINPA_NOTIFICATION_ROUTE_RESULT SendStartupNotification(
+      const string symbol, const ENUM_TIMEFRAMES timeframe)
+   {
+      const ENUM_JINPA_NOTIFICATION_ROUTE_RESULT result =
+         m_transportRouter.RouteStartup(
+         m_transportRouter.StartupMessage(
+            symbol, WatcherTimeframeToString(timeframe)));
+      if(result == JINPA_ROUTE_ALL_TRANSPORTS_FAILED)
+      {
+         if(m_transportRouter.LastTelegramAttempted())
+            WatcherLogError("TELEGRAM | "
+                            + m_transportRouter.TelegramDiagnostic()
+                            + " | event=STARTUP");
+         if(m_transportRouter.LastMt5Attempted())
+            WatcherLogError("MT5 PUSH | SEND FAILED | error="
+                            + IntegerToString(
+                               m_transportRouter.LastMt5Error())
+                            + " | event=STARTUP");
+      }
+      else if(result != JINPA_ROUTE_TESTER_SUPPRESSED
+              && result != JINPA_ROUTE_NO_TRANSPORT_AVAILABLE)
+         WatcherLog("NOTIFICATION STARTUP",
+                    JinpaNotificationRouteResultText(result));
+      return result;
    }
 
    bool LabProbeEligible(const StructureEvent &event) const
@@ -544,12 +574,12 @@ public:
 
    int LabProbeRealSendAttempts() const
    {
-      return m_realSendAttempts;
+      return m_transportRouter.Mt5AttemptCount();
    }
 
    string LabProbeTelegramStatus(void) const
    {
-      return m_telegramTransport.StatusText();
+      return m_transportRouter.TelegramDiagnostic();
    }
 
    void LabProbeDrainMessages(string &messages[])

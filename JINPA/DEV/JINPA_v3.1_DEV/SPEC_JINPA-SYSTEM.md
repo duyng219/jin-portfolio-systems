@@ -1,10 +1,10 @@
 # SPEC — JINPA_v3.1_DEV Current System Baseline
 
-**Baseline date:** 2026-09-22
+**Baseline date:** 2026-09-27
 
 **Product version:** `3.10` / JINPA v3.1 DEV
 
-**Source baseline:** commit `3a8fe8cc4a343a23bee9f94a6f154a8bb5210f52` (`feat(jinpa): implement notification policy v1.0`)
+**Source baseline:** commit `7064e59d8b640770bd54a387d0c3da17cc79b3da` plus the Phase 5D DEV working tree
 **Authority:** runtime source under `JINPA/DEV/JINPA_v3.1_DEV/`
 
 This is the single source-of-truth specification for JINPA v3.1 DEV. It
@@ -33,6 +33,7 @@ Primary audited sources:
 | Active READY Base visualization | `watch/setup/PullbackBaseRenderer.mqh` |
 | Unified Notification Policy (Phase 5B) | `watch/structure/StructureNotificationManager.mqh` |
 | Telegram delivery transport (Phase 5C) | `watch/notification/TelegramNotificationTransport.mqh` |
+| Notification transport router (Phase 5D) | `watch/notification/NotificationTransportRouter.mqh` |
 | WATCH Radar | `watch/ui/MarketRadar.mqh` |
 | Manual order bridge | `_core/infrastructure/order_executor.mqh` |
 | Risk and position/trailing management | `_core/managers/risk_manager.mqh`, `_core/managers/position_manager.mqh` |
@@ -836,11 +837,15 @@ emitted only after a valid Pivot..R3 Base is built.
   or MT5 send is logged and is not automatically retried.
 - The master notification flag currently defaults to enabled internally and
   is not a user-facing input.
-- Phase 5C selects Telegram-only delivery when `EnableTelegramPush=true`; it
-  does not send a duplicate MT5 Push and does not fall back after Telegram
-  failure. When Telegram is disabled, the legacy direct MT5
-  `SendNotification()` path remains unchanged. Phase 5D owns the final
-  Telegram-primary/MT5-fallback router.
+- Phase 5D routes Telegram as primary when it is enabled and configured. A
+  successful Telegram send ends delivery without broadcasting to MT5. A
+  failed Telegram attempt falls back once to MT5 only when `EnableMT5Push` is
+  true. Disabled or unconfigured Telegram routes directly to enabled MT5.
+- Telegram and MT5 both disabled is a valid DEV/Tester configuration. It logs
+  `WARNING: No available notification transport`, never blocks EA
+  initialization, and does not stop WATCH, Radar or setup processing.
+- The queue item is still consumed before the one routing attempt. There is no
+  retry, retry queue, backoff or persistent dedup in Phase 5D.
 
 ### 11.4 Telegram transport
 
@@ -861,12 +866,30 @@ transport and is never logged. Configuration can report only DISABLED, missing
 Token, missing Chat ID or READY; READY means configured to attempt delivery,
 not verified connectivity. No real credentials are stored in this repository.
 
-### 11.5 Strategy Tester
+### 11.5 Transport startup and status
+
+The fourth startup input line is a sanitized routing summary:
+
+```text
+[JINPA v3.1 DEV INPUT 4/4] Telegram={OFF|ON/NOT CONFIGURED|ON/READY} | MT5={OFF|ON} | Primary={NONE|TELEGRAM|MT5} | Fallback={NONE|MT5}
+```
+
+The first three startup lines retain their previous content and are numbered
+`1/4`, `2/4`, and `3/4`. Missing Telegram fields may add only a sanitized
+reason; no credential value is printed. Once the EA and WATCH integration have
+initialized, one concise system notification per initialization is delivered
+directly through the router rather than the market-event FIFO. It identifies
+the symbol/timeframe and reports the resolved Telegram and MT5 enable states.
+WATCH initialization failure remains non-fatal but suppresses this ready
+message so the notification subsystem is not falsely reported as ready.
+
+### 11.6 Strategy Tester
 
 Tester follows the same eligibility, formatting, queue and dedup paths.
-`DispatchNext()` removes the bounded item but returns before Telegram
-`WebRequest()` or MT5 `SendNotification`; therefore real transport attempts
-remain zero. Telegram also carries its own Tester guard as a second boundary.
+The router reports `TESTER_SUPPRESSED` before Telegram `WebRequest()` or MT5
+`SendNotification()`, including for the startup message, so both real attempt
+counters remain zero. Telegram also carries its own Tester guard as a second
+boundary.
 
 ## 12. Inputs / Configuration
 
@@ -898,9 +921,10 @@ remain zero. Telegram also carries its own Tester guard as a second boundary.
 | `CoreBreakATRBuffer` | `0.10` | Core break threshold and Market Structure edge-distance ATR multiplier |
 | `CoreBreakConfirmCloses` | `2` | Required consecutive Core-boundary closes |
 | `ShowStructureSwings` | `true` | HH/HL/LH/LL chart annotations |
-| `EnableTelegramPush` | `true` | Select Telegram-only Phase 5C dispatch when enabled |
+| `EnableTelegramPush` | `true` | Enable Telegram as primary when fully configured |
 | `TelegramBotToken` | `""` | Secret Telegram Bot credential; never logged |
 | `TelegramChatId` | `""` | String-safe Telegram destination; never logged by default |
+| `EnableMT5Push` | `false` | Enable MT5 Push as direct transport or Telegram fallback |
 | `LogLevel` | `LOG_INFO` | Manual order-result logging |
 
 The MA is currently initialized and refreshed, but it does not drive the WATCH
@@ -920,8 +944,8 @@ engines or automatic entry decisions.
 | Radar | enabled, bottom-right, x=15, y=20, row=20, font=9 | Internal |
 
 The public Structure inputs override the corresponding integration defaults
-before Price Structure initialization. There is currently no user-facing
-notification enable/disable input.
+before Price Structure initialization. Transport availability is optional and
+is never an EA-health or initialization requirement.
 
 ## 13. Execution Boundary
 
@@ -979,6 +1003,7 @@ pending, cancel and close counters are zero.
 | `RangeEdgeSetupDeterministicProbe.mq5` | Edge-side authority, episode identity, guards, PMB/PFB/PMR outcome/direction, consumption, lifecycle, replay symmetry and PPS single-output conflict policy | `46 checks` |
 | `PmaSetupDeterministicProbe.mq5` | Impulse identity, immutable Micro Base snapshot, Bull/Bear Close outcomes, timeout/context guards, same-bar State exit ordering, one-per-Impulse, arbitration and replay | `43 checks` |
 | `TelegramTransportDeterministicProbe.mq5` | Configuration states, UTF-8/form encoding, secret-safe diagnostics, response classification and Tester HTTP guard | `14 checks` |
+| `NotificationTransportRouterDeterministicProbe.mq5` | Six-case routing matrix, attempt counts, no-broadcast rule, sanitized startup status/message, one-shot startup helper and Tester suppression | `31 checks` |
 
 All engines and probes use deterministic closed-bar timestamps. The notification
 probe requires `MQL_TESTER=true`, drains the queue, and asserts zero real
@@ -1008,9 +1033,9 @@ These are implementation facts that differ from common prior assumptions:
 This specification originated from the audited implementation baseline before
 Phase 2 and now incorporates the Phase 2 Local Swing default change:
 
-- Baseline commit: `3a8fe8c`
-  (full SHA `3a8fe8cc4a343a23bee9f94a6f154a8bb5210f52`).
-- Baseline date: `2026-09-22`.
+- Source commit before Phase 5D: `7064e59`
+  (full SHA `7064e59d8b640770bd54a387d0c3da17cc79b3da`).
+- Baseline date: `2026-09-27`.
 - Product version: `3.10` / JINPA v3.1 DEV.
 - Phase 2 effective Local Swing default: `3/3`.
 - Runtime authority: current source under
@@ -1025,7 +1050,8 @@ baseline**:
 2. Clean up inputs and lock selected parameters.
 3. Add Auto Trade with an enable/disable input.
 4. Add trade arrows.
-5. Finalize Telegram-primary/MT5-fallback routing and startup `[4/4]` status.
+5. Add retry/error-handling semantics in a later phase; Phase 5D intentionally
+   performs one attempt with at most one MT5 fallback.
 6. Update this SPEC after every behavior change.
 
 ## 18. Code ↔ SPEC Consistency Checklist

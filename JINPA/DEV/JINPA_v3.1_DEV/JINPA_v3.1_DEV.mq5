@@ -153,6 +153,7 @@ sinput group                              "──────────── 
 input bool                                EnableTelegramPush         = true;
 input string                              TelegramBotToken           = "";
 input string                              TelegramChatId             = "";
+input bool                                EnableMT5Push              = false;
 
 sinput group                              "────────────────── LOGGING ─────────────────"
 input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;              // Log Level
@@ -244,20 +245,23 @@ int OnInit()
     orderExecutor.Initialize(_Symbol, &RM, &PM, &trade, &uiManager, params);
 
     watchIntegration.ConfigureNotificationTransport(
-        EnableTelegramPush, TelegramBotToken, TelegramChatId);
-    if(!watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period))
+        EnableTelegramPush, TelegramBotToken, TelegramChatId,
+        EnableMT5Push);
+    const bool watchInitialized =
+        watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period);
+    if(!watchInitialized)
         Print("[JINPA][WATCH][WARN] Integration disabled — initialization failed.");
 
-    Print("[JINPA v3.1 DEV INPUT 1/3] Symbol=", _Symbol,
+    Print("[JINPA v3.1 DEV INPUT 1/4] Symbol=", _Symbol,
           " | Magic=", MagicNumber,
           " | POExpMin=", POExpirationMinutes,
           " | MaxDD=", DoubleToString(MaxDrawdownDaily, 2), "%");
-    Print("[JINPA v3.1 DEV INPUT 2/3] MM=", EnumToString(MoneyManagement),
+    Print("[JINPA v3.1 DEV INPUT 2/4] MM=", EnumToString(MoneyManagement),
           " | Risk=", DoubleToString(RiskPercent, 2), "%",
           " | FixedLot=", DoubleToString(FixedVolume, 2),
           " | MinLotEqStep=", DoubleToString(MinLotPerEquitySteps, 2),
           " | SLPoints=", slPointsValue);
-    Print("[JINPA v3.1 DEV INPUT 3/3] MA=", IntegerToString(MAPeriod), "/", EnumToString(MAMethod),
+    Print("[JINPA v3.1 DEV INPUT 3/4] MA=", IntegerToString(MAPeriod), "/", EnumToString(MAMethod),
           " | ATR=", IntegerToString(ATRPeriod),
           " | ATRFactorSL=", DoubleToString(ATRFactorSL, 2),
           " | ATRFactorTSL=", DoubleToString(ATRFactorTSL, 2),
@@ -266,7 +270,19 @@ int OnInit()
           " | TSLActivationATR=", DoubleToString(TSLActivationATR, 2),
           " | TSLStepATR=", DoubleToString(TSLStepATR, 2),
           " | LogLevel=", EnumToString(LogLevel));
+    string notificationStatus = watchIntegration.NotificationTransportStatus();
+    const string notificationReason =
+        watchIntegration.NotificationConfigurationReason();
+    if(notificationReason != "")
+        notificationStatus += " | Reason=" + notificationReason;
+    if(!watchInitialized)
+        notificationStatus += " | Watch=UNAVAILABLE";
+    Print("[JINPA v3.1 DEV INPUT 4/4] ", notificationStatus);
+    if(!watchIntegration.HasAvailableNotificationTransport())
+        Print("[JINPA][WARN] WARNING: No available notification transport");
     Print("JINPA v3.1 DEV initialized successfully.");
+    if(watchInitialized)
+        watchIntegration.SendStartupNotification();
     return INIT_SUCCEEDED;
 }
 
