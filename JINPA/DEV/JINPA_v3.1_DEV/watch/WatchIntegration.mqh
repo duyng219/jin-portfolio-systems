@@ -210,10 +210,16 @@ void CWatchIntegration::UpdateStructureConsumers(void)
     const string previousSetupStatus = m_states[0].setupStatus;
     const string previousPullbackSetup = m_lastPullbackSetup;
     const string previousPullbackStatus = m_lastPullbackStatus;
+    const string previousRangeSetup = m_rangeEdgeSetupEngine.SetupText();
+    const string previousRangeStatus = m_rangeEdgeSetupEngine.StatusText();
+    const string previousPmaSetup = m_pmaSetupEngine.SetupText();
+    const string previousPmaStatus = m_pmaSetupEngine.StatusText();
     bool stateChanged = false;
     bool structureChanged = false;
     bool setupChanged = false;
     bool pullbackSetupChanged = false;
+    bool rangeSetupChanged = false;
+    bool pmaSetupChanged = false;
     if(copied > 0 && lastClosedBarTime > 0)
     {
        stateChanged = m_marketStateEngine.Apply(m_structureState,
@@ -250,11 +256,11 @@ void CWatchIntegration::UpdateStructureConsumers(void)
           pullbackProjection);
        m_lastPullbackSetup = pullbackProjection.setup;
        m_lastPullbackStatus = pullbackProjection.setupStatus;
-       m_rangeEdgeSetupEngine.Apply(
+       rangeSetupChanged = m_rangeEdgeSetupEngine.Apply(
           m_marketStateEngine.State(), m_structureState,
           m_structureEventHistory, lastClosedBarTime, marketStructure,
           m_marketStructureEngine.RangeEdgeSide());
-       m_pmaSetupEngine.Apply(
+       pmaSetupChanged = m_pmaSetupEngine.Apply(
           m_marketStateEngine.State(),
           m_marketStateEngine.ImpulseStartTime(),
           m_structureState.cycleState.cycle,
@@ -275,6 +281,20 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                       || previousSetupStatus != m_states[0].setupStatus;
        structureChanged = previousStructure != m_states[0].structure;
        m_lastMarketStructure = m_states[0].structure;
+
+       // Notification policy consumes independent setup lifecycles. Register
+       // every same-bar outcome before any Structure/Event item is enqueued so
+       // semantic suppression never depends on queue insertion order.
+       m_structureNotificationManager.BeginClosedBarPolicy(lastClosedBarTime);
+       m_structureNotificationManager.ObserveSetupTransition(
+          lastClosedBarTime, m_lastPullbackSetup, m_lastPullbackStatus,
+          pullbackSetupChanged);
+       m_structureNotificationManager.ObserveSetupTransition(
+          lastClosedBarTime, m_rangeEdgeSetupEngine.SetupText(),
+          m_rangeEdgeSetupEngine.StatusText(), rangeSetupChanged);
+       m_structureNotificationManager.ObserveSetupTransition(
+          lastClosedBarTime, m_pmaSetupEngine.SetupText(),
+          m_pmaSetupEngine.StatusText(), pmaSetupChanged);
     }
 
     if(stateChanged)
@@ -327,8 +347,8 @@ void CWatchIntegration::UpdateStructureConsumers(void)
 
     }
 
-    // Phase 4C does not expand notification policy. Queue only genuine
-    // Pullback engine transitions, independent from single-output projection.
+    // Setup notifications consume each owning engine's internal transition,
+    // independent from the single-output Radar projection.
     if(pullbackSetupChanged && m_enabled)
         m_structureNotificationManager.EnqueueSetupTransition(
            m_symbol, m_timeframe, lastClosedBarTime,
@@ -339,6 +359,25 @@ void CWatchIntegration::UpdateStructureConsumers(void)
            m_pullbackSetupEngine.BaseHigh(),
            m_pullbackSetupEngine.BaseLow(),
            m_pullbackSetupEngine.CandidateSwingTime());
+
+    if(rangeSetupChanged && m_enabled)
+        m_structureNotificationManager.EnqueueSetupTransition(
+           m_symbol, m_timeframe, lastClosedBarTime,
+           previousRangeSetup, previousRangeStatus,
+           m_rangeEdgeSetupEngine.SetupText(),
+           m_rangeEdgeSetupEngine.StatusText(),
+           m_states[0].cycle, m_states[0].state,
+           m_states[0].structure, 0.0, 0.0);
+
+    if(pmaSetupChanged && m_enabled)
+        m_structureNotificationManager.EnqueueSetupTransition(
+           m_symbol, m_timeframe, lastClosedBarTime,
+           previousPmaSetup, previousPmaStatus,
+           m_pmaSetupEngine.SetupText(), m_pmaSetupEngine.StatusText(),
+           m_states[0].cycle, m_states[0].state,
+           m_states[0].structure,
+           m_pmaSetupEngine.BaseHigh(), m_pmaSetupEngine.BaseLow(),
+           m_pmaSetupEngine.BaseTime());
 
     // Rendering is a separate read-only consumer of the same Stage 2 snapshot.
     m_pullbackBaseRenderer.Update(

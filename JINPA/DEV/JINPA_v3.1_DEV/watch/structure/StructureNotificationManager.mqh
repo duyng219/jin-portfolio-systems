@@ -17,6 +17,48 @@ private:
    string m_queueIdentities[];
    string m_knownIdentities[];
    int    m_realSendAttempts;
+   datetime m_policyBarTime;
+   bool   m_suppressBreakout;
+   bool   m_suppressCoreUpdated;
+   bool   m_suppressFalseBreak;
+   bool   m_suppressRejection;
+   bool   m_suppressMicroBase;
+   bool   m_suppressLeg1;
+   bool   m_suppressLeg2;
+
+   void ResetClosedBarPolicy(const datetime closedBarTime)
+   {
+      m_policyBarTime = closedBarTime;
+      m_suppressBreakout = false;
+      m_suppressCoreUpdated = false;
+      m_suppressFalseBreak = false;
+      m_suppressRejection = false;
+      m_suppressMicroBase = false;
+      m_suppressLeg1 = false;
+      m_suppressLeg2 = false;
+   }
+
+   bool SuppressStructureEvent(const StructureEvent &event) const
+   {
+      if(event.eventBarTime != m_policyBarTime)
+         return false;
+      return (event.type == CORE_BOX_TRANSITION_STARTED
+              && m_suppressCoreUpdated)
+             || (event.type == CORE_BREAK_FAILED
+                 && m_suppressFalseBreak);
+   }
+
+   bool SuppressMarketStructure(const datetime closedBarTime,
+                                const string structure) const
+   {
+      if(closedBarTime != m_policyBarTime)
+         return false;
+      return (structure == "BREAKOUT" && m_suppressBreakout)
+             || (structure == "REJECTION" && m_suppressRejection)
+             || (structure == "MICRO BASE" && m_suppressMicroBase)
+             || (structure == "LEG 1" && m_suppressLeg1)
+             || (structure == "LEG 2" && m_suppressLeg2);
+   }
 
    bool IsKnownIdentity(const string identity) const
    {
@@ -51,9 +93,14 @@ private:
 
    bool IsSetupEligible(const string setup, const string status) const
    {
-      return (setup == "revs-ppf" || setup == "revs-pps")
-             && (status == "WATCH" || status == "READY"
-                 || status == "ACTIVE");
+      if(setup == "revs-ppf" || setup == "revs-pps"
+         || setup == "bres-pma")
+         return status == "WATCH" || status == "READY"
+                || status == "ACTIVE";
+      if(setup == "bres-pmb" || setup == "revs-pfb"
+         || setup == "revs-pmr")
+         return status == "ACTIVE";
+      return false;
    }
 
    string FormatCycle(const ENUM_MARKET_CYCLE cycle) const
@@ -106,6 +153,10 @@ private:
       if(value == "INVALID")     return "Invalid";
       if(value == "revs-ppf")    return "Revs-ppf";
       if(value == "revs-pps")    return "Revs-pps";
+      if(value == "bres-pmb")    return "Bres-pmb";
+      if(value == "bres-pma")    return "Bres-pma";
+      if(value == "revs-pfb")    return "Revs-pfb";
+      if(value == "revs-pmr")    return "Revs-pmr";
       return value;
    }
 
@@ -227,6 +278,8 @@ private:
       {
          if(setup == "revs-ppf")
             message += "\nPullback tracking started";
+         else if(setup == "bres-pma")
+            message += "\nImpulse tracking started";
          else if(cycle == "BULL")
             message += "\nLocal Swing High confirmed";
          else if(cycle == "BEAR")
@@ -297,6 +350,7 @@ public:
       m_enabled = true;
       m_enableAuditLog = false;
       m_realSendAttempts = 0;
+      ResetClosedBarPolicy(0);
    }
 
    void Configure(const bool enabled, const bool enableAuditLog)
@@ -308,11 +362,44 @@ public:
       ArrayResize(m_queueLabels, 0);
       ArrayResize(m_queueIdentities, 0);
       ArrayResize(m_knownIdentities, 0);
+      ResetClosedBarPolicy(0);
+   }
+
+   void BeginClosedBarPolicy(const datetime closedBarTime)
+   {
+      if(closedBarTime != m_policyBarTime)
+         ResetClosedBarPolicy(closedBarTime);
+   }
+
+   void ObserveSetupTransition(const datetime closedBarTime,
+                               const string setup,
+                               const string status,
+                               const bool changed)
+   {
+      BeginClosedBarPolicy(closedBarTime);
+      if(!changed)
+         return;
+
+      if(setup == "bres-pmb" && status == "ACTIVE")
+      {
+         m_suppressBreakout = true;
+         m_suppressCoreUpdated = true;
+      }
+      else if(setup == "revs-pfb" && status == "ACTIVE")
+         m_suppressFalseBreak = true;
+      else if(setup == "revs-pmr" && status == "ACTIVE")
+         m_suppressRejection = true;
+      else if(setup == "bres-pma" && status == "READY")
+         m_suppressMicroBase = true;
+      else if(setup == "revs-ppf" && status == "ACTIVE")
+         m_suppressLeg1 = true;
+      else if(setup == "revs-pps" && status == "ACTIVE")
+         m_suppressLeg2 = true;
    }
 
    void Enqueue(const StructureEvent &event)
    {
-      if(!ShouldNotify(event))
+      if(!ShouldNotify(event) || SuppressStructureEvent(event))
          return;
       QueueMessage(event.identity,
                    event.symbol + " "
@@ -328,7 +415,8 @@ public:
       const string cycle, const string state)
    {
       if(previousStructure == currentStructure
-         || !IsMarketStructureEligible(currentStructure))
+         || !IsMarketStructureEligible(currentStructure)
+         || SuppressMarketStructure(closedBarTime, currentStructure))
          return false;
       string identity = symbol + "|"
          + IntegerToString((int)timeframe) + "|"

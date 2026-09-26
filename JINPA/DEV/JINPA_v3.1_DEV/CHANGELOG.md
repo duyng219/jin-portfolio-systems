@@ -1,5 +1,16 @@
 # JINPA Changelog
 
+## v3.1 DEV — Phase 5B unified notification policy
+
+- Added internal-lifecycle setup notifications for `bres-pmb`, `bres-pma`,
+  `revs-pfb` and `revs-pmr` while preserving existing PPF/PPS behavior.
+- Added deterministic same-bar semantic suppression so a confirmed setup wins
+  over its corresponding lower-level Structure/Core notification.
+- Kept `edge-mix`, all `INVALID`/`NONE` statuses and unchanged lifecycle states
+  notification-ineligible; Radar arbitration remains independent.
+- Extended deterministic notification coverage without changing the existing
+  MT5 Push transport; Telegram is not implemented.
+
 ## v3.1 DEV — Phase 4E setup/event/output audit
 
 - Prevented startup from re-arming `bres-pma / WATCH` when the current

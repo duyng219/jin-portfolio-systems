@@ -31,7 +31,7 @@ Primary audited sources:
 | Impulse/Micro Base PMA Setup | `watch/setup/PmaSetupEngine.mqh` |
 | Single Setup/Status output arbitration | `watch/setup/SetupOutputArbitrator.mqh` |
 | Active READY Base visualization | `watch/setup/PullbackBaseRenderer.mqh` |
-| Notification Policy v1.0 | `watch/structure/StructureNotificationManager.mqh` |
+| Unified Notification Policy (Phase 5B) | `watch/structure/StructureNotificationManager.mqh` |
 | WATCH Radar | `watch/ui/MarketRadar.mqh` |
 | Manual order bridge | `_core/infrastructure/order_executor.mqh` |
 | Risk and position/trailing management | `_core/managers/risk_manager.mqh`, `_core/managers/position_manager.mqh` |
@@ -781,6 +781,15 @@ Setup transitions:
 
 - `revs-ppf` Watch, Ready and Active
 - `revs-pps` Watch, Ready and Active
+- `bres-pma` Watch, Ready and Active
+- `bres-pmb` Active only
+- `revs-pfb` Active only
+- `revs-pmr` Active only
+
+Setup notification authority is each setup engine's internal lifecycle, not the
+single final Radar projection. Pullback, Range Edge and PMA transitions can
+therefore notify independently when they are legitimate on the same closed
+bar, even when `SetupOutputArbitrator` displays only one of them.
 
 READY uses the natural setup format and adds
 `Base {BaseLow} - {BaseHigh}` with the symbol's runtime price precision. It is
@@ -791,6 +800,8 @@ emitted only after a valid Pivot..R3 Base is built.
 - Market Structure `CONTINUATION`.
 - All Market State-only transitions.
 - Setup `INVALID` and `NONE`.
+- `edge-mix / WATCH`; it is a Range Edge display alias, not a trading setup.
+- Range Edge WATCH and all nonexistent Range Edge READY states.
 - Setup `READY` to `WATCH` caused by candidate Base failure; the failure itself
   emits no repeated WATCH Push. The next candidate uses its own READY identity.
 - Unchanged Market Structure or unchanged Setup/Status.
@@ -811,12 +822,21 @@ emitted only after a valid Pivot..R3 Base is built.
   of the same candidate on any later bar remains deduped.
 - Known identities are session-scoped and suppress repeated enqueue.
 - Bootstrap transition enqueue is suppressed by `m_enabled=false`.
+- Same-bar setup-centric suppression is resolved before enqueue. `bres-pmb`
+  ACTIVE suppresses BREAKOUT and `CORE_BOX_TRANSITION_STARTED`; `revs-pfb`
+  ACTIVE suppresses `CORE_BREAK_FAILED`; `revs-pmr` ACTIVE suppresses
+  REJECTION; `bres-pma` READY suppresses MICRO BASE; PPF ACTIVE suppresses
+  LEG 1; and PPS ACTIVE suppresses LEG 2. Suppression never crosses bar
+  boundaries. `CYCLE_CHANGED`, `CORE_BREAK_CANDIDATE`, `SIDEWAY_CONFIRMED` and
+  RANGE EDGE remain eligible context notifications.
 - Multiple eligible items on a bar remain queued in deterministic enqueue
   order; only one is removed/dispatched per subsequent new-bar cycle.
 - The queue item is removed before calling MT5 Push. A failed live
   `SendNotification` is logged and is not automatically retried.
 - The master notification flag currently defaults to enabled internally and
   is not a user-facing input.
+- Phase 5B retains the existing direct MT5 `SendNotification()` transport. It
+  adds no Telegram transport, fallback, retry or notification Inputs.
 
 ### 11.4 Strategy Tester
 
@@ -929,7 +949,7 @@ pending, cancel and close counters are zero.
 | `MarketStateDeterministicProbe.mq5` | Compression/Expansion/Impulse/Correction lifecycle, guards, bootstrap and Radar contract | `23/23 PASS` |
 | `MarketStructureDeterministicProbe.mq5` | Base projection, authority/priority, Range Edge/Rejection/False Break, first-confirmed-per-Impulse Micro Base gate, confirmed-only visualization and Radar value | `57 checks` |
 | `PullbackSetupDeterministicProbe.mq5` | Unified PPF/PPS candidate, immutable four-bar Base, Bull/Bear failure/recovery, single-use LEG 1→PPS chains, PPS terminal cleanup/no-rearm in Correction and Compression, same-bar Sideway edges, PPF strictness, cycle guards, confirmed-only Base history and Radar coexistence | `79 checks` |
-| `NotificationPolicyDeterministicProbe.mq5` | Eligible policy including unified Leg, READY candidate identity, Base-failure WATCH suppression, READY formatting, FIFO/dedup and Tester guard | `31 checks` |
+| `NotificationPolicyDeterministicProbe.mq5` | Six-setup eligibility, internal-lifecycle authority, same-bar semantic suppression, READY candidate identity, Base-failure WATCH suppression, formatting, FIFO/dedup and Tester guard | `54 checks` |
 | `RangeEdgeSetupDeterministicProbe.mq5` | Edge-side authority, episode identity, guards, PMB/PFB/PMR outcome/direction, consumption, lifecycle, replay symmetry and PPS single-output conflict policy | `46 checks` |
 | `PmaSetupDeterministicProbe.mq5` | Impulse identity, immutable Micro Base snapshot, Bull/Bear Close outcomes, timeout/context guards, same-bar State exit ordering, one-per-Impulse, arbitration and replay | `40 checks` |
 
