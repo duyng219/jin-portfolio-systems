@@ -5,8 +5,10 @@
 
 Version: 3.1 LIVE | Platform: MetaTrader 5
 
-Migration status: M2 WATCH Core. Production panel/manual execution are
-preserved; setup and notification-stack migration remain pending M3/M4.
+Migration status: M3 Setup/Renderer/Radar integration. Production panel and
+manual execution remain preserved. All six setup lifecycles and final Radar
+SETUP/STATUS output are active; notification-stack migration remains pending
+M4. Auto Trade and Trade Arrow remain deferred.
 
 ---
 

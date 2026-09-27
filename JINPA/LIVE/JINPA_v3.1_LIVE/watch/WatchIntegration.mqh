@@ -6,6 +6,12 @@
 #include "structure/StructureNotificationManager.mqh"
 #include "state/MarketStateEngine.mqh"
 #include "state/MarketStructureEngine.mqh"
+#include "structure/MicroBaseRenderer.mqh"
+#include "setup/PullbackSetupEngine.mqh"
+#include "setup/RangeEdgeSetupEngine.mqh"
+#include "setup/PmaSetupEngine.mqh"
+#include "setup/SetupOutputArbitrator.mqh"
+#include "setup/PullbackBaseRenderer.mqh"
 #include "ui/MarketRadar.mqh"
 
 // Read-only boundary for the future single-symbol WATCH engine.
@@ -23,6 +29,12 @@ private:
     CStructureNotificationManager m_structureNotificationManager;
     CMarketStateEngine m_marketStateEngine;
     CMarketStructureEngine m_marketStructureEngine;
+    CMicroBaseRenderer m_microBaseRenderer;
+    CPullbackSetupEngine m_pullbackSetupEngine;
+    CRangeEdgeSetupEngine m_rangeEdgeSetupEngine;
+    CPmaSetupEngine m_pmaSetupEngine;
+    CSetupOutputArbitrator m_setupOutputArbitrator;
+    CPullbackBaseRenderer m_pullbackBaseRenderer;
     CMarketRadar    m_marketRadar;
     SymbolState     m_states[1];
     PriceStructureState m_structureState;
@@ -31,6 +43,8 @@ private:
     SidewayBoxRecord m_sidewayBoxes[];
     StructureEvent m_structureEventHistory[];
     string          m_lastMarketStructure;
+    string          m_lastPullbackSetup;
+    string          m_lastPullbackStatus;
 
     // WATCH v1.1 structure defaults. Kept instance-scoped to avoid collisions
     // with JINPA trading inputs such as ATRPeriod.
@@ -112,6 +126,7 @@ bool CWatchIntegration::ConfigureStructure(const int swingLeftBars,
     m_watchCoreBreakATRBuffer     = coreBreakATRBuffer;
     m_watchCoreBreakConfirmCloses = coreBreakConfirmCloses;
     m_watchShowStructureSwings    = showStructureSwings;
+    m_pullbackSetupEngine.ConfigureSwingRightBars(swingRightBars);
     return true;
 }
 
@@ -139,6 +154,8 @@ void CWatchIntegration::ResetContext(void)
     m_watchPanelEnabled = false;
     m_lastBarTime = 0;
     m_lastMarketStructure = "UNKNOWN";
+    m_lastPullbackSetup = "-";
+    m_lastPullbackStatus = "NONE";
 
     m_states[0].symbol              = "";
     m_states[0].timeframe           = PERIOD_CURRENT;
@@ -166,6 +183,9 @@ void CWatchIntegration::ResetContext(void)
     ArrayResize(m_structureEventHistory, 0);
     m_marketStateEngine.Reset();
     m_marketStructureEngine.Reset();
+    m_pullbackSetupEngine.Reset();
+    m_rangeEdgeSetupEngine.Reset();
+    m_pmaSetupEngine.Reset();
 }
 
 void CWatchIntegration::UpdateStructureConsumers(void)
@@ -178,9 +198,8 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                       m_sidewayBoxes))
         return;
 
-    // M2 core boundary: derive frozen Market State and Market Structure from
-    // the Stage 2 snapshot. Setup overlays remain deliberately inactive until
-    // M3, so SETUP/STATUS retain their neutral values.
+    // Frozen M3 pipeline: derive State/Structure first, then advance each
+    // independent setup owner before projecting one final Radar output.
     m_structureEngine.LabProbeEventHistory(m_structureEventHistory);
     MqlRates stateRates[];
     ArraySetAsSeries(stateRates, false);
@@ -190,9 +209,12 @@ void CWatchIntegration::UpdateStructureConsumers(void)
     const string previousRegime = m_states[0].regime;
     const string previousState = m_states[0].state;
     const string previousStructure = m_lastMarketStructure;
+    const string previousSetup = m_states[0].setup;
+    const string previousSetupStatus = m_states[0].setupStatus;
 
     bool stateChanged = false;
     bool structureChanged = false;
+    bool setupChanged = false;
     if(copied > 0 && lastClosedBarTime > 0)
     {
         stateChanged = m_marketStateEngine.Apply(
@@ -204,6 +226,55 @@ void CWatchIntegration::UpdateStructureConsumers(void)
             m_structureState, m_structureEventHistory, stateRates,
             lastClosedBarTime, m_watchATRPeriod,
             m_watchCoreBreakATRBuffer, m_states[0]);
+
+        m_microBaseRenderer.Update(
+            m_symbol, m_timeframe,
+            m_marketStructureEngine.MicroBaseConfirmed(),
+            m_marketStructureEngine.MicroBaseAnchorTime(),
+            lastClosedBarTime,
+            m_marketStructureEngine.MicroBaseHigh(),
+            m_marketStructureEngine.MicroBaseLow());
+
+        const string marketStructure = m_states[0].structure;
+        SymbolState pullbackProjection = m_states[0];
+        pullbackProjection.setup = m_lastPullbackSetup;
+        pullbackProjection.setupStatus = m_lastPullbackStatus;
+        m_pullbackSetupEngine.Apply(
+            previousState, m_marketStateEngine.State(),
+            m_structureState, m_structureSwings, stateRates,
+            lastClosedBarTime, pullbackProjection);
+        m_lastPullbackSetup = pullbackProjection.setup;
+        m_lastPullbackStatus = pullbackProjection.setupStatus;
+
+        m_rangeEdgeSetupEngine.Apply(
+            m_marketStateEngine.State(), m_structureState,
+            m_structureEventHistory, lastClosedBarTime, marketStructure,
+            m_marketStructureEngine.RangeEdgeSide());
+
+        m_pmaSetupEngine.Apply(
+            m_marketStateEngine.State(),
+            m_marketStateEngine.ImpulseStartTime(),
+            m_structureState.cycleState.cycle,
+            m_marketStructureEngine.MicroBaseConfirmed(),
+            m_marketStructureEngine.MicroBaseConsumed(),
+            m_marketStructureEngine.MicroBaseImpulseStartTime(),
+            m_marketStructureEngine.MicroBaseAnchorTime(),
+            m_marketStructureEngine.MicroBaseHigh(),
+            m_marketStructureEngine.MicroBaseLow(),
+            stateRates, lastClosedBarTime);
+
+        // Pullback owns only its LEG1/LEG2 Structure overlay. The arbitrator
+        // owns the single SETUP/STATUS projection; engine state stays intact.
+        m_states[0].structure = pullbackProjection.structure;
+        m_setupOutputArbitrator.Project(
+            m_lastPullbackSetup, m_lastPullbackStatus,
+            m_pmaSetupEngine.SetupText(), m_pmaSetupEngine.StatusText(),
+            m_rangeEdgeSetupEngine.SetupText(),
+            m_rangeEdgeSetupEngine.StatusText(), m_states[0]);
+
+        setupChanged = previousSetup != m_states[0].setup
+                       || previousSetupStatus != m_states[0].setupStatus;
+        structureChanged = previousStructure != m_states[0].structure;
         m_lastMarketStructure = m_states[0].structure;
     }
 
@@ -231,8 +302,31 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                    + m_states[0].structure);
     }
 
-    // Rendering remains a read-only consumer. Individual chart-object
-    // failures are logged by the renderer and remain non-fatal.
+    if(setupChanged)
+    {
+        string transition = m_states[0].setup;
+        if(previousSetup != m_states[0].setup)
+            transition = previousSetup + " -> " + m_states[0].setup;
+        else
+            transition += " | " + previousSetupStatus + " -> "
+                          + m_states[0].setupStatus;
+        WatcherLog("SETUP", m_symbol + " "
+                   + WatcherTimeframeToString(m_timeframe)
+                   + " | bar="
+                   + TimeToString(m_states[0].lastBarTime,
+                                  TIME_DATE | TIME_MINUTES)
+                   + " | " + transition
+                   + " | status=" + m_states[0].setupStatus);
+    }
+
+    m_pullbackBaseRenderer.Update(
+        m_symbol, m_timeframe, m_lastPullbackSetup, m_lastPullbackStatus,
+        m_pullbackSetupEngine.CandidateSwingTime(),
+        m_pullbackSetupEngine.BaseTime(), lastClosedBarTime,
+        m_pullbackSetupEngine.BaseHigh(), m_pullbackSetupEngine.BaseLow());
+
+    // Rendering remains read-only. Individual chart-object failures are
+    // logged by each renderer and remain non-fatal.
     m_structureRenderer.Update(m_structureState,
                                m_structureSwings,
                                m_brokenCores,
@@ -373,6 +467,8 @@ void CWatchIntegration::OnChartChange(void)
 void CWatchIntegration::Shutdown(void)
 {
     m_marketRadar.Destroy();
+    m_pullbackBaseRenderer.Destroy();
+    m_microBaseRenderer.Destroy();
     m_structureRenderer.Destroy();
     ResetContext();
 }

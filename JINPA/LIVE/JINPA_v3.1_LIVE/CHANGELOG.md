@@ -1,5 +1,17 @@
 # JINPA Changelog
 
+## v3.1 LIVE — Migration Phase M3 (Setup + Renderer + Radar Output)
+
+- Migrates frozen `revs-ppf`, `revs-pps`, `bres-pmb`, `revs-pfb`,
+  `revs-pmr` and `bres-pma` setup lifecycles.
+- Activates the frozen Setup Output Arbitrator and final Radar SETUP/STATUS
+  projection while preserving independent internal setup ownership.
+- Activates confirmed Micro Base and Pullback Base renderers.
+- Keeps setup evaluation closed-bar and observer-only; Auto Trade and Trade
+  Arrow remain deferred.
+- Keeps the legacy LIVE structure notification path temporarily unchanged;
+  frozen notification policy, Telegram, router and reliability remain pending M4.
+
 ## v3.1 LIVE — Migration Phase M2 (WATCH Core)
 
 - Created from the v3.0 LIVE production tree; the frozen DEV main/UI/executor
