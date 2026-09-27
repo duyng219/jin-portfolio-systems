@@ -5,12 +5,11 @@
 
 Version: 3.1 LIVE | Platform: MetaTrader 5
 
-Migration status: M4 Notification Stack migration. Production panel and manual
-execution remain preserved. The six-setup notification policy is active with
-Telegram primary, MT5 Push fallback, bounded FIFO retry, startup notification
-and Strategy Tester external-transport suppression. Credentials remain
-runtime-only. Live transport validation remains pending M7. Auto Trade and
-Trade Arrow remain deferred.
+Migration status: M5 final main integration and input/branding audit complete.
+Production panel, manual execution and Comment ownership remain preserved. The
+full WATCH and notification pipelines are integrated; M6 parity audit and M7
+runtime/live transport validation remain pending. Credentials remain
+runtime-only. Auto Trade and Trade Arrow remain deferred.
 
 ---
 
@@ -54,7 +53,7 @@ Trade Arrow remain deferred.
 | Parameter | Default | Mô tả |
 |-----------|---------|-------|
 | Money Management | Equity Risk % | Phương pháp tính lot |
-| Risk Percent | 0.2% | % equity rủi ro mỗi lệnh |
+| Risk Percent | 0.5% | % equity rủi ro mỗi lệnh |
 | Fixed Volume | 0.01 | Lot cố định (khi dùng Fixed MM) |
 | Min Lot Per Equity | 500 | USD/lot (khi dùng Per Equity MM) |
 

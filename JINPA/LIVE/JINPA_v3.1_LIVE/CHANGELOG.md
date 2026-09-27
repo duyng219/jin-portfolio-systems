@@ -1,5 +1,14 @@
 # JINPA Changelog
 
+## v3.1 LIVE — Migration Phase M5 (Final Main Integration Audit)
+
+- Confirms the production main lifecycle, CAppDialog panel, manual execution,
+  Comment path, risk/order/trailing behavior and trade transaction handling.
+- Confirms the complete WATCH/notification integration, accepted input
+  defaults, LIVE branding, panel caption and CSV prefix.
+- M6 parity audit and M7 runtime/live transport validation remain pending;
+  this audit does not claim long-term LIVE stability.
+
 ## v3.1 LIVE — Migration Phase M4 (Notification Stack)
 
 - Replaces the legacy notification authority atomically with the frozen Phase
