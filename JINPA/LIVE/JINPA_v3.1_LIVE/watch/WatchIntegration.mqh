@@ -61,6 +61,10 @@ private:
     bool            m_watchEnableCoreBreakAuditLog;
     bool            m_watchShowStructureSwings;
     bool            m_watchEnableStructureNotifications;
+    bool            m_enableTelegramPush;
+    string          m_telegramBotToken;
+    string          m_telegramChatId;
+    bool            m_enableMt5Push;
 
     void            ResetContext(void);
     void            UpdateStructureConsumers(void);
@@ -74,6 +78,15 @@ public:
                                        const double coreBreakATRBuffer,
                                        const int coreBreakConfirmCloses,
                                        const bool showStructureSwings);
+    void            ConfigureNotificationTransport(
+                                       const bool enableTelegramPush,
+                                       const string telegramBotToken,
+                                       const string telegramChatId,
+                                       const bool enableMt5Push);
+    string          NotificationTransportStatus(void) const;
+    string          NotificationConfigurationReason(void) const;
+    bool            HasAvailableNotificationTransport(void) const;
+    ENUM_JINPA_NOTIFICATION_ROUTE_RESULT SendStartupNotification(void);
     void            GetStructureConfiguration(int &swingLeftBars,
                                               int &swingRightBars,
                                               int &structureATRPeriod,
@@ -104,6 +117,10 @@ CWatchIntegration::CWatchIntegration(void)
     m_watchEnableCoreBreakAuditLog   = false;
     m_watchShowStructureSwings       = true;
     m_watchEnableStructureNotifications = true;
+    m_enableTelegramPush             = false;
+    m_telegramBotToken               = "";
+    m_telegramChatId                 = "";
+    m_enableMt5Push                  = false;
 
     ResetContext();
 }
@@ -128,6 +145,45 @@ bool CWatchIntegration::ConfigureStructure(const int swingLeftBars,
     m_watchShowStructureSwings    = showStructureSwings;
     m_pullbackSetupEngine.ConfigureSwingRightBars(swingRightBars);
     return true;
+}
+
+void CWatchIntegration::ConfigureNotificationTransport(
+    const bool enableTelegramPush,
+    const string telegramBotToken,
+    const string telegramChatId,
+    const bool enableMt5Push)
+{
+    m_enableTelegramPush = enableTelegramPush;
+    m_telegramBotToken = telegramBotToken;
+    m_telegramChatId = telegramChatId;
+    m_enableMt5Push = enableMt5Push;
+    m_structureNotificationManager.ConfigureTransports(
+       m_enableTelegramPush, m_telegramBotToken, m_telegramChatId,
+       m_enableMt5Push);
+}
+
+string CWatchIntegration::NotificationTransportStatus(void) const
+{
+    return m_structureNotificationManager.TransportStatus();
+}
+
+string CWatchIntegration::NotificationConfigurationReason(void) const
+{
+    return m_structureNotificationManager.TransportConfigurationReason();
+}
+
+bool CWatchIntegration::HasAvailableNotificationTransport(void) const
+{
+    return m_structureNotificationManager.HasAvailableTransport();
+}
+
+ENUM_JINPA_NOTIFICATION_ROUTE_RESULT
+CWatchIntegration::SendStartupNotification(void)
+{
+    if(!m_enabled)
+        return JINPA_ROUTE_NO_TRANSPORT_AVAILABLE;
+    return m_structureNotificationManager.SendStartupNotification(
+       m_symbol, m_timeframe);
 }
 
 void CWatchIntegration::GetStructureConfiguration(
@@ -211,10 +267,19 @@ void CWatchIntegration::UpdateStructureConsumers(void)
     const string previousStructure = m_lastMarketStructure;
     const string previousSetup = m_states[0].setup;
     const string previousSetupStatus = m_states[0].setupStatus;
+    const string previousPullbackSetup = m_lastPullbackSetup;
+    const string previousPullbackStatus = m_lastPullbackStatus;
+    const string previousRangeSetup = m_rangeEdgeSetupEngine.SetupText();
+    const string previousRangeStatus = m_rangeEdgeSetupEngine.StatusText();
+    const string previousPmaSetup = m_pmaSetupEngine.SetupText();
+    const string previousPmaStatus = m_pmaSetupEngine.StatusText();
 
     bool stateChanged = false;
     bool structureChanged = false;
     bool setupChanged = false;
+    bool pullbackSetupChanged = false;
+    bool rangeSetupChanged = false;
+    bool pmaSetupChanged = false;
     if(copied > 0 && lastClosedBarTime > 0)
     {
         stateChanged = m_marketStateEngine.Apply(
@@ -239,19 +304,19 @@ void CWatchIntegration::UpdateStructureConsumers(void)
         SymbolState pullbackProjection = m_states[0];
         pullbackProjection.setup = m_lastPullbackSetup;
         pullbackProjection.setupStatus = m_lastPullbackStatus;
-        m_pullbackSetupEngine.Apply(
+        pullbackSetupChanged = m_pullbackSetupEngine.Apply(
             previousState, m_marketStateEngine.State(),
             m_structureState, m_structureSwings, stateRates,
             lastClosedBarTime, pullbackProjection);
         m_lastPullbackSetup = pullbackProjection.setup;
         m_lastPullbackStatus = pullbackProjection.setupStatus;
 
-        m_rangeEdgeSetupEngine.Apply(
+        rangeSetupChanged = m_rangeEdgeSetupEngine.Apply(
             m_marketStateEngine.State(), m_structureState,
             m_structureEventHistory, lastClosedBarTime, marketStructure,
             m_marketStructureEngine.RangeEdgeSide());
 
-        m_pmaSetupEngine.Apply(
+        pmaSetupChanged = m_pmaSetupEngine.Apply(
             m_marketStateEngine.State(),
             m_marketStateEngine.ImpulseStartTime(),
             m_structureState.cycleState.cycle,
@@ -276,6 +341,19 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                        || previousSetupStatus != m_states[0].setupStatus;
         structureChanged = previousStructure != m_states[0].structure;
         m_lastMarketStructure = m_states[0].structure;
+
+        // Register all same-bar internal setup outcomes before enqueueing any
+        // Structure/Event item so semantic suppression is order-independent.
+        m_structureNotificationManager.BeginClosedBarPolicy(lastClosedBarTime);
+        m_structureNotificationManager.ObserveSetupTransition(
+            lastClosedBarTime, m_lastPullbackSetup, m_lastPullbackStatus,
+            pullbackSetupChanged);
+        m_structureNotificationManager.ObserveSetupTransition(
+            lastClosedBarTime, m_rangeEdgeSetupEngine.SetupText(),
+            m_rangeEdgeSetupEngine.StatusText(), rangeSetupChanged);
+        m_structureNotificationManager.ObserveSetupTransition(
+            lastClosedBarTime, m_pmaSetupEngine.SetupText(),
+            m_pmaSetupEngine.StatusText(), pmaSetupChanged);
     }
 
     if(stateChanged)
@@ -300,6 +378,13 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                                   TIME_DATE | TIME_MINUTES)
                    + " | Structure " + previousStructure + " -> "
                    + m_states[0].structure);
+
+        // Bootstrap reconstruction occurs while m_enabled is false.
+        if(m_enabled)
+            m_structureNotificationManager.EnqueueMarketStructureTransition(
+                m_symbol, m_timeframe, lastClosedBarTime,
+                previousStructure, m_states[0].structure,
+                m_states[0].cycle, m_states[0].state);
     }
 
     if(setupChanged)
@@ -318,6 +403,38 @@ void CWatchIntegration::UpdateStructureConsumers(void)
                    + " | " + transition
                    + " | status=" + m_states[0].setupStatus);
     }
+
+    // Notify from each engine's internal lifecycle, never only from the
+    // arbitrated single-output Radar projection.
+    if(pullbackSetupChanged && m_enabled)
+        m_structureNotificationManager.EnqueueSetupTransition(
+            m_symbol, m_timeframe, lastClosedBarTime,
+            previousPullbackSetup, previousPullbackStatus,
+            m_lastPullbackSetup, m_lastPullbackStatus,
+            m_states[0].cycle, m_states[0].state,
+            m_states[0].structure,
+            m_pullbackSetupEngine.BaseHigh(),
+            m_pullbackSetupEngine.BaseLow(),
+            m_pullbackSetupEngine.CandidateSwingTime());
+
+    if(rangeSetupChanged && m_enabled)
+        m_structureNotificationManager.EnqueueSetupTransition(
+            m_symbol, m_timeframe, lastClosedBarTime,
+            previousRangeSetup, previousRangeStatus,
+            m_rangeEdgeSetupEngine.SetupText(),
+            m_rangeEdgeSetupEngine.StatusText(),
+            m_states[0].cycle, m_states[0].state,
+            m_states[0].structure, 0.0, 0.0);
+
+    if(pmaSetupChanged && m_enabled)
+        m_structureNotificationManager.EnqueueSetupTransition(
+            m_symbol, m_timeframe, lastClosedBarTime,
+            previousPmaSetup, previousPmaStatus,
+            m_pmaSetupEngine.SetupText(), m_pmaSetupEngine.StatusText(),
+            m_states[0].cycle, m_states[0].state,
+            m_states[0].structure,
+            m_pmaSetupEngine.BaseHigh(), m_pmaSetupEngine.BaseLow(),
+            m_pmaSetupEngine.BaseTime());
 
     m_pullbackBaseRenderer.Update(
         m_symbol, m_timeframe, m_lastPullbackSetup, m_lastPullbackStatus,
@@ -386,6 +503,9 @@ bool CWatchIntegration::Initialize(const string symbol,
     m_structureNotificationManager.Configure(
         m_watchEnableStructureNotifications,
         m_watchEnableStructureAuditLog);
+    m_structureNotificationManager.ConfigureTransports(
+        m_enableTelegramPush, m_telegramBotToken, m_telegramChatId,
+        m_enableMt5Push);
 
     m_structureRenderer.Configure(m_watchShowStructureSwings);
     m_structureRenderer.Destroy();
@@ -435,18 +555,13 @@ void CWatchIntegration::ProcessTick(void)
     StructureEvent structureEvents[];
     m_structureEngine.ConsumeEvents(structureEvents);
 
-    // Strategy Tester must preserve the validated consume/discard behavior and
-    // must never enqueue or dispatch MT5 Push notifications.
-    if(!(bool)MQLInfoInteger(MQL_TESTER))
-    {
-        const int eventCount = ArraySize(structureEvents);
-        for(int index = 0; index < eventCount; index++)
-            m_structureNotificationManager.Enqueue(structureEvents[index]);
+    // Tester follows the same eligibility/queue path. The frozen router owns
+    // the final MQL_TESTER guard and consumes TESTER_SUPPRESSED without retry.
+    const int eventCount = ArraySize(structureEvents);
+    for(int index = 0; index < eventCount; index++)
+        m_structureNotificationManager.Enqueue(structureEvents[index]);
 
-        // Standalone WATCH dispatches at most one item per timer cycle. With no
-        // timer in JINPA, preserve that bound once per live new-bar cycle.
-        m_structureNotificationManager.DispatchNext();
-    }
+    m_structureNotificationManager.DispatchNext();
 
     ArrayResize(structureEvents, 0);
 }

@@ -1,5 +1,17 @@
 # JINPA Changelog
 
+## v3.1 LIVE — Migration Phase M4 (Notification Stack)
+
+- Replaces the legacy notification authority atomically with the frozen Phase
+  5 six-setup and structure-event policy.
+- Uses Telegram as primary transport and MT5 Push as fallback, with bounded
+  FIFO retry/reliability and one direct startup notification per successful
+  WATCH initialization.
+- Suppresses real external transports in Strategy Tester while preserving the
+  notification lifecycle; credentials remain runtime-only and sanitized.
+- Runtime/live transport validation remains pending M7. Auto Trade, Trade
+  Arrow, panel execution and manual Comment behavior remain unchanged.
+
 ## v3.1 LIVE — Migration Phase M3 (Setup + Renderer + Radar Output)
 
 - Migrates frozen `revs-ppf`, `revs-pps`, `bres-pmb`, `revs-pfb`,

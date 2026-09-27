@@ -156,6 +156,12 @@ sinput group                              "──────────── 
 input bool                                ShowStructureSwings        = true;  // Show HH/HL/LH/LL
 input bool                                ShowWatchPanel             = false; // Show WATCH Market Radar panel
 
+sinput group                              "──────────── NOTIFICATIONS ─────────────"
+input bool                                EnableTelegramPush         = true;
+input string                              TelegramBotToken           = "";
+input string                              TelegramChatId             = "";
+input bool                                EnableMT5Push              = false;
+
 sinput group                              "────────────────── LOGGING ─────────────────"
 input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;
 
@@ -261,28 +267,45 @@ int OnInit()
     g_panel.Run();  // bắt buộc để CAppDialog xử lý events
     g_panel.RefreshVisuals();
 
-    if(!watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period,
-                                    ShowWatchPanel))
+    watchIntegration.ConfigureNotificationTransport(
+        EnableTelegramPush, TelegramBotToken, TelegramChatId,
+        EnableMT5Push);
+    const bool watchInitialized =
+        watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                                    ShowWatchPanel);
+    if(!watchInitialized)
         Print("[JINPA][WARN] Structure integration disabled — initialization failed.");
 
-    Print("[JINPA v3.1 LIVE INPUT 1/3] Symbol=", _Symbol,
+    Print("[JINPA v3.1 LIVE INPUT 1/4] Symbol=", _Symbol,
           " | Magic=", MagicNumber,
           " | POExpMin=", POExpirationMinutes,
           " | MaxDD=", DoubleToString(MaxDrawdownDaily, 2), "%");
-    Print("[JINPA v3.1 LIVE INPUT 2/3] MM=", EnumToString(MoneyManagement),
+    Print("[JINPA v3.1 LIVE INPUT 2/4] MM=", EnumToString(MoneyManagement),
           " | Risk=", DoubleToString(RiskPercent, 2), "%",
           " | FixedLot=", DoubleToString(FixedVolume, 2),
           " | MinLotEqStep=", DoubleToString(MinLotPerEquitySteps, 2),
           " | DisplayVC=", DoubleToString(DisplayVirtualCapital, 2),
           " | SLPoints=", slPointsValue);
-    Print("[JINPA v3.1 LIVE INPUT 3/3] MA=", IntegerToString(MAPeriod), "/", EnumToString(MAMethod),
+    Print("[JINPA v3.1 LIVE INPUT 3/4] MA=", IntegerToString(MAPeriod), "/", EnumToString(MAMethod),
           " | ATR=", IntegerToString(ATRPeriod),
           " | ATRFactorSL=", DoubleToString(ATRFactorSL, 2),
           " | ATRFactorTSL=", DoubleToString(ATRFactorTSL, 2),
           " | ATRFactorPO=", DoubleToString(ATRFactorPO, 2),
           " | TSL=", EnumToString(TSLMode),
           " | LogLevel=", EnumToString(LogLevel));
+    string notificationStatus = watchIntegration.NotificationTransportStatus();
+    const string notificationReason =
+        watchIntegration.NotificationConfigurationReason();
+    if(notificationReason != "")
+        notificationStatus += " | Reason=" + notificationReason;
+    if(!watchInitialized)
+        notificationStatus += " | Watch=UNAVAILABLE";
+    Print("[JINPA v3.1 LIVE INPUT 4/4] ", notificationStatus);
+    if(!watchIntegration.HasAvailableNotificationTransport())
+        Print("[JINPA][WARN] WARNING: No available notification transport");
     Print("JINPA v3.1 LIVE initialized successfully.");
+    if(watchInitialized)
+        watchIntegration.SendStartupNotification();
     return INIT_SUCCEEDED;
 }
 

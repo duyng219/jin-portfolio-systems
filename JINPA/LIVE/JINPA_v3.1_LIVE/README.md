@@ -5,10 +5,12 @@
 
 Version: 3.1 LIVE | Platform: MetaTrader 5
 
-Migration status: M3 Setup/Renderer/Radar integration. Production panel and
-manual execution remain preserved. All six setup lifecycles and final Radar
-SETUP/STATUS output are active; notification-stack migration remains pending
-M4. Auto Trade and Trade Arrow remain deferred.
+Migration status: M4 Notification Stack migration. Production panel and manual
+execution remain preserved. The six-setup notification policy is active with
+Telegram primary, MT5 Push fallback, bounded FIFO retry, startup notification
+and Strategy Tester external-transport suppression. Credentials remain
+runtime-only. Live transport validation remains pending M7. Auto Trade and
+Trade Arrow remain deferred.
 
 ---
 
