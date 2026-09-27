@@ -5,11 +5,12 @@
 
 Version: 3.1 LIVE | Platform: MetaTrader 5
 
-Migration status: M5 final main integration and input/branding audit complete.
-Production panel, manual execution and Comment ownership remain preserved. The
-full WATCH and notification pipelines are integrated; M6 parity audit and M7
-runtime/live transport validation remain pending. Credentials remain
-runtime-only. Auto Trade and Trade Arrow remain deferred.
+Migration status: M6 Production Parity Audit PASS. Production panel, manual
+execution and Comment ownership match the v3.0 authority, while WATCH, setup,
+renderer and notification semantics match frozen DEV. M7 runtime/live
+transport validation remains pending; this does not claim long-term LIVE
+stability or production release completion. Credentials remain runtime-only.
+Auto Trade and Trade Arrow remain deferred.
 
 ---
 

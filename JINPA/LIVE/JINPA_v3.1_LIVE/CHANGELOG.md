@@ -1,5 +1,16 @@
 # JINPA Changelog
 
+## v3.1 LIVE — Migration Phase M6 (Production Parity Audit)
+
+- PASS: production `_core` matches v3.0 byte-for-byte; the panel differs only
+  by the approved v3.1 caption and CSV filename prefix.
+- PASS: WATCH, setup, arbitration, renderer and notification authority modules
+  match frozen DEV byte-for-byte; merged integration preserves display-only
+  `ShowWatchPanel` behavior.
+- No parity defect or release blocker was found. M7 runtime/live transport
+  validation remains pending; production release completion and long-term LIVE
+  stability are not claimed.
+
 ## v3.1 LIVE — Migration Phase M5 (Final Main Integration Audit)
 
 - Confirms the production main lifecycle, CAppDialog panel, manual execution,
