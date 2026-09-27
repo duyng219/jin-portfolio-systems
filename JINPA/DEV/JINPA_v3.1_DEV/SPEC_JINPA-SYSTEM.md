@@ -4,7 +4,9 @@
 
 **Product version:** `3.10` / JINPA v3.1 DEV
 
-**Source baseline:** commit `4aafffbd3bbb5d5b0bddc41d5a2769b48e9d35ef` plus the Phase 5E DEV working tree
+**Source baseline:** commit `57f4a08bb2e65974cc2d4664d3ab742be6ba09ab` plus the final release-freeze documentation audit
+
+**Release status:** `JINPA_v3.1_DEV = RELEASE-FROZEN BASELINE`
 **Authority:** runtime source under `JINPA/DEV/JINPA_v3.1_DEV/`
 
 This is the single source-of-truth specification for JINPA v3.1 DEV. It
@@ -1054,15 +1056,21 @@ These are implementation facts that differ from common prior assumptions:
 ## 16. Current Baseline / Version
 
 This specification originated from the audited implementation baseline before
-Phase 2 and now incorporates the Phase 2 Local Swing default change:
+Phase 2 and now incorporates the complete Phase 2–5E DEV implementation:
 
-- Source commit before Phase 5E: `4aafffb`
-  (full SHA `4aafffbd3bbb5d5b0bddc41d5a2769b48e9d35ef`).
+- Release-candidate source commit: `57f4a08`
+  (full SHA `57f4a08bb2e65974cc2d4664d3ab742be6ba09ab`).
 - Baseline date: `2026-09-27`.
 - Product version: `3.10` / JINPA v3.1 DEV.
 - Phase 2 effective Local Swing default: `3/3`.
 - Runtime authority: current source under
   `JINPA/DEV/JINPA_v3.1_DEV/`.
+- Final release audit compiled the EA and all ten deterministic probe targets
+  with zero errors and zero warnings. No behavioral source patch was required.
+- This DEV baseline is ready to serve as authority for a separate controlled
+  DEV-to-LIVE migration. The freeze does not itself modify or migrate LIVE.
+- After this freeze, only a demonstrated release-blocking defect may change
+  behavior before migration; new features remain deferred.
 
 ## 17. Known Gaps / Planned Changes
 
@@ -1071,8 +1079,8 @@ baseline**:
 
 1. Review and fix Micro Base noise.
 2. Clean up inputs and lock selected parameters.
-3. Add Auto Trade with an enable/disable input.
-4. Add trade arrows.
+3. Auto Trade: **DEFERRED**.
+4. Trade Arrow: **DEFERRED**.
 5. Perform Phase 5F end-to-end runtime validation of the in-memory reliability
    behavior under live transport failures.
 6. Update this SPEC after every behavior change.
@@ -1088,3 +1096,5 @@ baseline**:
 - [x] Radar mapping and readiness behavior match current source.
 - [x] Strategy Tester behavior matches current source.
 - [x] WATCH versus manual execution boundary matches current source.
+- [x] Final DEV release audit found no behavioral release blocker.
+- [x] DEV is release-frozen; LIVE migration remains a separate task.

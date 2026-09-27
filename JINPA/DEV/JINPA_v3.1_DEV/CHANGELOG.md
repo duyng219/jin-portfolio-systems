@@ -1,5 +1,20 @@
 # JINPA Changelog
 
+## v3.1 DEV — Final release audit / frozen baseline
+
+- Audited the complete DEV authority from Price Structure through State,
+  Structure, six setup lifecycles, arbitration, rendering, notification policy,
+  transport routing, reliability, startup, Tester and manual-trade boundaries.
+- Compiled the EA and all ten deterministic probes with zero errors and zero
+  warnings; no behavioral release blocker or runtime source patch was found.
+- Confirmed no real credential fixture, active failure injection, automatic
+  WATCH trade execution, Auto Trade or Trade Arrow implementation is present.
+- Declared `JINPA_v3.1_DEV` the release-frozen migration authority. Auto Trade
+  and Trade Arrow remain deferred; LIVE was not modified or migrated.
+- Preserved the documented restart/replay limitations and the need for Phase
+  5F end-to-end reliability validation. No long-duration or MT5-fallback live
+  runtime claim is made by this audit.
+
 ## v3.1 DEV — Phase 5E notification reliability
 
 - Changed FIFO delivery to remove only after success or terminal handling;
@@ -52,6 +67,15 @@
   notification-ineligible; Radar arbitration remains independent.
 - Extended deterministic notification coverage without changing the existing
   MT5 Push transport; Telegram is not implemented.
+
+## v3.1 DEV — Phase 5A notification system audit
+
+- Audited the pre-5B notification ownership, eligibility, formatting, FIFO,
+  session dedup, Tester suppression and MT5 transport boundary.
+- Recorded the gaps that Phase 5B–5E subsequently closed: complete six-setup
+  policy, Telegram delivery, primary/fallback routing and bounded reliability.
+- Audit/documentation phase only; it introduced no setup, strategy, execution
+  or LIVE behavior change.
 
 ## v3.1 DEV — Phase 4E setup/event/output audit
 
