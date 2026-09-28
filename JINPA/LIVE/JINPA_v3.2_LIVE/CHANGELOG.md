@@ -1,11 +1,38 @@
 # JINPA Changelog
 
+## v3.2 LIVE candidate — Phase P5.1 (Relax TEST Environment Gate)
+
+- Replaced the TEST account-type hard admission gate with environment
+  identification and a single startup warning for REAL, CONTEST or unknown
+  normal-chart environments.
+- Strategy Tester remains the preferred environment identity regardless of the
+  connected account trade mode; DEMO remains warning-free.
+- TEST panel, shared manual execution, WATCH, risk, DD and trailing now remain
+  available regardless of account classification.
+- Preserved the Phase P5 authority: TEST always forces external notifications
+  off before Telegram, MT5 Push, fallback or external retry.
+- LIVE runtime admission and behavior remain unchanged. Auto Trade and Trade
+  Arrow remain absent.
+
+## v3.2 LIVE candidate — Phase P5 (Runtime Notification Gate)
+
+- Added router-owned RuntimeMode external permission with explicit terminal
+  `RUNTIME_MODE_SUPPRESSED`, distinct from `TESTER_SUPPRESSED`.
+- TEST now reaches the shared policy, suppression, dedup and FIFO pipeline but
+  cannot call Telegram `WebRequest`, MT5 `SendNotification` or fallback.
+- Runtime/tester-suppressed queue heads are consumed without retry increments,
+  retained heads or retry warnings.
+- Startup external delivery now requires LIVE mode outside Strategy Tester.
+- Added sanitized `ExternalPush` startup status and one TEST suppression notice.
+- Preserved Telegram's defensive Strategy Tester guard and all existing LIVE
+  transport, fallback, HTTP classification and reliability behavior.
+- Auto Trade and Trade Arrow remain absent.
+
 ## v3.2 LIVE candidate — Phase P4 (Unified Safety Gate)
 
-- Added one authoritative RuntimeMode environment check at the start of
-  `OnInit`: TEST is allowed only in Strategy Tester or on an exact DEMO account.
-- TEST on REAL, CONTEST or unknown chart environments now aborts initialization
-  before WATCH, controller or panel setup. LIVE admission remains unchanged.
+- Introduced authoritative RuntimeMode environment identification at the start
+  of `OnInit`. Its original account-type admission restriction was superseded
+  by the Phase P5.1 warning-only policy above.
 - Added sanitized startup environment identity: REAL, DEMO, CONTEST,
   STRATEGY_TESTER or UNKNOWN.
 - Audited the unified boundary: separate UI/Comment policies converge on the

@@ -174,17 +174,26 @@ input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;
 
 int OnInit()
 {
-    string runtimeEnvironment = "UNKNOWN";
-    string runtimeEnvironmentFailure = "";
-    if(!JINPAValidateRuntimeEnvironment(RuntimeMode,
-                                        runtimeEnvironment,
-                                        runtimeEnvironmentFailure))
+    const string runtimeEnvironment = JINPARuntimeEnvironmentName();
+    if(RuntimeMode == JINPA_MODE_TEST
+       && runtimeEnvironment != "STRATEGY_TESTER"
+       && runtimeEnvironment != "DEMO")
     {
-        Print("[JINPA][RUNTIME][ERROR] ", runtimeEnvironmentFailure);
-        Print("[JINPA][RUNTIME][ERROR] Environment=", runtimeEnvironment,
-              " | Initialization aborted.");
-        return INIT_FAILED;
+        if(runtimeEnvironment == "REAL")
+            Print("[JINPA][RUNTIME][WARN] TEST MODE is running on a REAL account. ",
+                  "Verify the selected runtime environment before manual execution.");
+        else if(runtimeEnvironment == "CONTEST")
+            Print("[JINPA][RUNTIME][WARN] TEST MODE is running on a CONTEST account. ",
+                  "Verify the selected runtime environment before manual execution.");
+        else
+            Print("[JINPA][RUNTIME][WARN] TEST MODE is running in an UNKNOWN account environment. ",
+                  "Verify the selected runtime environment before manual execution.");
     }
+    const bool runtimeModeAllowsExternalNotifications =
+        (RuntimeMode == JINPA_MODE_LIVE);
+    const bool externalNotificationsAllowed =
+        runtimeModeAllowsExternalNotifications
+        && !(bool)MQLInfoInteger(MQL_TESTER);
 
     if(SwingLeftBars < 1 || SwingRightBars < 1
        || StructureATRPeriod < 1 || CoreBreakATRBuffer < 0.0
@@ -303,6 +312,7 @@ int OnInit()
     }
 
     watchIntegration.ConfigureNotificationTransport(
+        runtimeModeAllowsExternalNotifications,
         EnableTelegramPush, TelegramBotToken, TelegramChatId,
         EnableMT5Push);
     const bool watchInitialized =
@@ -311,9 +321,21 @@ int OnInit()
     if(!watchInitialized)
         Print("[JINPA][WARN] Structure integration disabled — initialization failed.");
 
+    string externalPushStatus = "FORCED_OFF";
+    if(externalNotificationsAllowed)
+    {
+        if(watchIntegration.HasAvailableNotificationTransport())
+            externalPushStatus = "ENABLED";
+        else if(!EnableTelegramPush && !EnableMT5Push)
+            externalPushStatus = "DISABLED_BY_INPUTS";
+        else
+            externalPushStatus = "UNAVAILABLE_CONFIGURATION";
+    }
+
     Print("[JINPA v3.2 LIVE INPUT 1/5] RuntimeMode=", JINPARuntimeModeName(RuntimeMode),
           " | Environment=", runtimeEnvironment,
-          " | Panel=", g_runtimePanel.Status());
+          " | Panel=", g_runtimePanel.Status(),
+          " | ExternalPush=", externalPushStatus);
     Print("[JINPA v3.2 LIVE INPUT 2/5] Symbol=", _Symbol,
           " | Magic=", MagicNumber,
           " | POExpMin=", POExpirationMinutes,
@@ -339,19 +361,20 @@ int OnInit()
     if(!watchInitialized)
         notificationStatus += " | Watch=UNAVAILABLE";
     Print("[JINPA v3.2 LIVE INPUT 5/5] ", notificationStatus);
-    if(!watchIntegration.HasAvailableNotificationTransport())
+    if(externalNotificationsAllowed
+       && !watchIntegration.HasAvailableNotificationTransport())
         Print("[JINPA][WARN] WARNING: No available notification transport");
     if(RuntimeMode == JINPA_MODE_TEST)
     {
         Print("[JINPA][RUNTIME] TEST MODE ACTIVE");
         Print("[JINPA][RUNTIME] Panel=TEST | Execution=SHARED_CONTROLLER",
               " | CommentResolver=WATCH_AWARE");
-        Print("[JINPA][RUNTIME] WATCH semantic core=ACTIVE",
-              " | ExternalPushGate=PENDING_P5");
+        Print("[JINPA][RUNTIME] WATCH semantic core=ACTIVE");
+        Print("[JINPA][RUNTIME] External notifications are suppressed.");
     }
     Print("JINPA v3.2 LIVE initialized successfully | RuntimeMode=",
           JINPARuntimeModeName(RuntimeMode), ".");
-    if(watchInitialized)
+    if(watchInitialized && externalNotificationsAllowed)
         watchIntegration.SendStartupNotification();
     return INIT_SUCCEEDED;
 }

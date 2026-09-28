@@ -29,26 +29,15 @@ string JINPAAccountTradeModeName(const ENUM_ACCOUNT_TRADE_MODE tradeMode)
     return "UNKNOWN";
 }
 
-// Single authority for mode/environment admission. Strategy Tester is an
-// explicit TEST environment regardless of the connected account category.
-bool JINPAValidateRuntimeEnvironment(const JINPA_RUNTIME_MODE mode,
-                                     string &environment,
-                                     string &failureReason)
+// Strategy Tester is an explicit runtime environment regardless of the
+// connected account category. Account trade mode is identification only.
+string JINPARuntimeEnvironmentName()
 {
-    failureReason = "";
     if((bool)MQLInfoInteger(MQL_TESTER))
-        environment = "STRATEGY_TESTER";
-    else
-        environment = JINPAAccountTradeModeName(
-            (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE));
+        return "STRATEGY_TESTER";
 
-    if(mode == JINPA_MODE_LIVE)
-        return true;
-    if(environment == "STRATEGY_TESTER" || environment == "DEMO")
-        return true;
-
-    failureReason = "TEST MODE is allowed only in Strategy Tester or DEMO accounts.";
-    return false;
+    return JINPAAccountTradeModeName(
+        (ENUM_ACCOUNT_TRADE_MODE)AccountInfoInteger(ACCOUNT_TRADE_MODE));
 }
 
 #endif // JINPA_RUNTIME_TYPES_MQH

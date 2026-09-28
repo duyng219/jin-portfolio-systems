@@ -382,10 +382,11 @@ private:
          return true;
       }
 
-      // Tester suppression is a terminal test-only outcome. Consuming it
-      // prevents an intentionally disabled real transport from building an
-      // endless retry queue during deterministic replay.
-      if(classification == JINPA_DELIVERY_TESTER_SUPPRESSED)
+      // Runtime/tester suppression is terminal. Policy and queue construction
+      // still run, but an intentionally disabled external transport must not
+      // retain the head or increment retry state.
+      if(classification == JINPA_DELIVERY_TESTER_SUPPRESSED
+         || classification == JINPA_DELIVERY_RUNTIME_MODE_SUPPRESSED)
       {
          RemoveFirstQueuedMessage();
          return true;
@@ -442,12 +443,14 @@ public:
       ResetClosedBarPolicy(0);
    }
 
-   void ConfigureTransports(const bool enableTelegramPush,
+   void ConfigureTransports(const bool runtimeModeAllowsExternal,
+                            const bool enableTelegramPush,
                             const string telegramBotToken,
                             const string telegramChatId,
                             const bool enableMt5Push)
    {
-      m_transportRouter.Configure(enableTelegramPush, telegramBotToken,
+      m_transportRouter.Configure(runtimeModeAllowsExternal,
+                                  enableTelegramPush, telegramBotToken,
                                   telegramChatId, enableMt5Push);
    }
 
@@ -604,6 +607,7 @@ public:
                             + " | event=STARTUP");
       }
       else if(result != JINPA_ROUTE_TESTER_SUPPRESSED
+              && result != JINPA_ROUTE_RUNTIME_MODE_SUPPRESSED
               && result != JINPA_ROUTE_NO_TRANSPORT_AVAILABLE)
          WatcherLog("NOTIFICATION STARTUP",
                     JinpaNotificationRouteResultText(result));

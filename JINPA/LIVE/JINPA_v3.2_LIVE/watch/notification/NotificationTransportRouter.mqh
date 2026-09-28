@@ -10,7 +10,8 @@ enum ENUM_JINPA_NOTIFICATION_ROUTE_RESULT
    JINPA_ROUTE_TELEGRAM_FAILED_MT5_SUCCESS,
    JINPA_ROUTE_ALL_TRANSPORTS_FAILED,
    JINPA_ROUTE_NO_TRANSPORT_AVAILABLE,
-   JINPA_ROUTE_TESTER_SUPPRESSED
+   JINPA_ROUTE_TESTER_SUPPRESSED,
+   JINPA_ROUTE_RUNTIME_MODE_SUPPRESSED
 };
 
 enum ENUM_JINPA_NOTIFICATION_DELIVERY_CLASS
@@ -18,7 +19,8 @@ enum ENUM_JINPA_NOTIFICATION_DELIVERY_CLASS
    JINPA_DELIVERY_SUCCESS = 0,
    JINPA_DELIVERY_RETRYABLE_FAILURE,
    JINPA_DELIVERY_NON_RETRYABLE_FAILURE,
-   JINPA_DELIVERY_TESTER_SUPPRESSED
+   JINPA_DELIVERY_TESTER_SUPPRESSED,
+   JINPA_DELIVERY_RUNTIME_MODE_SUPPRESSED
 };
 
 // Delivery routing only. Policy, formatting, FIFO and dedup remain owned by
@@ -27,6 +29,7 @@ class CNotificationTransportRouter
 {
 private:
    CTelegramNotificationTransport m_telegram;
+   bool   m_runtimeModeAllowsExternal;
    bool   m_enableMt5Push;
    int    m_telegramAttempts;
    int    m_mt5Attempts;
@@ -46,6 +49,8 @@ private:
       m_lastMt5Attempted = false;
       m_lastTelegramFailureClass = JINPA_TELEGRAM_FAILURE_NONE;
       m_lastMt5Error = 0;
+      if(!m_runtimeModeAllowsExternal)
+         return JINPA_ROUTE_RUNTIME_MODE_SUPPRESSED;
       if(!injected && (bool)MQLInfoInteger(MQL_TESTER))
          return JINPA_ROUTE_TESTER_SUPPRESSED;
 
@@ -88,6 +93,7 @@ private:
 public:
    CNotificationTransportRouter(void)
    {
+      m_runtimeModeAllowsExternal = true;
       m_enableMt5Push = false;
       m_telegramAttempts = 0;
       m_mt5Attempts = 0;
@@ -99,11 +105,13 @@ public:
       m_startupResult = JINPA_ROUTE_NO_TRANSPORT_AVAILABLE;
    }
 
-   void Configure(const bool enableTelegramPush,
+   void Configure(const bool runtimeModeAllowsExternal,
+                  const bool enableTelegramPush,
                   const string telegramBotToken,
                   const string telegramChatId,
                   const bool enableMt5Push)
    {
+      m_runtimeModeAllowsExternal = runtimeModeAllowsExternal;
       m_telegram.Configure(enableTelegramPush, telegramBotToken,
                            telegramChatId);
       m_enableMt5Push = enableMt5Push;
@@ -193,6 +201,10 @@ public:
    {
       if(result == JINPA_ROUTE_NO_TRANSPORT_AVAILABLE)
          return "NO TRANSPORT AVAILABLE";
+      if(result == JINPA_ROUTE_RUNTIME_MODE_SUPPRESSED)
+         return "RUNTIME MODE SUPPRESSED";
+      if(result == JINPA_ROUTE_TESTER_SUPPRESSED)
+         return "STRATEGY TESTER SUPPRESSED";
       if(m_lastTelegramAttempted && !m_lastMt5Attempted)
          return "TELEGRAM " + m_telegram.StatusText();
       if(m_lastMt5Attempted)
@@ -210,6 +222,8 @@ public:
          return JINPA_DELIVERY_SUCCESS;
       if(result == JINPA_ROUTE_TESTER_SUPPRESSED)
          return JINPA_DELIVERY_TESTER_SUPPRESSED;
+      if(result == JINPA_ROUTE_RUNTIME_MODE_SUPPRESSED)
+         return JINPA_DELIVERY_RUNTIME_MODE_SUPPRESSED;
       if(result == JINPA_ROUTE_NO_TRANSPORT_AVAILABLE)
          return JINPA_DELIVERY_NON_RETRYABLE_FAILURE;
       if(m_lastMt5Attempted)
@@ -263,6 +277,8 @@ string JinpaNotificationRouteResultText(
       return "ALL_TRANSPORTS_FAILED";
    if(result == JINPA_ROUTE_TESTER_SUPPRESSED)
       return "TESTER_SUPPRESSED";
+   if(result == JINPA_ROUTE_RUNTIME_MODE_SUPPRESSED)
+      return "RUNTIME_MODE_SUPPRESSED";
    return "NO_TRANSPORT_AVAILABLE";
 }
 

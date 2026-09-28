@@ -61,6 +61,7 @@ private:
     bool            m_watchEnableCoreBreakAuditLog;
     bool            m_watchShowStructureSwings;
     bool            m_watchEnableStructureNotifications;
+    bool            m_runtimeModeAllowsExternalNotifications;
     bool            m_enableTelegramPush;
     string          m_telegramBotToken;
     string          m_telegramChatId;
@@ -79,6 +80,7 @@ public:
                                        const int coreBreakConfirmCloses,
                                        const bool showStructureSwings);
     void            ConfigureNotificationTransport(
+                                       const bool runtimeModeAllowsExternal,
                                        const bool enableTelegramPush,
                                        const string telegramBotToken,
                                        const string telegramChatId,
@@ -118,6 +120,7 @@ CWatchIntegration::CWatchIntegration(void)
     m_watchEnableCoreBreakAuditLog   = false;
     m_watchShowStructureSwings       = true;
     m_watchEnableStructureNotifications = true;
+    m_runtimeModeAllowsExternalNotifications = true;
     m_enableTelegramPush             = false;
     m_telegramBotToken               = "";
     m_telegramChatId                 = "";
@@ -149,16 +152,19 @@ bool CWatchIntegration::ConfigureStructure(const int swingLeftBars,
 }
 
 void CWatchIntegration::ConfigureNotificationTransport(
+    const bool runtimeModeAllowsExternal,
     const bool enableTelegramPush,
     const string telegramBotToken,
     const string telegramChatId,
     const bool enableMt5Push)
 {
+    m_runtimeModeAllowsExternalNotifications = runtimeModeAllowsExternal;
     m_enableTelegramPush = enableTelegramPush;
     m_telegramBotToken = telegramBotToken;
     m_telegramChatId = telegramChatId;
     m_enableMt5Push = enableMt5Push;
     m_structureNotificationManager.ConfigureTransports(
+       m_runtimeModeAllowsExternalNotifications,
        m_enableTelegramPush, m_telegramBotToken, m_telegramChatId,
        m_enableMt5Push);
 }
@@ -555,6 +561,7 @@ bool CWatchIntegration::Initialize(const string symbol,
         m_watchEnableStructureNotifications,
         m_watchEnableStructureAuditLog);
     m_structureNotificationManager.ConfigureTransports(
+        m_runtimeModeAllowsExternalNotifications,
         m_enableTelegramPush, m_telegramBotToken, m_telegramChatId,
         m_enableMt5Push);
 

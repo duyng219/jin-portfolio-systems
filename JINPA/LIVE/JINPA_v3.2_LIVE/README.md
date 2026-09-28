@@ -1,6 +1,6 @@
 # JINPA v3.2 LIVE — Unified Runtime Candidate
 
-> Phase P4 candidate only. The architecture compiles, but v3.2 has not
+> Phase P5.1 candidate only. The architecture compiles, but v3.2 has not
 > completed runtime/replay validation and is not yet the production baseline.
 
 ## Phase P2 architecture
@@ -31,35 +31,58 @@
   disable the WATCH semantic snapshot.
 - TEST manual entries respect the shared daily-DD halt. WATCH, shared managers
   and trailing continue through the common runtime lifecycle.
-- External push suppression by RuntimeMode is still pending Phase P5. TEST
-  mode must not yet be treated as notification-isolated.
+- Phase P3 intentionally left RuntimeMode external suppression for Phase P5.
 - Orders remain click-only. Auto Trade and Trade Arrow are absent.
 
-## Phase P4 unified safety gate
+## Phase P4/P5.1 unified runtime boundary
 
-- `JINPA_MODE_TEST` is admitted only in the MT5 Strategy Tester or on an
-  account whose authoritative `ACCOUNT_TRADE_MODE` is exactly DEMO.
-- TEST on REAL, CONTEST or unknown normal-chart environments fails `OnInit`
-  before WATCH, Magic, execution controller or either panel is initialized.
-- LIVE mode is not restricted by the P4 environment gate; its existing
-  terminal/EA trading checks remain authoritative.
+- TEST mode is intended primarily for Strategy Tester or DEMO. Account type
+  does not block initialization; REAL, CONTEST and nonstandard environments
+  produce one startup warning before manual execution remains available.
+- Environment identity uses `MQL_TESTER` first, then the authoritative
+  `ACCOUNT_TRADE_MODE`; no server or account-name inference is used.
+- LIVE mode remains unrestricted by account type; its existing terminal/EA
+  trading checks remain authoritative.
 - LIVE and TEST intentionally differ at the UI and Comment-policy boundary.
   Both converge on one `CManualTradeController`, shared risk/position managers,
   one `CTrade`, shared Magic filtering and the same WATCH runtime.
 - Entry is blocked by the shared daily-DD halt in both modes; cancel/close stays
   available and trailing remains a mode-independent main-runtime service.
-- Notification policy/queue/retry behavior remains shared. Only future external
-  transport permission is mode-gated, and that final gate is still Phase P5.
+- Notification policy/queue/retry behavior remains shared. P5 owns the final
+  external transport permission described below.
+
+## Phase P5 notification boundary
+
+- External delivery is allowed only for `JINPA_MODE_LIVE` outside Strategy
+  Tester. LIVE then follows the existing Telegram/MT5 Inputs and fallback.
+- TEST always returns terminal `RUNTIME_MODE_SUPPRESSED` at the router before
+  Telegram `WebRequest` or MT5 `SendNotification` can be called.
+- LIVE in Strategy Tester retains the distinct terminal result
+  `TESTER_SUPPRESSED`. TEST mode has precedence when both conditions apply.
+- Policy observation, eligibility, same-bar suppression, session dedup, FIFO,
+  queue sizing and retry machinery still run identically in both modes.
+  Suppressed queue heads are consumed without retry or retry-count changes.
+- TEST never sends a startup notification. Telegram keeps its own defensive
+  Strategy Tester guard as a second layer.
+
+Final runtime contract:
+
+- LIVE: production panel and Comment; external push according to Inputs when
+  not running in Strategy Tester.
+- TEST: TEST panel and WATCH-aware Comment; primarily intended for Strategy
+  Tester/DEMO, with warning-only admission elsewhere; external notification
+  forced off regardless of account type.
+- Shared: WATCH, execution, risk, DD, trailing and notification policy/queue.
 
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công
 > One-click order entry + ATR-based risk management
 
 Version: 3.2 LIVE candidate | Platform: MetaTrader 5
 
-Migration status: Phase P4 unified architecture and TEST environment gate are
-implemented and compile-clean. LIVE parity, TEST execution wiring and the
-environment matrix are statically audited; terminal runtime validation remains
-pending. Credentials remain runtime-only.
+Migration status: Phase P5.1 warning-only TEST environment admission and the
+Phase P5 runtime notification gate are implemented. LIVE parity, TEST execution
+safety and external delivery suppression are statically audited; terminal
+runtime validation remains pending. Credentials remain runtime-only.
 
 ---
 
