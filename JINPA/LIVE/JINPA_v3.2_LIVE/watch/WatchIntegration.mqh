@@ -573,7 +573,7 @@ bool CWatchIntegration::Initialize(const string symbol,
     {
         // Integrated WATCH owns one current-chart row. Keep the latest
         // standalone visual identity away from JINPA's top-left controls.
-        m_marketRadar.Configure(true, CORNER_RIGHT_LOWER, 15, 15, 15, 8);
+        m_marketRadar.Configure(true, CORNER_RIGHT_LOWER, 5, 5, 15, 8);
         if(!m_marketRadar.Create(m_states))
         {
             Shutdown();

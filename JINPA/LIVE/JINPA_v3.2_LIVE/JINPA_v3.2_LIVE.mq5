@@ -264,11 +264,11 @@ int OnInit()
 
     // ── Tính vị trí và kích thước panel ────────────────────────────
     // panelX: khoảng cách từ cạnh trái chart đến cạnh trái panel (px)
-    int panelX = ScaleUI(20);
+    int panelX = ScaleUI(5);
 
     // panelY: khoảng cách từ đỉnh chart đến đỉnh panel (px)
     // Chừa vùng comment trạng thái/Magic ở đỉnh chart; giá trị là pixel chart trực tiếp.
-    int panelY = 40;
+    int panelY = 33;
 
     // panelH: tự động co giãn theo chiều cao chart.
     // Không ép MIN_PANEL_H ở đây để panel không bị cắt khi MT5 chia nhiều chart.

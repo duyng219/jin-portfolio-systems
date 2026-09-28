@@ -8,11 +8,11 @@
 #define JINPA_TEST_PANEL_MQH
 
 #include <Controls/Button.mqh>
-#include <Controls/Label.mqh>
+#include "../_panel/panel_defines.mqh"
 #include "TestCommentResolver.mqh"
 #include "../trade/ManualTradeController.mqh"
 
-#define JINPA_TEST_TITLE       "JINPA_TEST_PANEL_TITLE"
+#define JINPA_TEST_LEGACY_TITLE "JINPA_TEST_PANEL_TITLE"
 #define JINPA_TEST_BUY_MARKET  "JINPA_TEST_PANEL_BUY_MARKET"
 #define JINPA_TEST_SELL_MARKET "JINPA_TEST_PANEL_SELL_MARKET"
 #define JINPA_TEST_BUY_STOP    "JINPA_TEST_PANEL_BUY_STOP"
@@ -51,7 +51,6 @@ private:
     CManualTradeController* m_controller;
     CTestCommentResolver*   m_commentResolver;
 
-    CLabel  m_title;
     CButton m_buyMarket;
     CButton m_sellMarket;
     CButton m_buyStop;
@@ -131,67 +130,66 @@ bool CTestPanel::CreateButton(CButton &button,
     button.Color(C'225,230,238');
     button.ColorBackground(background);
     button.ColorBorder(C'70,82,98');
+    button.Font("Consolas");
     button.FontSize(fontSize);
+    ObjectSetInteger(m_chart, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
     return true;
 }
 
 bool CTestPanel::CreateObjects()
 {
-    const int chartWidth  = (int)ChartGetInteger(m_chart, CHART_WIDTH_IN_PIXELS);
-    const int chartHeight = (int)ChartGetInteger(m_chart, CHART_HEIGHT_IN_PIXELS);
-    const int buttonWidth = (int)MathMax(110.0, MathMin(160.0, chartWidth * 0.10));
-    const int buttonHeight = (int)MathMax(24.0, MathMin(34.0, chartHeight * 0.04));
-    const int left = 15;
-    const int top = 52;
-    const int gap = 7;
-    const int rightColumn = left + buttonWidth + gap;
+    const int buttonWidth  = ScaleUI(132);
+    const int buttonHeight = ScaleUI(30);
+    const int left         = ScaleUI(5);
+    const int top          = ScaleUI(45);
+    const int columnGap    = ScaleUI(4);
+    const int rowGap       = ScaleUI(2);
+    const int rowStep      = buttonHeight + rowGap;
+    const int rightColumn  = left + buttonWidth + columnGap;
+    const int fontSize     = ScaleFont(8);
 
-    if(!m_title.Create(m_chart, JINPA_TEST_TITLE, m_subwindow,
-                       left, 20, rightColumn + buttonWidth, 45))
-        return false;
-    m_title.Text("JINPA v3.2 LIVE [TEST MODE]");
-    m_title.Color(C'255,196,64');
-    m_title.Font("Consolas");
-    m_title.FontSize(11);
+    // Remove the retired P3 title if an older build left it on the chart.
+    if(ObjectFind(m_chart, JINPA_TEST_LEGACY_TITLE) >= 0)
+        ObjectDelete(m_chart, JINPA_TEST_LEGACY_TITLE);
 
     const color buyColor = C'20,58,47';
     const color sellColor = C'67,31,37';
     const color neutralColor = C'23,29,38';
 
-    if(!CreateButton(m_buyMarket, JINPA_TEST_BUY_MARKET, "BUY MARKET",
+    if(!CreateButton(m_buyMarket, JINPA_TEST_BUY_MARKET, "BUY MKT",
                      left, top, left + buttonWidth, top + buttonHeight,
-                     buyColor, 9)) return false;
-    if(!CreateButton(m_sellMarket, JINPA_TEST_SELL_MARKET, "SELL MARKET",
+                     buyColor, fontSize)) return false;
+    if(!CreateButton(m_sellMarket, JINPA_TEST_SELL_MARKET, "SELL MKT",
                      rightColumn, top, rightColumn + buttonWidth, top + buttonHeight,
-                     sellColor, 9)) return false;
+                     sellColor, fontSize)) return false;
     if(!CreateButton(m_buyStop, JINPA_TEST_BUY_STOP, "BUY STOP",
-                     left, top + buttonHeight, left + buttonWidth, top + 2 * buttonHeight,
-                     buyColor, 9)) return false;
+                     left, top + rowStep, left + buttonWidth, top + rowStep + buttonHeight,
+                     buyColor, fontSize)) return false;
     if(!CreateButton(m_sellStop, JINPA_TEST_SELL_STOP, "SELL STOP",
-                     rightColumn, top + buttonHeight, rightColumn + buttonWidth, top + 2 * buttonHeight,
-                     sellColor, 9)) return false;
+                     rightColumn, top + rowStep, rightColumn + buttonWidth, top + rowStep + buttonHeight,
+                     sellColor, fontSize)) return false;
     if(!CreateButton(m_buyLimit, JINPA_TEST_BUY_LIMIT, "BUY LIMIT",
-                     left, top + 2 * buttonHeight, left + buttonWidth, top + 3 * buttonHeight,
-                     buyColor, 9)) return false;
+                     left, top + 2 * rowStep, left + buttonWidth, top + 2 * rowStep + buttonHeight,
+                     buyColor, fontSize)) return false;
     if(!CreateButton(m_sellLimit, JINPA_TEST_SELL_LIMIT, "SELL LIMIT",
-                     rightColumn, top + 2 * buttonHeight, rightColumn + buttonWidth, top + 3 * buttonHeight,
-                     sellColor, 9)) return false;
+                     rightColumn, top + 2 * rowStep, rightColumn + buttonWidth, top + 2 * rowStep + buttonHeight,
+                     sellColor, fontSize)) return false;
     if(!CreateButton(m_cancelBuy, JINPA_TEST_CANCEL_BUY, "CANCEL BUY",
-                     left, top + 3 * buttonHeight + gap,
-                     left + buttonWidth, top + 4 * buttonHeight + gap,
-                     neutralColor, 8)) return false;
+                     left, top + 3 * rowStep,
+                     left + buttonWidth, top + 3 * rowStep + buttonHeight,
+                     neutralColor, fontSize)) return false;
     if(!CreateButton(m_cancelSell, JINPA_TEST_CANCEL_SELL, "CANCEL SELL",
-                     rightColumn, top + 3 * buttonHeight + gap,
-                     rightColumn + buttonWidth, top + 4 * buttonHeight + gap,
-                     neutralColor, 8)) return false;
+                     rightColumn, top + 3 * rowStep,
+                     rightColumn + buttonWidth, top + 3 * rowStep + buttonHeight,
+                     neutralColor, fontSize)) return false;
     if(!CreateButton(m_closeBuy, JINPA_TEST_CLOSE_BUY, "CLOSE BUY",
-                     left, top + 4 * buttonHeight + gap,
-                     left + buttonWidth, top + 5 * buttonHeight + gap,
-                     neutralColor, 8)) return false;
+                     left, top + 4 * rowStep,
+                     left + buttonWidth, top + 4 * rowStep + buttonHeight,
+                     neutralColor, fontSize)) return false;
     if(!CreateButton(m_closeSell, JINPA_TEST_CLOSE_SELL, "CLOSE SELL",
-                     rightColumn, top + 4 * buttonHeight + gap,
-                     rightColumn + buttonWidth, top + 5 * buttonHeight + gap,
-                     neutralColor, 8)) return false;
+                     rightColumn, top + 4 * rowStep,
+                     rightColumn + buttonWidth, top + 4 * rowStep + buttonHeight,
+                     neutralColor, fontSize)) return false;
 
     ObjectSetString(m_chart, JINPA_TEST_CANCEL_BUY, OBJPROP_TOOLTIP,
                     "Cancel all matching Buy-side pending orders");
@@ -207,7 +205,8 @@ bool CTestPanel::CreateObjects()
 
 void CTestPanel::DestroyObjects(const int reason)
 {
-    m_title.Destroy(reason);
+    if(ObjectFind(m_chart, JINPA_TEST_LEGACY_TITLE) >= 0)
+        ObjectDelete(m_chart, JINPA_TEST_LEGACY_TITLE);
     m_buyMarket.Destroy(reason);
     m_sellMarket.Destroy(reason);
     m_buyStop.Destroy(reason);
@@ -222,8 +221,7 @@ void CTestPanel::DestroyObjects(const int reason)
 
 bool CTestPanel::AreObjectsPresent() const
 {
-    return ObjectFind(m_chart, JINPA_TEST_TITLE) >= 0
-           && ObjectFind(m_chart, JINPA_TEST_BUY_MARKET) >= 0
+    return ObjectFind(m_chart, JINPA_TEST_BUY_MARKET) >= 0
            && ObjectFind(m_chart, JINPA_TEST_SELL_MARKET) >= 0
            && ObjectFind(m_chart, JINPA_TEST_BUY_STOP) >= 0
            && ObjectFind(m_chart, JINPA_TEST_SELL_STOP) >= 0
