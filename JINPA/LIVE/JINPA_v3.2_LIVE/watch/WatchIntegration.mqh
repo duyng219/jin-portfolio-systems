@@ -613,8 +613,8 @@ void CWatchIntegration::ProcessTick(void)
     StructureEvent structureEvents[];
     m_structureEngine.ConsumeEvents(structureEvents);
 
-    // Tester follows the same eligibility/queue path. The frozen router owns
-    // the final MQL_TESTER guard and consumes TESTER_SUPPRESSED without retry.
+    // Both modes follow the same eligibility/queue path. The router owns the
+    // final runtime/tester gate and consumes either suppression without retry.
     const int eventCount = ArraySize(structureEvents);
     for(int index = 0; index < eventCount; index++)
         m_structureNotificationManager.Enqueue(structureEvents[index]);

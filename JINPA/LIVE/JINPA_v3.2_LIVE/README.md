@@ -1,6 +1,6 @@
 # JINPA v3.2 LIVE — Unified Runtime Candidate
 
-> Phase P5.1 candidate only. The architecture compiles, but v3.2 has not
+> Phase P6 final static-audit candidate. The architecture compiles, but v3.2 has not
 > completed runtime/replay validation and is not yet the production baseline.
 
 ## Phase P2 architecture
@@ -65,6 +65,22 @@
 - TEST never sends a startup notification. Telegram keeps its own defensive
   Strategy Tester guard as a second layer.
 
+## Phase P6 unified architecture invariant
+
+- LIVE and TEST differ only at the panel, Comment-policy, visual identity and
+  external-notification permission boundaries.
+- Both panels submit `SManualTradeRequest` to one `CManualTradeController`,
+  which owns all manual market/pending placement, side-wide cancellation and
+  side-wide position closure through the shared `CTrade` instance.
+- Risk, position management, daily-DD, trailing, WATCH engines, six canonical
+  setups, arbitration, renderers, Radar and notification policy/queue remain
+  shared and mode-independent.
+- The legacy `framework_manager`, `CUIManager`, `COrderExecutor` and
+  `CTradeExecutor` sources remain physically present but are not reachable from
+  the v3.2 main include graph and have no runtime authority.
+- Static production parity is clean. Terminal, replay and real-transport
+  validation remain pending and are not claimed by this audit.
+
 Final runtime contract:
 
 - LIVE: production panel and Comment; external push according to Inputs when
@@ -74,15 +90,24 @@ Final runtime contract:
   forced off regardless of account type.
 - Shared: WATCH, execution, risk, DD, trailing and notification policy/queue.
 
+Future development invariant:
+
+- `JINPA_v3.2_LIVE` is the canonical production architecture.
+- A future `JINPA_v3.2_DEV` must derive from the same WATCH, execution, risk,
+  position, DD, trailing, setup and shared notification-policy implementations.
+- R&D UI, external-push defaults/suppression and future consumers such as Auto
+  Trade may differ. Auto Trade must consume the existing signal boundary and
+  shared execution/risk stack; it must not fork those implementations.
+
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công
 > One-click order entry + ATR-based risk management
 
 Version: 3.2 LIVE candidate | Platform: MetaTrader 5
 
-Migration status: Phase P5.1 warning-only TEST environment admission and the
-Phase P5 runtime notification gate are implemented. LIVE parity, TEST execution
-safety and external delivery suppression are statically audited; terminal
-runtime validation remains pending. Credentials remain runtime-only.
+Migration status: Phase P6 final static architecture and production-parity
+audit is complete. LIVE parity, TEST execution safety and external delivery
+suppression are statically audited; terminal/replay/real-transport validation
+remains pending. Credentials remain runtime-only.
 
 ---
 
@@ -90,7 +115,7 @@ runtime validation remains pending. Credentials remain runtime-only.
 
 1. Attach `JINPA_v3.2_LIVE.ex5` lên chart
 2. Bật **AutoTrading** trong MT5
-3. 10 buttons xuất hiện góc trên-trái chart
+3. LIVE hiển thị production panel; TEST hiển thị 10 nút manual ở góc trên-trái
 4. Click button để đặt/hủy/đóng lệnh
 
 ---
@@ -105,10 +130,10 @@ runtime validation remains pending. Credentials remain runtime-only.
 | **Sell Stop** | Pending sell stop tại Bid − ATR |
 | **Buy Limit** | Pending buy limit tại Ask − ATR |
 | **Sell Limit** | Pending sell limit tại Bid + ATR |
-| **Cancel Buy Order** | Hủy pending buy order đang chờ |
-| **Cancel Sell Order** | Hủy pending sell order đang chờ |
-| **Close Buy** | Đóng buy position đầu tiên |
-| **Close Sell** | Đóng sell position đầu tiên |
+| **Cancel Buy Order** | Hủy tất cả Buy-side pending orders khớp Symbol + Magic |
+| **Cancel Sell Order** | Hủy tất cả Sell-side pending orders khớp Symbol + Magic |
+| **Close Buy** | Đóng tất cả Buy positions khớp Symbol + Magic |
+| **Close Sell** | Đóng tất cả Sell positions khớp Symbol + Magic |
 
 ---
 
@@ -156,49 +181,22 @@ Open Sell: 0
 ## Cấu trúc Files
 
 ```
-JINPA/
-├── jinpa-manual.mq5              # EA chính
-├── _core/
-│   ├── framework_manager.mqh     # Hub include tất cả modules
-│   ├── managers/
-│   │   ├── risk_manager.mqh      # Tính lot size (5 phương pháp)
-│   │   ├── position_manager.mqh  # SL/TP, Trailing Stop by ATR
-│   │   ├── trade_executor.mqh    # Gửi orders tới MT5
-│   │   ├── drawdown_manager.mqh  # Theo dõi drawdown ngày/tháng
-│   │   ├── bar_manager.mqh       # OHLCV data
-│   │   ├── indicators_manager.mqh # ATR, MA wrappers
-│   │   └── time_manager.mqh      # Kiểm tra giờ giao dịch
-│   └── infrastructure/
-│       ├── ui_manager.mqh        # 10 buttons trên chart
-│       ├── order_executor.mqh    # Bridge UI → trade logic
-│       ├── info_display.mqh      # Hiển thị stats trên chart
-│       └── position_helper.mqh   # Static helpers (count, avg high/low)
+JINPA_v3.2_LIVE/
+├── JINPA_v3.2_LIVE.mq5          # Main lifecycle and shared services
+├── runtime/                     # RuntimeMode, panel host, TEST UI/Comment
+├── trade/ManualTradeController.mqh
+├── _panel/panel_main.mqh        # Production LIVE UI/Comment policy
+├── _core/                       # Shared risk, DD, position, indicators/info
+├── watch/                       # Shared WATCH/setup/render/notification stack
 └── configs/
-    ├── symbols.json
-    └── hotkeys.json
 ```
+
+Legacy framework/UI/order-executor files under `_core` are retained source
+artifacts only. They are not included by `JINPA_v3.2_LIVE.mq5` or its active
+include graph.
 
 ---
 
 ## Tài liệu kỹ thuật
 
 Xem `SPEC_JINPA-SYSTEM.md` để hiểu chi tiết luồng xử lý, các class và công thức tính toán.
-
-
-
-Trong JINPA_v2.mq5 là version mới của manual trading của tôi khác là sử dụng bảng panel để vào lệnh, tôi muốn thêm chức năng khi gửi lệnh thì tự động gán các  comment vào lệnh , bạn có thể tạo 1 thư mục mới để đưa những file code liên quan đến panel vào và đổi tên cho 2 file .mq5 cho tách bạch giúp tôi version 1 và version 2           
-tôi có danh sách các comment theo từng vị thế vào lệnh như: 
-bres-pma
- bres-pmb 
- bres-pmb-st 
- revs-ppf 
- revs-pps 
- revs-pmr
-  revs-pfb 
-  
-  _0 : vào lệnh đúng setup (lợi thế rr giảm khi xác suất đúng) 
-  _1 : vào lệnh sớm hơn setup (lợi thế rr cao hơn khi xác suất đúng) 
-  _bias : khi backtest vào lệnh bị trễ nên tua lại để vào đúng setup dẫn đến bias xem trước tương lai (nhưng vẫn muốn đúng các setup trong các điều kiện môi trường thị trường) 
-  VD: 
-  revs-ppf_0 
-  revs-ppf_1

@@ -1,5 +1,23 @@
 # JINPA Changelog
 
+## v3.2 LIVE candidate — Phase P6 (Final Static Architecture Audit)
+
+- PASS: LIVE and TEST differ only at panel, Comment policy, visual identity and
+  external-notification permission boundaries; execution and strategy services
+  converge on the shared production architecture.
+- PASS: all reachable manual market/pending, cancel and close paths converge on
+  `CManualTradeController`; the only other reachable `OrderSend` is the existing
+  `CPositionManager` trailing `TRADE_ACTION_SLTP` modification.
+- PASS: core managers/configs and all WATCH engines, setup engines, arbitration,
+  renderers and Radar retain v3.1 LIVE parity. The TEST resolver is read-only.
+- Classified legacy framework/UI/order-executor sources as physically retained
+  but unreachable from the active include graph.
+- Recorded the future DEV invariant: R&D consumers may differ, but WATCH,
+  execution, risk, position, DD, trailing, setup and notification policy must
+  not fork from the canonical LIVE architecture.
+- No production/parity blocker was found. Runtime, replay and real-transport
+  validation remain pending; Auto Trade and Trade Arrow remain absent.
+
 ## v3.2 LIVE candidate — Phase P5.1 (Relax TEST Environment Gate)
 
 - Replaced the TEST account-type hard admission gate with environment
