@@ -35,6 +35,7 @@ CiMA             MA;
 CDrawdownManager drawdownManager;
 CInfoDisplay     infoDisplay;
 CManualTradeController g_manualTradeController;
+CTestCommentResolver g_testCommentResolver;
 CRuntimePanelHost g_runtimePanel;
 ulong            MagicNumber = 0;             // Resolved once per EA instance
 string           CanonicalSymbol = "UNKNOWN";
@@ -173,6 +174,18 @@ input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;
 
 int OnInit()
 {
+    string runtimeEnvironment = "UNKNOWN";
+    string runtimeEnvironmentFailure = "";
+    if(!JINPAValidateRuntimeEnvironment(RuntimeMode,
+                                        runtimeEnvironment,
+                                        runtimeEnvironmentFailure))
+    {
+        Print("[JINPA][RUNTIME][ERROR] ", runtimeEnvironmentFailure);
+        Print("[JINPA][RUNTIME][ERROR] Environment=", runtimeEnvironment,
+              " | Initialization aborted.");
+        return INIT_FAILED;
+    }
+
     if(SwingLeftBars < 1 || SwingRightBars < 1
        || StructureATRPeriod < 1 || CoreBreakATRBuffer < 0.0
        || CoreBreakConfirmCloses < 1)
@@ -263,6 +276,12 @@ int OnInit()
         return INIT_FAILED;
     }
 
+    if(!g_testCommentResolver.Initialize(&watchIntegration))
+    {
+        Alert("TEST Comment resolver initialization failed!");
+        return INIT_FAILED;
+    }
+
     SRuntimePanelConfig panelConfig;
     panelConfig.symbol                   = _Symbol;
     panelConfig.magic                    = MagicNumber;
@@ -271,11 +290,13 @@ int OnInit()
     panelConfig.riskPercent              = RiskPercent;
     panelConfig.fixedVolume              = FixedVolume;
     panelConfig.pendingExpirationMinutes = POExpirationMinutes;
+    panelConfig.stopLossPoints           = slPointsValue;
     panelConfig.logLevel                 = LogLevel;
 
     if(!g_runtimePanel.Initialize(RuntimeMode, 0, 0,
                                 panelX, panelY, panelX + panelW, panelY + panelH,
-                                &g_manualTradeController, panelConfig))
+                                &g_manualTradeController, &g_testCommentResolver,
+                                panelConfig))
     {
         Alert("Runtime panel initialization failed!");
         return INIT_FAILED;
@@ -291,6 +312,7 @@ int OnInit()
         Print("[JINPA][WARN] Structure integration disabled — initialization failed.");
 
     Print("[JINPA v3.2 LIVE INPUT 1/5] RuntimeMode=", JINPARuntimeModeName(RuntimeMode),
+          " | Environment=", runtimeEnvironment,
           " | Panel=", g_runtimePanel.Status());
     Print("[JINPA v3.2 LIVE INPUT 2/5] Symbol=", _Symbol,
           " | Magic=", MagicNumber,
@@ -322,8 +344,10 @@ int OnInit()
     if(RuntimeMode == JINPA_MODE_TEST)
     {
         Print("[JINPA][RUNTIME] TEST MODE ACTIVE");
-        Print("[JINPA][RUNTIME] TEST Panel: pending P3 | External notification gate: pending P5");
-        Print("[JINPA][RUNTIME] WATCH semantic core: ACTIVE");
+        Print("[JINPA][RUNTIME] Panel=TEST | Execution=SHARED_CONTROLLER",
+              " | CommentResolver=WATCH_AWARE");
+        Print("[JINPA][RUNTIME] WATCH semantic core=ACTIVE",
+              " | ExternalPushGate=PENDING_P5");
     }
     Print("JINPA v3.2 LIVE initialized successfully | RuntimeMode=",
           JINPARuntimeModeName(RuntimeMode), ".");

@@ -9,6 +9,7 @@
 
 #include "RuntimeTypes.mqh"
 #include "../_panel/panel_main.mqh"
+#include "TestPanel.mqh"
 
 struct SRuntimePanelConfig
 {
@@ -19,6 +20,7 @@ struct SRuntimePanelConfig
     double                 riskPercent;
     double                 fixedVolume;
     ushort                 pendingExpirationMinutes;
+    int                    stopLossPoints;
     ENUM_LOG_LEVEL         logLevel;
 };
 
@@ -28,6 +30,7 @@ private:
     JINPA_RUNTIME_MODE      m_mode;
     bool                    m_initialized;
     CJINPAPanel             m_livePanel;
+    CTestPanel              m_testPanel;
 
 public:
     CRuntimePanelHost();
@@ -40,6 +43,7 @@ public:
                     const int x2,
                     const int y2,
                     CManualTradeController* manualTradeController,
+                    CTestCommentResolver* testCommentResolver,
                     const SRuntimePanelConfig &config);
     void Shutdown(const int reason);
     void SetTradingHalt(const bool halted, const string reason = "");
@@ -69,14 +73,33 @@ bool CRuntimePanelHost::Initialize(const JINPA_RUNTIME_MODE mode,
                                    const int x2,
                                    const int y2,
                                    CManualTradeController* manualTradeController,
+                                   CTestCommentResolver* testCommentResolver,
                                    const SRuntimePanelConfig &config)
 {
     m_mode = mode;
 
     if(m_mode == JINPA_MODE_TEST)
     {
-        m_initialized = true;
-        return true;
+        if(manualTradeController == NULL || !manualTradeController.IsReady()
+           || testCommentResolver == NULL)
+        {
+            Print("[JINPA][ERROR] TEST panel dependencies are not ready.");
+            return false;
+        }
+
+        STestPanelConfig testConfig;
+        testConfig.moneyManagement          = config.moneyManagement;
+        testConfig.minLotPerEquitySteps     = config.minLotPerEquitySteps;
+        testConfig.riskPercent              = config.riskPercent;
+        testConfig.fixedVolume              = config.fixedVolume;
+        testConfig.pendingExpirationMinutes = config.pendingExpirationMinutes;
+        testConfig.stopLossPoints           = config.stopLossPoints;
+        testConfig.logLevel                 = (int)config.logLevel;
+        m_initialized = m_testPanel.Initialize(chart, subwindow,
+                                                manualTradeController,
+                                                testCommentResolver,
+                                                testConfig);
+        return m_initialized;
     }
 
     if(manualTradeController == NULL || !manualTradeController.IsReady())
@@ -106,6 +129,8 @@ void CRuntimePanelHost::Shutdown(const int reason)
 {
     if(m_initialized && m_mode == JINPA_MODE_LIVE)
         m_livePanel.Destroy(reason);
+    else if(m_initialized && m_mode == JINPA_MODE_TEST)
+        m_testPanel.Shutdown(reason);
     m_initialized = false;
 }
 
@@ -113,6 +138,8 @@ void CRuntimePanelHost::SetTradingHalt(const bool halted, const string reason)
 {
     if(m_initialized && m_mode == JINPA_MODE_LIVE)
         m_livePanel.SetTradingHalt(halted, reason);
+    else if(m_initialized && m_mode == JINPA_MODE_TEST)
+        m_testPanel.SetTradingHalt(halted, reason);
 }
 
 void CRuntimePanelHost::UpdateMarketData(const double atrSL,
@@ -122,12 +149,16 @@ void CRuntimePanelHost::UpdateMarketData(const double atrSL,
 {
     if(m_initialized && m_mode == JINPA_MODE_LIVE)
         m_livePanel.UpdateMarketData(atrSL, atrPO, slPoints, dailyDD);
+    else if(m_initialized && m_mode == JINPA_MODE_TEST)
+        m_testPanel.UpdateMarketData(atrSL, atrPO, slPoints, dailyDD);
 }
 
 void CRuntimePanelHost::Tick()
 {
     if(m_initialized && m_mode == JINPA_MODE_LIVE)
         m_livePanel.Tick();
+    else if(m_initialized && m_mode == JINPA_MODE_TEST)
+        m_testPanel.Tick();
 }
 
 void CRuntimePanelHost::OnChartEvent(const int id,
@@ -137,13 +168,15 @@ void CRuntimePanelHost::OnChartEvent(const int id,
 {
     if(m_initialized && m_mode == JINPA_MODE_LIVE)
         m_livePanel.ChartEvent(id, lparam, dparam, sparam);
+    else if(m_initialized && m_mode == JINPA_MODE_TEST)
+        m_testPanel.OnChartEvent(id, lparam, dparam, sparam);
 }
 
 string CRuntimePanelHost::Status() const
 {
     if(!m_initialized)
         return "NOT_INITIALIZED";
-    return (m_mode == JINPA_MODE_LIVE ? "LIVE_PANEL" : "TEST_PANEL_PENDING");
+    return (m_mode == JINPA_MODE_LIVE ? "LIVE_PANEL" : "TEST_PANEL");
 }
 
 #endif // JINPA_RUNTIME_PANEL_HOST_MQH

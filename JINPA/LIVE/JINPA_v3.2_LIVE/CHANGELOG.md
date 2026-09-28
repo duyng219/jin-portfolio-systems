@@ -1,5 +1,35 @@
 # JINPA Changelog
 
+## v3.2 LIVE candidate — Phase P4 (Unified Safety Gate)
+
+- Added one authoritative RuntimeMode environment check at the start of
+  `OnInit`: TEST is allowed only in Strategy Tester or on an exact DEMO account.
+- TEST on REAL, CONTEST or unknown chart environments now aborts initialization
+  before WATCH, controller or panel setup. LIVE admission remains unchanged.
+- Added sanitized startup environment identity: REAL, DEMO, CONTEST,
+  STRATEGY_TESTER or UNKNOWN.
+- Audited the unified boundary: separate UI/Comment policies converge on the
+  shared manual controller, risk/position managers, CTrade and Magic filtering.
+- Confirmed shared DD, trailing, WATCH/setup/renderers and notification policy
+  lifecycle. Final external notification permission remains pending Phase P5.
+- Auto Trade and Trade Arrow remain absent.
+
+## v3.2 LIVE candidate — Phase P3 (TEST Panel + Comment Resolver)
+
+- Added the namespaced `CTestPanel` with the DEV-style ten-button interaction
+  surface, chart-resize/object-recovery support and TEST-only cleanup.
+- Routed all six TEST entries and all four cancel/close actions through the
+  shared production-safe `CManualTradeController`; the DEV executor was not
+  copied or imported.
+- Added `CTestCommentResolver` and a minimal read-only WATCH setup snapshot.
+  Current direction-compatible WATCH/READY/ACTIVE setup context is preferred;
+  lightweight existing-context fallbacks end at `test-none`.
+- TEST pending-order Comments are fixed at creation time. Cancel/close actions
+  do not resolve or create Comments.
+- Preserved the LIVE panel path and LIVE Comment taxonomy unchanged.
+- RuntimeMode notification suppression remains pending Phase P5. Auto Trade
+  and Trade Arrow remain absent.
+
 ## v3.2 LIVE candidate — Phase P2 (Runtime Mode Core)
 
 - Started the unified runtime architecture from the frozen v3.1 LIVE source.

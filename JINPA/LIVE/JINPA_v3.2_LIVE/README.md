@@ -1,30 +1,65 @@
 # JINPA v3.2 LIVE — Unified Runtime Candidate
 
-> Phase P2 candidate only. The architecture compiles, but v3.2 has not
+> Phase P4 candidate only. The architecture compiles, but v3.2 has not
 > completed runtime/replay validation and is not yet the production baseline.
 
 ## Phase P2 architecture
 
 - Base: frozen `JINPA_v3.1_LIVE` production source.
 - First input: `RuntimeMode` (`JINPA_MODE_LIVE` or `JINPA_MODE_TEST`).
-- `CRuntimePanelHost` owns mode-specific UI lifecycle. LIVE hosts the existing
-  production panel; TEST is intentionally panel-free until Phase P3.
+- `CRuntimePanelHost` owns mode-specific UI lifecycle. P2 retained the existing
+  LIVE panel and left the TEST panel as the explicit Phase P3 extension point.
 - `CManualTradeController` is the single manual open/cancel/close authority.
   The LIVE panel still builds setup/suffix/custom Comment and passes it
   unchanged to the controller.
 - WATCH remains mode-independent. Notification behavior is unchanged in P2;
   the external runtime gate is deferred to Phase P5.
-- The TEST panel and `CTestCommentResolver` are deferred to Phase P3.
+- The P2 controller API accepts caller-owned Comments for the Phase P3 resolver.
 - Auto Trade and Trade Arrow remain deferred.
+
+## Phase P3 TEST mode
+
+- TEST mode now creates a dedicated `CTestPanel` with ten manual controls:
+  six entry buttons plus side-wide cancel and close actions.
+- Every TEST action uses the same `CManualTradeController` as LIVE. The legacy
+  DEV `COrderExecutor` and DEV runtime infrastructure are not imported.
+- Entry Comments are resolved at click time by `CTestCommentResolver`. It reads
+  a read-only WATCH snapshot, accepts direction-compatible WATCH/READY/ACTIVE
+  setup context, applies only lightweight existing-context fallbacks, and uses
+  `test-none` when no defensible label exists.
+- Comment resolution is independent of `ShowWatchPanel`; hiding Radar does not
+  disable the WATCH semantic snapshot.
+- TEST manual entries respect the shared daily-DD halt. WATCH, shared managers
+  and trailing continue through the common runtime lifecycle.
+- External push suppression by RuntimeMode is still pending Phase P5. TEST
+  mode must not yet be treated as notification-isolated.
+- Orders remain click-only. Auto Trade and Trade Arrow are absent.
+
+## Phase P4 unified safety gate
+
+- `JINPA_MODE_TEST` is admitted only in the MT5 Strategy Tester or on an
+  account whose authoritative `ACCOUNT_TRADE_MODE` is exactly DEMO.
+- TEST on REAL, CONTEST or unknown normal-chart environments fails `OnInit`
+  before WATCH, Magic, execution controller or either panel is initialized.
+- LIVE mode is not restricted by the P4 environment gate; its existing
+  terminal/EA trading checks remain authoritative.
+- LIVE and TEST intentionally differ at the UI and Comment-policy boundary.
+  Both converge on one `CManualTradeController`, shared risk/position managers,
+  one `CTrade`, shared Magic filtering and the same WATCH runtime.
+- Entry is blocked by the shared daily-DD halt in both modes; cancel/close stays
+  available and trailing remains a mode-independent main-runtime service.
+- Notification policy/queue/retry behavior remains shared. Only future external
+  transport permission is mode-gated, and that final gate is still Phase P5.
 
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công
 > One-click order entry + ATR-based risk management
 
 Version: 3.2 LIVE candidate | Platform: MetaTrader 5
 
-Migration status: Phase P2 architecture implemented and compile-clean. LIVE
-runtime parity and TEST interim safety are statically audited; terminal runtime
-validation remains pending. Credentials remain runtime-only.
+Migration status: Phase P4 unified architecture and TEST environment gate are
+implemented and compile-clean. LIVE parity, TEST execution wiring and the
+environment matrix are statically audited; terminal runtime validation remains
+pending. Credentials remain runtime-only.
 
 ---
 

@@ -100,6 +100,7 @@ public:
     void            OnChartChange(void);
     void            Shutdown(void);
     bool            IsEnabled(void) const { return m_enabled; }
+    bool            GetSetupSnapshot(WatchSetupSnapshot &snapshot) const;
 };
 
 CWatchIntegration::CWatchIntegration(void)
@@ -175,6 +176,56 @@ string CWatchIntegration::NotificationConfigurationReason(void) const
 bool CWatchIntegration::HasAvailableNotificationTransport(void) const
 {
     return m_structureNotificationManager.HasAvailableTransport();
+}
+
+bool CWatchIntegration::GetSetupSnapshot(WatchSetupSnapshot &snapshot) const
+{
+    ResetWatchSetupSnapshot(snapshot);
+    if(!m_enabled)
+        return false;
+
+    snapshot.isReady            = m_states[0].isReady;
+    snapshot.radarVisible       = m_watchPanelEnabled;
+    snapshot.cycle              = m_states[0].cycle;
+    snapshot.regime             = m_states[0].regime;
+    snapshot.state              = m_states[0].state;
+    snapshot.structure          = m_states[0].structure;
+    snapshot.finalSetup         = m_states[0].setup;
+    snapshot.finalStatus        = m_states[0].setupStatus;
+    snapshot.pullbackSetup      = m_lastPullbackSetup;
+    snapshot.pullbackStatus     = m_lastPullbackStatus;
+    snapshot.pmaSetup           = m_pmaSetupEngine.SetupText();
+    snapshot.pmaStatus          = m_pmaSetupEngine.StatusText();
+    snapshot.rangeSetup         = m_rangeEdgeSetupEngine.SetupText();
+    snapshot.rangeStatus        = m_rangeEdgeSetupEngine.StatusText();
+    snapshot.microBaseConfirmed = m_marketStructureEngine.MicroBaseConfirmed();
+
+    const ENUM_MARKET_CYCLE cycle = m_structureState.cycleState.cycle;
+    const string cycleDirection = cycle == MARKET_CYCLE_BULL
+                                  ? "BUY"
+                                  : (cycle == MARKET_CYCLE_BEAR ? "SELL" : "NONE");
+    if(snapshot.pullbackSetup == "revs-ppf" || snapshot.pullbackSetup == "revs-pps")
+        snapshot.pullbackDirection = cycleDirection;
+
+    const ENUM_JINPA_PMA_DIRECTION pmaDirection = m_pmaSetupEngine.Direction();
+    snapshot.pmaDirection = pmaDirection == JINPA_PMA_DIRECTION_BUY
+                            ? "BUY"
+                            : (pmaDirection == JINPA_PMA_DIRECTION_SELL ? "SELL" : "NONE");
+
+    const ENUM_JINPA_SETUP_DIRECTION rangeDirection = m_rangeEdgeSetupEngine.Direction();
+    snapshot.rangeDirection = rangeDirection == JINPA_DIRECTION_BUY
+                              ? "BUY"
+                              : (rangeDirection == JINPA_DIRECTION_SELL ? "SELL" : "NONE");
+
+    if(snapshot.finalSetup == "revs-ppf" || snapshot.finalSetup == "revs-pps")
+        snapshot.finalDirection = snapshot.pullbackDirection;
+    else if(snapshot.finalSetup == "bres-pma")
+        snapshot.finalDirection = snapshot.pmaDirection;
+    else if(snapshot.finalSetup == "bres-pmb" || snapshot.finalSetup == "revs-pfb"
+            || snapshot.finalSetup == "revs-pmr")
+        snapshot.finalDirection = snapshot.rangeDirection;
+
+    return snapshot.isReady;
 }
 
 ENUM_JINPA_NOTIFICATION_ROUTE_RESULT

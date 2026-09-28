@@ -31,6 +31,59 @@ struct SymbolState
    bool            activityInitialized;
 };
 
+// Read-only setup projection for UI/research consumers.  Direction is kept as
+// BUY/SELL/NONE text so callers do not depend on individual engine enums.
+struct WatchSetupSnapshot
+{
+   bool   isReady;
+   bool   radarVisible;
+   string cycle;
+   string regime;
+   string state;
+   string structure;
+
+   string finalSetup;
+   string finalStatus;
+   string finalDirection;
+
+   string pullbackSetup;
+   string pullbackStatus;
+   string pullbackDirection;
+
+   string pmaSetup;
+   string pmaStatus;
+   string pmaDirection;
+
+   string rangeSetup;
+   string rangeStatus;
+   string rangeDirection;
+
+   bool   microBaseConfirmed;
+};
+
+void ResetWatchSetupSnapshot(WatchSetupSnapshot &snapshot)
+{
+   snapshot.isReady              = false;
+   snapshot.radarVisible         = false;
+   snapshot.cycle                = "UNKNOWN";
+   snapshot.regime               = "UNKNOWN";
+   snapshot.state                = "UNKNOWN";
+   snapshot.structure            = "UNKNOWN";
+   snapshot.finalSetup           = "-";
+   snapshot.finalStatus          = "NONE";
+   snapshot.finalDirection       = "NONE";
+   snapshot.pullbackSetup        = "-";
+   snapshot.pullbackStatus       = "NONE";
+   snapshot.pullbackDirection    = "NONE";
+   snapshot.pmaSetup             = "-";
+   snapshot.pmaStatus            = "NONE";
+   snapshot.pmaDirection         = "NONE";
+   snapshot.rangeSetup           = "-";
+   snapshot.rangeStatus          = "NONE";
+   snapshot.rangeDirection       = "NONE";
+   snapshot.microBaseConfirmed   = false;
+}
+
 string WatcherTimeframeToString(const ENUM_TIMEFRAMES timeframe)
 {
    string value = EnumToString(timeframe);
