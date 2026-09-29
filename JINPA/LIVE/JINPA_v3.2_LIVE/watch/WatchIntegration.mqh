@@ -621,7 +621,7 @@ bool CWatchIntegration::Initialize(const string symbol,
 
     // Radar presentation is always present. Runtime mode selects only the
     // initial collapsed state; WATCH engines remain mode-independent.
-    m_marketRadar.Configure(true, CORNER_RIGHT_LOWER, ScaleUI(5), ScaleUI(5),
+    m_marketRadar.Configure(true, CORNER_RIGHT_LOWER, ScaleUI(5), ScaleUI(20),
                             15, 8, initialRadarCollapsed);
     if(!m_marketRadar.Create(m_states))
     {

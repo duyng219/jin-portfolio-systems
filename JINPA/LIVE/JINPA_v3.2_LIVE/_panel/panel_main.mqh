@@ -199,6 +199,12 @@ bool CJINPAPanel::Create(const long chart, const string name, const int subwin,
 
     if(!CAppDialog::Create(chart, name, subwin, x1, y1, x2, y2))
         return false;
+
+    // Thu nhỏ vẫn giữ cùng mép trên/trái với panel bình thường.
+    m_min_rect.LeftTop(x1, y1);
+    // Chiều rộng panel khi thu nhỏ.
+    m_min_rect.Width(160);
+
     StyleDialogFrame();
     // Controls framework calls Shift(clientArea.Left(), clientArea.Top()) on every Add().
     // Pass (0,0) so coordinates stay relative to the client area; Shift() converts them
@@ -266,7 +272,9 @@ void CJINPAPanel::StyleDialogFrame()
 
     if(ObjectFind(m_chart_id, captionName) >= 0)
     {
-        ObjectSetInteger(m_chart_id, captionName, OBJPROP_COLOR, CLR_TEXT_COMMENT);
+        ObjectSetString(m_chart_id, captionName, OBJPROP_FONT, "Consolas");
+        ObjectSetInteger(m_chart_id, captionName, OBJPROP_FONTSIZE, ScaleFont(8));
+        ObjectSetInteger(m_chart_id, captionName, OBJPROP_COLOR, CLR_TITLE);
         ObjectSetInteger(m_chart_id, captionName, OBJPROP_BGCOLOR, CLR_BG_MAIN);
         ObjectSetInteger(m_chart_id, captionName, OBJPROP_BORDER_COLOR, CLR_BG_MAIN);
     }
@@ -418,7 +426,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
         ObjectSetInteger(m_chart_id, pnName, OBJPROP_ZORDER, 0);
     }
 
-    if(!AddSeparator(0, ox+mx, oy+mx, ox+bgW-mx)) return false;
+    if(!AddSeparator(0, ox + mx, oy + mx - ScaleUI(6), ox + bgW - mx)) return false;
 
     // ══════════════════════════════════════════════════════════════
     //  BLOCK 1 — SETUP
@@ -434,7 +442,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!AddBlockBg(1, ox, b1y1, ox + bgW, b1y2)) return false;
 
     if(!MakeLbl(m_lblTitleSetup, "TitleSetup", ox+mx, tY1, ox+bgW-mx, tY1+logRH,
-                "SETUP", CLR_TITLE, "Consolas", 9)) return false;
+                "SETUP", CLR_TITLE, "Consolas", 8)) return false;
 
     // setup combo | "Key:" label | suffix/key dropdown
     int suffixW = ScaleUI(58);
@@ -483,7 +491,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!AddBlockBg(2, ox, b2y1, ox + bgW, b2y2)) return false;
 
     if(!MakeLbl(m_lblTitleSize, "TitleSize", ox+mx, tY2, ox+bgW-mx, tY2+logRH,
-                "ORDER SIZE / RISK", CLR_TITLE, "Consolas", 9)) return false;
+                "ORDER SIZE / RISK", CLR_TITLE, "Consolas", 8)) return false;
 
     // "Risk-m:" label | wider risk combo | "SL:" label | shorter SL combo
     int rLblW = ScaleUI(44), mmW = ScaleUI(96), slLblW = ScaleUI(22);
@@ -529,7 +537,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!AddBlockBg(3, ox, b3y1, ox + bgW, b3y2)) return false;
 
     if(!MakeLbl(m_lblTitleTrade, "TitleTrade", ox+mx, tY3, ox+bgW-mx, tY3+logRH,
-                "TRADE", CLR_TITLE, "Consolas", 9)) return false;
+                "TRADE", CLR_TITLE, "Consolas", 8)) return false;
 
     if(!MakeBtn(m_btnBuyMkt,    "BtnBuyMkt",   ox+mx,       yMkt,  ox+mx+BW,       yMkt+btnH,  "Buy Market",  CLR_TITLE,  CLR_BTN_BUY))  return false;
     if(!MakeBtn(m_btnSellMkt,   "BtnSellMkt",  ox+mx+BW+mx, yMkt,  ox+mx+BW+mx+BW, yMkt+btnH,  "Sell Market", CLR_TITLE,  CLR_BTN_SELL)) return false;
@@ -553,7 +561,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!AddBlockBg(4, ox, b4y1, ox + bgW, b4y2)) return false;
 
     if(!MakeLbl(m_lblTitleCancel, "TitleCancel", ox+mx, tY4, ox+bgW-mx, tY4+logRH,
-                "CANCEL", CLR_TITLE, "Consolas", 9)) return false;
+                "CANCEL", CLR_TITLE, "Consolas", 8)) return false;
 
     if(!MakeBtn(m_btnCancelBO,   "BtnCancelBO",   ox+mx,       yBO,  ox+mx+BW,       yBO+btnH,  "xBO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
     if(!MakeBtn(m_btnCancelSO,   "BtnCancelSO",   ox+mx+BW+mx, yBO,  ox+mx+BW+mx+BW, yBO+btnH,  "xSO",   CLR_TEXT_COMMENT, CLR_BTN_CANCEL)) return false;
@@ -581,7 +589,7 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
     if(!AddBlockBg(5, ox, b5y1, ox + bgW, b5y2)) return false;
 
     if(!MakeLbl(m_lblTitleLog, "TitleLog", ox+mx, tY5, ox+bgW-mx, tY5+logRH,
-                "TRADES LOG", CLR_TITLE, "Consolas", 9)) return false;
+                "TRADES LOG", CLR_TITLE, "Consolas", 8)) return false;
     if(!MakeLbl(m_lblLogCols, "LblLogCols", ox+mx, yLCols, ox+mx+W, yLCols+logRH,
                 "Ticket   Comment    Time", CLR_TEXT_COMMENT, "Consolas", 8)) return false;
     for(int i = 0; i < m_visibleLogRows; i++)

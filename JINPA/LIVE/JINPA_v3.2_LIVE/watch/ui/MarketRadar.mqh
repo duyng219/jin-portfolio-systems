@@ -626,7 +626,7 @@ public:
          }
       }
 
-      if(!CreateLabel(TitleName(), "JINPA Watch v" + JINPA_WATCH_VERSION,
+       if(!CreateLabel(TitleName(), "JINPA v" + JINPA_WATCH_VERSION + " Watch",
                       C'255,190,80'))
       {
          Destroy();
@@ -691,7 +691,7 @@ public:
             return;
       }
 
-      SetTextIfChanged(TitleName(), "JINPA Watch v" + JINPA_WATCH_VERSION);
+      SetTextIfChanged(TitleName(), "JINPA v" + JINPA_WATCH_VERSION + " Watch");
       UpdateHeaderTime();
       ApplyTextPalette();
 

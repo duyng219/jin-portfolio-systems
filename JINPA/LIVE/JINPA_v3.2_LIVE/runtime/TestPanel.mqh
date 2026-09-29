@@ -23,6 +23,7 @@
 #define JINPA_TEST_CANCEL_SELL "JINPA_TEST_PANEL_CANCEL_SELL"
 #define JINPA_TEST_CLOSE_BUY   "JINPA_TEST_PANEL_CLOSE_BUY"
 #define JINPA_TEST_CLOSE_SELL  "JINPA_TEST_PANEL_CLOSE_SELL"
+#define JINPA_TEST_SEPARATOR   "JINPA_TEST_PANEL_SEPARATOR"
 
 struct STestPanelConfig
 {
@@ -142,12 +143,22 @@ bool CTestPanel::CreateObjects()
     const int buttonWidth  = ScaleUI(132);
     const int buttonHeight = ScaleUI(30);
     const int left         = ScaleUI(5);
-    const int top          = ScaleUI(45);
+    const int top          = ScaleUI(50);
     const int columnGap    = ScaleUI(4);
-    const int rowGap       = ScaleUI(2);
-    const int rowStep      = buttonHeight + rowGap;
     const int rightColumn  = left + buttonWidth + columnGap;
     const int fontSize     = ScaleFont(8);
+
+    // Keep the existing LIMIT and CANCEL anchors, while tightening the
+    // MARKET/STOP/LIMIT group and matching the CANCEL/CLOSE spacing.
+    const int originalGap  = ScaleUI(2);
+    const int originalStep = buttonHeight + originalGap;
+    const int compactGap   = ScaleUI(1);
+    const int compactStep  = buttonHeight + compactGap;
+    const int yLimit       = top + 2 * originalStep;
+    const int yCancel      = top + 3 * originalStep;
+    const int yStop        = yLimit - compactStep;
+    const int yMarket      = yStop - compactStep;
+    const int yClose       = yCancel + compactStep;
 
     // Remove the retired P3 title if an older build left it on the chart.
     if(ObjectFind(m_chart, JINPA_TEST_LEGACY_TITLE) >= 0)
@@ -157,39 +168,72 @@ bool CTestPanel::CreateObjects()
     const color sellColor = C'67,31,37';
     const color neutralColor = C'23,29,38';
 
-    if(!CreateButton(m_buyMarket, JINPA_TEST_BUY_MARKET, "BUY MKT",
-                     left, top, left + buttonWidth, top + buttonHeight,
+    const int separatorY = top - ScaleUI(4);
+    const int separatorWidth = 2 * buttonWidth + columnGap;
+    const int separatorHeight = MathMax(1, ScaleUI(1));
+    if(!ObjectCreate(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJ_RECTANGLE_LABEL, m_subwindow, 0, 0))
+        return false;
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_CORNER, CORNER_LEFT_UPPER);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_XDISTANCE, left);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_YDISTANCE, separatorY);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_XSIZE, separatorWidth);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_YSIZE, separatorHeight);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_COLOR, clrWhite);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_BGCOLOR, clrWhite);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_BORDER_TYPE, BORDER_FLAT);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_SELECTABLE, false);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_SELECTED, false);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_HIDDEN, true);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_BACK, false);
+    ObjectSetInteger(m_chart, JINPA_TEST_SEPARATOR,
+                     OBJPROP_ZORDER, 5);
+
+    if(!CreateButton(m_buyMarket, JINPA_TEST_BUY_MARKET, "Buy",
+                     left, yMarket, left + buttonWidth, yMarket + buttonHeight,
                      buyColor, fontSize)) return false;
-    if(!CreateButton(m_sellMarket, JINPA_TEST_SELL_MARKET, "SELL MKT",
-                     rightColumn, top, rightColumn + buttonWidth, top + buttonHeight,
+    if(!CreateButton(m_sellMarket, JINPA_TEST_SELL_MARKET, "Sell",
+                     rightColumn, yMarket, rightColumn + buttonWidth, yMarket + buttonHeight,
                      sellColor, fontSize)) return false;
-    if(!CreateButton(m_buyStop, JINPA_TEST_BUY_STOP, "BUY STOP",
-                     left, top + rowStep, left + buttonWidth, top + rowStep + buttonHeight,
+    if(!CreateButton(m_buyStop, JINPA_TEST_BUY_STOP, "Buy Stop",
+                     left, yStop, left + buttonWidth, yStop + buttonHeight,
                      buyColor, fontSize)) return false;
-    if(!CreateButton(m_sellStop, JINPA_TEST_SELL_STOP, "SELL STOP",
-                     rightColumn, top + rowStep, rightColumn + buttonWidth, top + rowStep + buttonHeight,
+    if(!CreateButton(m_sellStop, JINPA_TEST_SELL_STOP, "Sell Stop",
+                     rightColumn, yStop, rightColumn + buttonWidth, yStop + buttonHeight,
                      sellColor, fontSize)) return false;
-    if(!CreateButton(m_buyLimit, JINPA_TEST_BUY_LIMIT, "BUY LIMIT",
-                     left, top + 2 * rowStep, left + buttonWidth, top + 2 * rowStep + buttonHeight,
+    if(!CreateButton(m_buyLimit, JINPA_TEST_BUY_LIMIT, "Buy Limit",
+                     left, yLimit, left + buttonWidth, yLimit + buttonHeight,
                      buyColor, fontSize)) return false;
-    if(!CreateButton(m_sellLimit, JINPA_TEST_SELL_LIMIT, "SELL LIMIT",
-                     rightColumn, top + 2 * rowStep, rightColumn + buttonWidth, top + 2 * rowStep + buttonHeight,
+    if(!CreateButton(m_sellLimit, JINPA_TEST_SELL_LIMIT, "Sell Limit",
+                     rightColumn, yLimit, rightColumn + buttonWidth, yLimit + buttonHeight,
                      sellColor, fontSize)) return false;
-    if(!CreateButton(m_cancelBuy, JINPA_TEST_CANCEL_BUY, "CANCEL BUY",
-                     left, top + 3 * rowStep,
-                     left + buttonWidth, top + 3 * rowStep + buttonHeight,
+    if(!CreateButton(m_cancelBuy, JINPA_TEST_CANCEL_BUY, "Cancel Buy Order",
+                     left, yCancel,
+                     left + buttonWidth, yCancel + buttonHeight,
                      neutralColor, fontSize)) return false;
-    if(!CreateButton(m_cancelSell, JINPA_TEST_CANCEL_SELL, "CANCEL SELL",
-                     rightColumn, top + 3 * rowStep,
-                     rightColumn + buttonWidth, top + 3 * rowStep + buttonHeight,
+    if(!CreateButton(m_cancelSell, JINPA_TEST_CANCEL_SELL, "Cancel Sell Order",
+                     rightColumn, yCancel,
+                     rightColumn + buttonWidth, yCancel + buttonHeight,
                      neutralColor, fontSize)) return false;
-    if(!CreateButton(m_closeBuy, JINPA_TEST_CLOSE_BUY, "CLOSE BUY",
-                     left, top + 4 * rowStep,
-                     left + buttonWidth, top + 4 * rowStep + buttonHeight,
+    if(!CreateButton(m_closeBuy, JINPA_TEST_CLOSE_BUY, "Close Buy",
+                     left, yClose,
+                     left + buttonWidth, yClose + buttonHeight,
                      neutralColor, fontSize)) return false;
-    if(!CreateButton(m_closeSell, JINPA_TEST_CLOSE_SELL, "CLOSE SELL",
-                     rightColumn, top + 4 * rowStep,
-                     rightColumn + buttonWidth, top + 4 * rowStep + buttonHeight,
+    if(!CreateButton(m_closeSell, JINPA_TEST_CLOSE_SELL, "Close Sell",
+                     rightColumn, yClose,
+                     rightColumn + buttonWidth, yClose + buttonHeight,
                      neutralColor, fontSize)) return false;
 
     ObjectSetString(m_chart, JINPA_TEST_CANCEL_BUY, OBJPROP_TOOLTIP,
@@ -208,6 +252,7 @@ void CTestPanel::DestroyObjects(const int reason)
 {
     if(ObjectFind(m_chart, JINPA_TEST_LEGACY_TITLE) >= 0)
         ObjectDelete(m_chart, JINPA_TEST_LEGACY_TITLE);
+    ObjectDelete(m_chart, JINPA_TEST_SEPARATOR);
     m_buyMarket.Destroy(reason);
     m_sellMarket.Destroy(reason);
     m_buyStop.Destroy(reason);
@@ -222,7 +267,8 @@ void CTestPanel::DestroyObjects(const int reason)
 
 bool CTestPanel::AreObjectsPresent() const
 {
-    return ObjectFind(m_chart, JINPA_TEST_BUY_MARKET) >= 0
+    return ObjectFind(m_chart, JINPA_TEST_SEPARATOR) >= 0
+           && ObjectFind(m_chart, JINPA_TEST_BUY_MARKET) >= 0
            && ObjectFind(m_chart, JINPA_TEST_SELL_MARKET) >= 0
            && ObjectFind(m_chart, JINPA_TEST_BUY_STOP) >= 0
            && ObjectFind(m_chart, JINPA_TEST_SELL_STOP) >= 0
