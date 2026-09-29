@@ -161,7 +161,6 @@ input int                                 CoreBreakConfirmCloses     = 2;     //
 
 sinput group                              "──────────── STRUCTURE DISPLAY ──────────────"
 input bool                                ShowStructureSwings        = true;  // Show HH/HL/LH/LL
-input bool                                ShowWatchPanel             = false; // Show WATCH Market Radar panel
 
 sinput group                              "──────────── NOTIFICATIONS ─────────────"
 input bool                                EnableTelegramPush         = true;
@@ -317,7 +316,7 @@ int OnInit()
         EnableMT5Push);
     const bool watchInitialized =
         watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period,
-                                    ShowWatchPanel);
+                                    RuntimeMode == JINPA_MODE_LIVE);
     if(!watchInitialized)
         Print("[JINPA][WARN] Structure integration disabled — initialization failed.");
 
@@ -446,6 +445,7 @@ void OnTick()
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
 {
     g_runtimePanel.OnChartEvent(id, lparam, dparam, sparam);
+    watchIntegration.OnChartEvent(id, sparam);
 
     if(id == CHARTEVENT_CHART_CHANGE)
         watchIntegration.OnChartChange();

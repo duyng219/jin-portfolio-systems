@@ -22,7 +22,6 @@ private:
     string          m_symbol;
     ENUM_TIMEFRAMES m_timeframe;
     bool            m_enabled;
-    bool            m_watchPanelEnabled;
     datetime        m_lastBarTime;
     CPriceStructureEngine m_structureEngine;
     CStructureDebugRenderer m_structureRenderer;
@@ -97,8 +96,9 @@ public:
                                               bool &showStructureSwings) const;
     bool            Initialize(const string symbol,
                                const ENUM_TIMEFRAMES timeframe,
-                               const bool showWatchPanel = true);
+                               const bool initialRadarCollapsed);
     void            ProcessTick(void);
+    void            OnChartEvent(const int id, const string &objectName);
     void            OnChartChange(void);
     void            Shutdown(void);
     bool            IsEnabled(void) const { return m_enabled; }
@@ -191,7 +191,7 @@ bool CWatchIntegration::GetSetupSnapshot(WatchSetupSnapshot &snapshot) const
         return false;
 
     snapshot.isReady            = m_states[0].isReady;
-    snapshot.radarVisible       = m_watchPanelEnabled;
+    snapshot.radarVisible       = true;
     snapshot.cycle              = m_states[0].cycle;
     snapshot.regime             = m_states[0].regime;
     snapshot.state              = m_states[0].state;
@@ -264,7 +264,6 @@ void CWatchIntegration::ResetContext(void)
     m_symbol      = "";
     m_timeframe   = PERIOD_CURRENT;
     m_enabled     = false;
-    m_watchPanelEnabled = false;
     m_lastBarTime = 0;
     m_lastMarketStructure = "UNKNOWN";
     m_lastPullbackSetup = "-";
@@ -509,7 +508,7 @@ void CWatchIntegration::UpdateStructureConsumers(void)
 
 bool CWatchIntegration::Initialize(const string symbol,
                                    const ENUM_TIMEFRAMES timeframe,
-                                   const bool showWatchPanel)
+                                   const bool initialRadarCollapsed)
 {
     Shutdown();
 
@@ -530,7 +529,6 @@ bool CWatchIntegration::Initialize(const string symbol,
 
     m_symbol      = symbol;
     m_timeframe   = timeframe;
-    m_watchPanelEnabled = showWatchPanel;
     m_lastBarTime = iTime(m_symbol, m_timeframe, 0);
     m_states[0].symbol      = m_symbol;
     m_states[0].timeframe   = m_timeframe;
@@ -569,21 +567,18 @@ bool CWatchIntegration::Initialize(const string symbol,
     m_structureRenderer.Destroy();
     UpdateStructureConsumers();
 
-    if(m_watchPanelEnabled)
+    // Radar presentation is always present. Runtime mode selects only the
+    // initial collapsed state; WATCH engines remain mode-independent.
+    m_marketRadar.Configure(true, CORNER_RIGHT_LOWER, ScaleUI(5), ScaleUI(5),
+                            15, 8, initialRadarCollapsed);
+    if(!m_marketRadar.Create(m_states))
     {
-        // Integrated WATCH owns one current-chart row. Keep the latest
-        // standalone visual identity away from JINPA's top-left controls.
-        m_marketRadar.Configure(true, CORNER_RIGHT_LOWER, 5, 5, 15, 8);
-        if(!m_marketRadar.Create(m_states))
-        {
-            Shutdown();
-            return false;
-        }
+        Shutdown();
+        return false;
     }
 
     m_enabled = true;
-    if(m_watchPanelEnabled)
-        m_marketRadar.Update(m_states, true);
+    m_marketRadar.Update(m_states, true);
     return true;
 }
 
@@ -594,8 +589,9 @@ void CWatchIntegration::ProcessTick(void)
 
     // Template application in Visual Tester may not emit a usable chart
     // event. This is a cheap object-health check; it rebuilds only if needed.
-    if(m_watchPanelEnabled)
-        m_marketRadar.RecoverIfNeeded(m_states, true);
+    m_marketRadar.RecoverIfNeeded(m_states, true);
+    m_marketRadar.PollInteraction();
+    m_marketRadar.UpdateHeaderTime();
 
     const datetime currentBarTime = iTime(m_symbol, m_timeframe, 0);
     if(currentBarTime <= 0 || currentBarTime <= m_lastBarTime)
@@ -607,8 +603,7 @@ void CWatchIntegration::ProcessTick(void)
 
     m_structureEngine.Update(m_states);
     UpdateStructureConsumers();
-    if(m_watchPanelEnabled)
-        m_marketRadar.Update(m_states, true);
+    m_marketRadar.Update(m_states, true);
 
     StructureEvent structureEvents[];
     m_structureEngine.ConsumeEvents(structureEvents);
@@ -624,16 +619,20 @@ void CWatchIntegration::ProcessTick(void)
     ArrayResize(structureEvents, 0);
 }
 
+void CWatchIntegration::OnChartEvent(const int id, const string &objectName)
+{
+    if(!m_enabled)
+        return;
+    m_marketRadar.OnChartEvent(id, objectName);
+}
+
 void CWatchIntegration::OnChartChange(void)
 {
     if(!m_enabled)
         return;
 
-    if(m_watchPanelEnabled)
-    {
-        m_marketRadar.RecoverIfNeeded(m_states, true);
-        m_marketRadar.RefreshLayout();
-    }
+    m_marketRadar.RecoverIfNeeded(m_states, true);
+    m_marketRadar.RefreshLayout();
     m_structureRenderer.RefreshActiveCoreLabelPosition();
 }
 

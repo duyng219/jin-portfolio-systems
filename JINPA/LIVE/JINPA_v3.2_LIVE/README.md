@@ -27,8 +27,8 @@
   a read-only WATCH snapshot, accepts direction-compatible WATCH/READY/ACTIVE
   setup context, applies only lightweight existing-context fallbacks, and uses
   `test-none` when no defensible label exists.
-- Comment resolution is independent of `ShowWatchPanel`; hiding Radar does not
-  disable the WATCH semantic snapshot.
+- Comment resolution is independent of Radar presentation; collapsing Radar
+  does not disable the WATCH semantic snapshot.
 - TEST manual entries respect the shared daily-DD halt. WATCH, shared managers
   and trailing continue through the common runtime lifecycle.
 - Phase P3 intentionally left RuntimeMode external suppression for Phase P5.
@@ -94,6 +94,24 @@
 - TEST execution diagnostics identify the click source and the existing shared
   controller reports symbol plus `CTrade` retcode/description. This is a
   static/compile correction; broker-side runtime execution is not claimed.
+
+## Phase P7B collapsible WATCH Radar
+
+- WATCH Radar is always present and no longer has a user-facing visibility
+  input. The only UI control is `JINPA_RADAR_TOGGLE`; `-` collapses the body and
+  `+` expands it. No close/X control exists.
+- The existing WATCH identity is consolidated as `v1.1`. The compact header is
+  `JINPA Watch v1.1`, `Update: HH:MM`, and `-/+` on one row.
+- LIVE starts collapsed; TEST starts expanded. Both use the existing
+  bottom-right anchor with scaled 5 px reference margins, so expansion grows
+  leftward/upward and remains inside the chart.
+- Collapse is presentation-only: the eight-column body is hidden without
+  clearing its objects or `SymbolState`; Price Structure, Market State, Market
+  Structure, Pullback, Range Edge, PMA, arbitration, resolver snapshots and
+  notification processing continue identically.
+- The current toggle state survives chart resize and object recovery during the
+  EA session. A fresh attach/reinitialization returns to the mode default.
+- Runtime visual validation remains pending and is not claimed here.
 
 Final runtime contract:
 

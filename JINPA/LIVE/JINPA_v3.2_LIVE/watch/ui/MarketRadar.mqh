@@ -3,11 +3,13 @@
 
 #include "../core/WatcherTypes.mqh"
 #include "../core/WatcherLogger.mqh"
+#include "../../_panel/panel_defines.mqh"
 
 #define JINPA_RADAR_COLUMN_COUNT 8
 #define JINPA_RADAR_FOOTER_FIELD_COUNT 4
 
 const bool JINPA_RADAR_LAYOUT_TRACE = false;
+const string JINPA_WATCH_VERSION = "1.1";
 
 enum ENUM_RADAR_LAYOUT_PROFILE
 {
@@ -30,6 +32,9 @@ private:
    int              m_rowCount;
    int              m_panelWidth;
    int              m_panelHeight;
+   int              m_expandedPanelWidth;
+   int              m_expandedPanelHeight;
+   bool             m_collapsed;
    int              m_columnWidths[JINPA_RADAR_COLUMN_COUNT];
    int              m_columnOffsets[JINPA_RADAR_COLUMN_COUNT];
    int              m_footerOffsets[JINPA_RADAR_FOOTER_FIELD_COUNT];
@@ -50,6 +55,11 @@ private:
    string HeaderUpdatedName() const
    {
       return m_prefix + "HEADER_UPDATED";
+   }
+
+   string ToggleName() const
+   {
+      return m_prefix + "TOGGLE";
    }
 
    string FooterWatcherName() const
@@ -88,6 +98,7 @@ private:
       if(ObjectFind(m_chartId, BackgroundName()) < 0
          || ObjectFind(m_chartId, TitleName()) < 0
          || ObjectFind(m_chartId, HeaderUpdatedName()) < 0
+         || ObjectFind(m_chartId, ToggleName()) < 0
          || ObjectFind(m_chartId, FooterWatcherName()) < 0
          || ObjectFind(m_chartId, FooterSymbolName()) < 0
          || ObjectFind(m_chartId, FooterActiveName()) < 0
@@ -224,6 +235,7 @@ private:
       m_lastChartWidth = chartWidth;
       m_lastChartHeight = (int)chartHeightValue;
       m_layoutProfile = profile;
+      m_expandedPanelWidth = m_panelWidth;
 
       if(layoutChanged && JINPA_RADAR_LAYOUT_TRACE)
       {
@@ -235,6 +247,19 @@ private:
                     + " | ultra_threshold=" + IntegerToString(ultraThreshold)
                     + " | ultra_width=" + IntegerToString(ultraWidth));
       }
+   }
+
+   void ApplyPresentationDimensions()
+   {
+      if(m_collapsed)
+      {
+         m_panelWidth = MathMin(m_expandedPanelWidth, ScaleUI(330));
+         m_panelHeight = ScaleUI(28);
+         return;
+      }
+
+      m_panelWidth = m_expandedPanelWidth;
+      m_panelHeight = m_expandedPanelHeight;
    }
 
    int ColumnWidth(const int column) const
@@ -340,6 +365,36 @@ private:
       return true;
    }
 
+   bool CreateToggle()
+   {
+      const string name = ToggleName();
+      ResetLastError();
+      if(!ObjectCreate(m_chartId, name, OBJ_BUTTON, 0, 0, 0))
+      {
+         WatcherLogError("Radar toggle creation failed"
+                         + " | error=" + IntegerToString(GetLastError()));
+         return false;
+      }
+
+      ObjectSetInteger(m_chartId, name, OBJPROP_CORNER, m_corner);
+      ObjectSetInteger(m_chartId, name, OBJPROP_COLOR, C'225,230,238');
+      ObjectSetInteger(m_chartId, name, OBJPROP_BGCOLOR, C'35,43,54');
+      ObjectSetInteger(m_chartId, name, OBJPROP_BORDER_COLOR, C'85,96,112');
+      ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, ScaleFont(8));
+      ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, false);
+      ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(m_chartId, name, OBJPROP_BACK, false);
+      ObjectSetInteger(m_chartId, name, OBJPROP_ZORDER, 30);
+      ObjectSetInteger(m_chartId, name, OBJPROP_STATE, false);
+      ObjectSetString(m_chartId, name, OBJPROP_FONT, "Consolas");
+      ObjectSetString(m_chartId, name, OBJPROP_TEXT,
+                      m_collapsed ? "+" : "-");
+      ObjectSetString(m_chartId, name, OBJPROP_TOOLTIP,
+                      m_collapsed ? "Expand JINPA Watch" : "Collapse JINPA Watch");
+      return true;
+   }
+
    void SetRectangleGeometry(const string name,
                              const int leftOffset,
                              const int topOffset,
@@ -369,11 +424,60 @@ private:
    void SetUpdatedHeaderPosition()
    {
       const string name = HeaderUpdatedName();
+      const int toggleWidth = ScaleUI(20);
+      const int rightGap = ScaleUI(8);
       ObjectSetInteger(m_chartId, name, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
       ObjectSetInteger(m_chartId, name, OBJPROP_CORNER, m_corner);
-      ObjectSetInteger(m_chartId, name, OBJPROP_XDISTANCE, m_x + 10);
+      if(m_corner == CORNER_RIGHT_UPPER || m_corner == CORNER_RIGHT_LOWER)
+         ObjectSetInteger(m_chartId, name, OBJPROP_XDISTANCE,
+                          m_x + toggleWidth + rightGap + ScaleUI(6));
+      else
+         ObjectSetInteger(m_chartId, name, OBJPROP_XDISTANCE,
+                          m_x + m_panelWidth - toggleWidth - rightGap - ScaleUI(6));
       ObjectSetInteger(m_chartId, name, OBJPROP_YDISTANCE, ObjectY(5));
-      ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 8);
+      ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, ScaleFont(8));
+   }
+
+   void SetTogglePosition()
+   {
+      const int width = ScaleUI(20);
+      const int height = ScaleUI(18);
+      const int rightOffset = ScaleUI(6);
+      SetRectangleGeometry(ToggleName(),
+                           m_panelWidth - rightOffset - width,
+                           ScaleUI(4), width, height);
+   }
+
+   void SetObjectVisible(const string name, const bool visible)
+   {
+      ObjectSetInteger(m_chartId, name, OBJPROP_TIMEFRAMES,
+                       visible ? OBJ_ALL_PERIODS : OBJ_NO_PERIODS);
+   }
+
+   void ApplyBodyVisibility()
+   {
+      const bool visible = !m_collapsed;
+      for(int line = 0; line < 3; line++)
+         SetObjectVisible(HorizontalLineName(line), visible);
+      for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
+         SetObjectVisible(HeaderName(column), visible);
+      for(int row = 0; row < m_rowCount; row++)
+         for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
+            SetObjectVisible(CellName(row, column), visible);
+      SetObjectVisible(FooterWatcherName(), visible);
+      SetObjectVisible(FooterSymbolName(), visible);
+      SetObjectVisible(FooterActiveName(), visible);
+      SetObjectVisible(FooterEventName(), visible);
+   }
+
+   void TogglePresentation()
+   {
+      m_collapsed = !m_collapsed;
+      ObjectSetInteger(m_chartId, ToggleName(), OBJPROP_STATE, false);
+      SetTextIfChanged(ToggleName(), m_collapsed ? "+" : "-");
+      ObjectSetString(m_chartId, ToggleName(), OBJPROP_TOOLTIP,
+                      m_collapsed ? "Expand JINPA Watch" : "Collapse JINPA Watch");
+      RefreshLayout();
    }
 
    void SetTextIfChanged(const string name, const string text)
@@ -404,9 +508,11 @@ private:
       const color titleColor  = lightChart ? C'170,85,0'  : C'255,190,80';
       const color headerColor = lightChart ? C'20,85,150' : C'115,195,255';
       const color footerColor = lightChart ? C'35,75,115' : C'145,185,215';
+      const color toggleColor = C'225,230,238';
 
       SetColorIfChanged(TitleName(), titleColor);
       SetColorIfChanged(HeaderUpdatedName(), footerColor);
+      SetColorIfChanged(ToggleName(), toggleColor);
       for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
          SetColorIfChanged(HeaderName(column), headerColor);
 
@@ -471,6 +577,9 @@ public:
       m_rowCount   = 0;
       m_panelWidth = 0;
       m_panelHeight = 0;
+      m_expandedPanelWidth = 0;
+      m_expandedPanelHeight = 0;
+      m_collapsed = false;
       m_lastChartWidth = -1;
       m_lastChartHeight = -1;
       m_layoutProfile = RADAR_LAYOUT_COMPACT;
@@ -482,7 +591,8 @@ public:
                   const int x,
                   const int y,
                   const int rowHeight,
-                  const int fontSize)
+                   const int fontSize,
+                   const bool initiallyCollapsed)
    {
       m_enabled   = enabled;
       m_corner    = corner;
@@ -490,6 +600,7 @@ public:
       m_y         = y;
       m_rowHeight = rowHeight;
       m_fontSize  = fontSize;
+      m_collapsed = initiallyCollapsed;
    }
 
    bool Create(const SymbolState &states[])
@@ -500,7 +611,8 @@ public:
       Destroy();
       m_rowCount = ArraySize(states);
       CalculateResponsiveLayout();
-      m_panelHeight = 60 + (m_rowCount * m_rowHeight) + 27;
+      m_expandedPanelHeight = 60 + (m_rowCount * m_rowHeight) + 27;
+      ApplyPresentationDimensions();
 
       if(!CreateBackground())
          return false;
@@ -514,13 +626,20 @@ public:
          }
       }
 
-      if(!CreateLabel(TitleName(), "JINPA WATCH v1.1", C'255,190,80'))
+      if(!CreateLabel(TitleName(), "JINPA Watch v" + JINPA_WATCH_VERSION,
+                      C'255,190,80'))
       {
          Destroy();
          return false;
       }
 
       if(!CreateLabel(HeaderUpdatedName(), "", C'145,185,215'))
+      {
+         Destroy();
+         return false;
+      }
+
+      if(!CreateToggle())
       {
          Destroy();
          return false;
@@ -572,9 +691,8 @@ public:
             return;
       }
 
-      SetTextIfChanged(TitleName(), "JINPA WATCH v1.1");
-      SetTextIfChanged(HeaderUpdatedName(), "UPDATED: "
-                       + TimeToString(TimeCurrent(), TIME_MINUTES));
+      SetTextIfChanged(TitleName(), "JINPA Watch v" + JINPA_WATCH_VERSION);
+      UpdateHeaderTime();
       ApplyTextPalette();
 
       for(int row = 0; row < m_rowCount; row++)
@@ -611,6 +729,34 @@ public:
       ChartRedraw(m_chartId);
    }
 
+   void UpdateHeaderTime()
+   {
+      if(!m_enabled || ObjectFind(m_chartId, HeaderUpdatedName()) < 0)
+         return;
+      SetTextIfChanged(HeaderUpdatedName(), "Update: "
+                       + TimeToString(TimeCurrent(), TIME_MINUTES));
+   }
+
+   bool OnChartEvent(const int id, const string objectName)
+   {
+      if(!m_enabled || id != CHARTEVENT_OBJECT_CLICK
+         || objectName != ToggleName())
+         return false;
+
+      TogglePresentation();
+      return true;
+   }
+
+   void PollInteraction()
+   {
+      if(!m_enabled || !(bool)MQLInfoInteger(MQL_TESTER)
+         || ObjectFind(m_chartId, ToggleName()) < 0
+         || !(bool)ObjectGetInteger(m_chartId, ToggleName(), OBJPROP_STATE))
+         return;
+
+      TogglePresentation();
+   }
+
    void RecoverIfNeeded(const SymbolState &states[], const bool watcherActive)
    {
       if(!m_enabled || IsStopped() || HasAllObjects())
@@ -626,6 +772,8 @@ public:
          return;
 
       CalculateResponsiveLayout();
+      m_expandedPanelHeight = 60 + (m_rowCount * m_rowHeight) + 27;
+      ApplyPresentationDimensions();
 
       const string background = BackgroundName();
       ObjectSetInteger(m_chartId, background, OBJPROP_CORNER, m_corner);
@@ -636,6 +784,8 @@ public:
 
       SetLabelPosition(TitleName(), 10, 5);
       SetUpdatedHeaderPosition();
+      SetTogglePosition();
+      SetTextIfChanged(ToggleName(), m_collapsed ? "+" : "-");
       for(int column = 0; column < JINPA_RADAR_COLUMN_COUNT; column++)
          SetLabelPosition(HeaderName(column), ColumnOffset(column), 34);
 
@@ -657,6 +807,8 @@ public:
       SetLabelPosition(FooterSymbolName(), m_footerOffsets[1], footerTop);
       SetLabelPosition(FooterActiveName(), m_footerOffsets[2], footerTop);
       SetLabelPosition(FooterEventName(), m_footerOffsets[3], footerTop);
+
+      ApplyBodyVisibility();
 
       ChartRedraw(m_chartId);
    }

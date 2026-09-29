@@ -1,5 +1,22 @@
 # JINPA Changelog
 
+## v3.2 LIVE candidate — Phase P7B (Collapsible WATCH Radar)
+
+- Removed the legacy WATCH visibility input. Radar UI now always exists and
+  exposes one namespaced `JINPA_RADAR_TOGGLE` control with `-`/`+`; there is no
+  close control.
+- Consolidated the existing WATCH `v1.1` identity into one UI version constant
+  and standardized the single-row header as `JINPA Watch v1.1`,
+  `Update: HH:MM`, and the presentation toggle.
+- LIVE initializes collapsed and TEST initializes expanded. Both states remain
+  anchored at the scaled bottom-right margin and user choice survives chart
+  resize and object recovery for the current EA session.
+- Collapse hides only Radar body objects. WATCH engines, semantic state,
+  resolver snapshots, setup arbitration and notification processing continue
+  unchanged; expanding restores the existing eight-column table.
+- Normal charts toggle from `CHARTEVENT_OBJECT_CLICK`; Visual Strategy Tester
+  retains a state-poll fallback. Runtime visual validation is not claimed.
+
 ## v3.2 LIVE candidate — Phase P7A (Normal-chart TEST Interaction)
 
 - Fixed the TEST panel's normal-chart execution path: namespaced
@@ -111,7 +128,7 @@
   by the approved v3.1 caption and CSV filename prefix.
 - PASS: WATCH, setup, arbitration, renderer and notification authority modules
   match frozen DEV byte-for-byte; merged integration preserves display-only
-  `ShowWatchPanel` behavior.
+  legacy Radar visibility behavior.
 - No parity defect or release blocker was found. M7 runtime/live transport
   validation remains pending; production release completion and long-term LIVE
   stability are not claimed.
@@ -159,7 +176,8 @@
   Structure renderer while retaining Price Structure already identical to DEV.
 - Changes confirmed-swing defaults from `5/5` to `3/3`.
 - Sets ATR defaults to period `14`, SL `2.2`, TSL `2.5`, PO `2.5`.
-- `ShowWatchPanel` remains Radar-only; WATCH core continues while hidden.
+- The former Radar visibility option remains presentation-only; WATCH core
+  continues while its UI is hidden.
 - Setup engines/renderers and the frozen notification transport/reliability
   stack remain pending for M3/M4.
 
