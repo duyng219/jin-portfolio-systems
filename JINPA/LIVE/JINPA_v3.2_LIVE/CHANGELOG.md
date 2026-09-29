@@ -1,5 +1,21 @@
 # JINPA Changelog
 
+## v3.2 LIVE candidate — Phase P7C (Setup ACTIVE Arrows)
+
+- Added one historical chart arrow when the final arbitrated WATCH output for
+  one of the six canonical setups transitions into `ACTIVE`.
+- BUY arrows point up below the authoritative activation closed bar; SELL
+  arrows point down above it, using a small ATR-based visual offset.
+- Arrow identity is deterministic by symbol, timeframe, activation bar, setup
+  and direction. Continued `ACTIVE` bars do not create duplicates.
+- Rendering is independent of WATCH collapse state, runtime mode and
+  notification eligibility. It is visualization-only and adds no Auto Trade
+  or manual-execution path.
+- Arrows persist through later lifecycle changes during the current EA session
+  and the renderer removes only its own `JINPA_SETUP_ARROW_` objects on
+  teardown. Historical lifecycle replay is not invented on initialization.
+- Runtime visual validation is not claimed.
+
 ## v3.2 LIVE candidate — Phase P7B (Collapsible WATCH Radar)
 
 - Removed the legacy WATCH visibility input. Radar UI now always exists and

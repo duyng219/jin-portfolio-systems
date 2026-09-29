@@ -143,6 +143,7 @@ public:
       Output(state);return oldSetup!=state.setup||oldStatus!=state.setupStatus||oldStructure!=state.structure;
    }
    ENUM_JINPA_SETUP Setup(void)const{return m_setup;} ENUM_JINPA_SETUP_STATUS Status(void)const{return m_status;}
+   ENUM_MARKET_CYCLE Cycle(void)const{return m_cycle;}
    double BaseHigh(void)const{return m_baseHigh;} double BaseLow(void)const{return m_baseLow;} datetime BaseTime(void)const{return m_baseTime;}
    datetime CandidateSwingTime(void)const{return m_candidateTime;} datetime CandidateConfirmationTime(void)const{return m_candidateConfirm;}
    datetime TriggerBarTime(void)const{return m_triggerTime;} datetime Leg1ConfirmedBarTime(void)const{return m_leg1Bar;} datetime Leg2ConfirmedBarTime(void)const{return m_leg2Bar;} datetime PpsTurningSwingTime(void)const{return m_turningTime;}

@@ -11,6 +11,7 @@
 #include "setup/RangeEdgeSetupEngine.mqh"
 #include "setup/PmaSetupEngine.mqh"
 #include "setup/SetupOutputArbitrator.mqh"
+#include "setup/SetupActiveArrowRenderer.mqh"
 #include "setup/PullbackBaseRenderer.mqh"
 #include "ui/MarketRadar.mqh"
 
@@ -33,6 +34,7 @@ private:
     CRangeEdgeSetupEngine m_rangeEdgeSetupEngine;
     CPmaSetupEngine m_pmaSetupEngine;
     CSetupOutputArbitrator m_setupOutputArbitrator;
+    CSetupActiveArrowRenderer m_setupActiveArrowRenderer;
     CPullbackBaseRenderer m_pullbackBaseRenderer;
     CMarketRadar    m_marketRadar;
     SymbolState     m_states[1];
@@ -68,6 +70,8 @@ private:
 
     void            ResetContext(void);
     void            UpdateStructureConsumers(void);
+    string          FinalSetupDirection(const string setup) const;
+    datetime        FinalSetupTriggerTime(const string setup) const;
 
 public:
                     CWatchIntegration(void);
@@ -300,6 +304,46 @@ void CWatchIntegration::ResetContext(void)
     m_pmaSetupEngine.Reset();
 }
 
+string CWatchIntegration::FinalSetupDirection(const string setup) const
+{
+    if(setup == "revs-ppf" || setup == "revs-pps")
+    {
+        const ENUM_MARKET_CYCLE cycle = m_pullbackSetupEngine.Cycle();
+        return cycle == MARKET_CYCLE_BULL
+               ? "BUY" : (cycle == MARKET_CYCLE_BEAR ? "SELL" : "NONE");
+    }
+
+    if(setup == "bres-pma")
+    {
+        const ENUM_JINPA_PMA_DIRECTION direction = m_pmaSetupEngine.Direction();
+        return direction == JINPA_PMA_DIRECTION_BUY
+               ? "BUY"
+               : (direction == JINPA_PMA_DIRECTION_SELL ? "SELL" : "NONE");
+    }
+
+    if(setup == "bres-pmb" || setup == "revs-pfb" || setup == "revs-pmr")
+    {
+        const ENUM_JINPA_SETUP_DIRECTION direction =
+           m_rangeEdgeSetupEngine.Direction();
+        return direction == JINPA_DIRECTION_BUY
+               ? "BUY"
+               : (direction == JINPA_DIRECTION_SELL ? "SELL" : "NONE");
+    }
+
+    return "NONE";
+}
+
+datetime CWatchIntegration::FinalSetupTriggerTime(const string setup) const
+{
+    if(setup == "revs-ppf" || setup == "revs-pps")
+        return m_pullbackSetupEngine.TriggerBarTime();
+    if(setup == "bres-pma")
+        return m_pmaSetupEngine.TriggerBarTime();
+    if(setup == "bres-pmb" || setup == "revs-pfb" || setup == "revs-pmr")
+        return m_rangeEdgeSetupEngine.TriggerBarTime();
+    return 0;
+}
+
 void CWatchIntegration::UpdateStructureConsumers(void)
 {
     if(!m_structureEngine.GetSnapshot(m_symbol,
@@ -392,6 +436,14 @@ void CWatchIntegration::UpdateStructureConsumers(void)
             m_pmaSetupEngine.SetupText(), m_pmaSetupEngine.StatusText(),
             m_rangeEdgeSetupEngine.SetupText(),
             m_rangeEdgeSetupEngine.StatusText(), m_states[0]);
+
+        // Observe only the final arbitrated projection. The owning engine
+        // supplies immutable direction and closed activation-bar time.
+        m_setupActiveArrowRenderer.Observe(
+            m_symbol, m_timeframe,
+            m_states[0].setup, m_states[0].setupStatus,
+            FinalSetupDirection(m_states[0].setup),
+            FinalSetupTriggerTime(m_states[0].setup));
 
         setupChanged = previousSetup != m_states[0].setup
                        || previousSetupStatus != m_states[0].setupStatus;
@@ -639,6 +691,7 @@ void CWatchIntegration::OnChartChange(void)
 void CWatchIntegration::Shutdown(void)
 {
     m_marketRadar.Destroy();
+    m_setupActiveArrowRenderer.Destroy();
     m_pullbackBaseRenderer.Destroy();
     m_microBaseRenderer.Destroy();
     m_structureRenderer.Destroy();

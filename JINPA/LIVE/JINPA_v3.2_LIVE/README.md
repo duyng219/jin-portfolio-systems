@@ -113,6 +113,16 @@
   EA session. A fresh attach/reinitialization returns to the mode default.
 - Runtime visual validation remains pending and is not claimed here.
 
+## Phase P7C setup ACTIVE arrows
+
+- Historical WATCH markers cover final arbitrated `ACTIVE` transitions for
+  `bres-pmb`, `bres-pma`, `revs-pfb`, `revs-pmr`, `revs-ppf` and `revs-pps`.
+- BUY uses an up arrow below the authoritative activation closed bar; SELL
+  uses a down arrow above it. Continued `ACTIVE` bars do not add arrows.
+- Rendering is independent of WATCH panel state, LIVE/TEST mode and
+  notifications, and it adds no Auto Trade semantics. Runtime visual
+  validation remains pending.
+
 Final runtime contract:
 
 - LIVE: production panel and Comment; external push according to Inputs when
