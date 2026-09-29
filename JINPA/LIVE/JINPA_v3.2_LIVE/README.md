@@ -81,6 +81,20 @@
 - Static production parity is clean. Terminal, replay and real-transport
   validation remain pending and are not claimed by this audit.
 
+## Phase P7A TEST interaction correction
+
+- On a normal chart, each namespaced TEST button is dispatched directly from
+  `CHARTEVENT_OBJECT_CLICK`; execution no longer waits for the next tick to
+  observe a transient button state.
+- Visual Strategy Tester retains button-state polling because its chart-event
+  contract differs from a normal terminal chart. Both sources converge on the
+  same TEST dispatcher, Comment resolver and `CManualTradeController`.
+- The dispatcher clears button state before invoking the shared controller, so
+  one handled interaction produces at most one manual request.
+- TEST execution diagnostics identify the click source and the existing shared
+  controller reports symbol plus `CTrade` retcode/description. This is a
+  static/compile correction; broker-side runtime execution is not claimed.
+
 Final runtime contract:
 
 - LIVE: production panel and Comment; external push according to Inputs when

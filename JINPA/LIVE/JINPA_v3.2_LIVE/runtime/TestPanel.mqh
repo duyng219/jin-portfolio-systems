@@ -77,6 +77,7 @@ private:
     bool IsOwnedObject(const string name) const;
     void RecoverIfNeeded();
     void PlaceOrder(const ENUM_ORDER_TYPE orderType);
+    bool DispatchAction(const string objectName, const string source);
     void ProcessActions();
 
 public:
@@ -322,58 +323,110 @@ void CTestPanel::PlaceOrder(const ENUM_ORDER_TYPE orderType)
     m_controller.Execute(request);
 }
 
+bool CTestPanel::DispatchAction(const string objectName, const string source)
+{
+    string action = "";
+
+    if(objectName == JINPA_TEST_BUY_MARKET)
+    {
+        action = "BUY_MKT";
+        m_buyMarket.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        PlaceOrder(ORDER_TYPE_BUY);
+    }
+    else if(objectName == JINPA_TEST_SELL_MARKET)
+    {
+        action = "SELL_MKT";
+        m_sellMarket.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        PlaceOrder(ORDER_TYPE_SELL);
+    }
+    else if(objectName == JINPA_TEST_BUY_STOP)
+    {
+        action = "BUY_STOP";
+        m_buyStop.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        PlaceOrder(ORDER_TYPE_BUY_STOP);
+    }
+    else if(objectName == JINPA_TEST_SELL_STOP)
+    {
+        action = "SELL_STOP";
+        m_sellStop.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        PlaceOrder(ORDER_TYPE_SELL_STOP);
+    }
+    else if(objectName == JINPA_TEST_BUY_LIMIT)
+    {
+        action = "BUY_LIMIT";
+        m_buyLimit.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        PlaceOrder(ORDER_TYPE_BUY_LIMIT);
+    }
+    else if(objectName == JINPA_TEST_SELL_LIMIT)
+    {
+        action = "SELL_LIMIT";
+        m_sellLimit.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        PlaceOrder(ORDER_TYPE_SELL_LIMIT);
+    }
+    else if(objectName == JINPA_TEST_CANCEL_BUY)
+    {
+        action = "CANCEL_BUY";
+        m_cancelBuy.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        m_controller.CancelBuyPending(m_config.logLevel);
+    }
+    else if(objectName == JINPA_TEST_CANCEL_SELL)
+    {
+        action = "CANCEL_SELL";
+        m_cancelSell.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        m_controller.CancelSellPending(m_config.logLevel);
+    }
+    else if(objectName == JINPA_TEST_CLOSE_BUY)
+    {
+        action = "CLOSE_BUY";
+        m_closeBuy.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        m_controller.CloseBuyPositions(m_config.logLevel);
+    }
+    else if(objectName == JINPA_TEST_CLOSE_SELL)
+    {
+        action = "CLOSE_SELL";
+        m_closeSell.Pressed(false);
+        Print("[JINPA][TEST_PANEL] ", action, " CLICK | source=", source);
+        m_controller.CloseSellPositions(m_config.logLevel);
+    }
+
+    if(action == "")
+        return false;
+
+    ChartRedraw(m_chart);
+    return true;
+}
+
 void CTestPanel::ProcessActions()
 {
     if(m_buyMarket.Pressed())
-    {
-        m_buyMarket.Pressed(false);
-        PlaceOrder(ORDER_TYPE_BUY);
-    }
+        DispatchAction(JINPA_TEST_BUY_MARKET, "TESTER_POLL");
     if(m_sellMarket.Pressed())
-    {
-        m_sellMarket.Pressed(false);
-        PlaceOrder(ORDER_TYPE_SELL);
-    }
+        DispatchAction(JINPA_TEST_SELL_MARKET, "TESTER_POLL");
     if(m_buyStop.Pressed())
-    {
-        m_buyStop.Pressed(false);
-        PlaceOrder(ORDER_TYPE_BUY_STOP);
-    }
+        DispatchAction(JINPA_TEST_BUY_STOP, "TESTER_POLL");
     if(m_sellStop.Pressed())
-    {
-        m_sellStop.Pressed(false);
-        PlaceOrder(ORDER_TYPE_SELL_STOP);
-    }
+        DispatchAction(JINPA_TEST_SELL_STOP, "TESTER_POLL");
     if(m_buyLimit.Pressed())
-    {
-        m_buyLimit.Pressed(false);
-        PlaceOrder(ORDER_TYPE_BUY_LIMIT);
-    }
+        DispatchAction(JINPA_TEST_BUY_LIMIT, "TESTER_POLL");
     if(m_sellLimit.Pressed())
-    {
-        m_sellLimit.Pressed(false);
-        PlaceOrder(ORDER_TYPE_SELL_LIMIT);
-    }
+        DispatchAction(JINPA_TEST_SELL_LIMIT, "TESTER_POLL");
     if(m_cancelBuy.Pressed())
-    {
-        m_cancelBuy.Pressed(false);
-        m_controller.CancelBuyPending(m_config.logLevel);
-    }
+        DispatchAction(JINPA_TEST_CANCEL_BUY, "TESTER_POLL");
     if(m_cancelSell.Pressed())
-    {
-        m_cancelSell.Pressed(false);
-        m_controller.CancelSellPending(m_config.logLevel);
-    }
+        DispatchAction(JINPA_TEST_CANCEL_SELL, "TESTER_POLL");
     if(m_closeBuy.Pressed())
-    {
-        m_closeBuy.Pressed(false);
-        m_controller.CloseBuyPositions(m_config.logLevel);
-    }
+        DispatchAction(JINPA_TEST_CLOSE_BUY, "TESTER_POLL");
     if(m_closeSell.Pressed())
-    {
-        m_closeSell.Pressed(false);
-        m_controller.CloseSellPositions(m_config.logLevel);
-    }
+        DispatchAction(JINPA_TEST_CLOSE_SELL, "TESTER_POLL");
 }
 
 void CTestPanel::Tick()
@@ -381,7 +434,12 @@ void CTestPanel::Tick()
     if(!m_initialized)
         return;
     RecoverIfNeeded();
-    ProcessActions();
+    // Visual Strategy Tester does not provide the normal-chart object-click
+    // contract reliably, so it retains the original button-state polling.
+    // Normal charts execute from CHARTEVENT_OBJECT_CLICK to avoid depending
+    // on a subsequent market tick or on the transient OBJPROP_STATE value.
+    if((bool)MQLInfoInteger(MQL_TESTER))
+        ProcessActions();
 }
 
 void CTestPanel::OnChartEvent(const int id,
@@ -391,6 +449,12 @@ void CTestPanel::OnChartEvent(const int id,
 {
     if(!m_initialized)
         return;
+
+    if(id == CHARTEVENT_OBJECT_CLICK && IsOwnedObject(sparam))
+    {
+        DispatchAction(sparam, "CHART_EVENT");
+        return;
+    }
 
     m_buyMarket.OnEvent(id, lparam, dparam, sparam);
     m_sellMarket.OnEvent(id, lparam, dparam, sparam);

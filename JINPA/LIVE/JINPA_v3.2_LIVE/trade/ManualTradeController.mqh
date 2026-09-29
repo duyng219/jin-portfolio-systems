@@ -173,15 +173,19 @@ void CManualTradeController::LogResult(const string action, const int logLevel) 
     if(ok)
     {
         if(logLevel >= 2)
-            Print("[JINPA][TRADE] ", shortAction,
+            Print("[JINPA][MANUAL_TRADE] ", shortAction,
+                  " | symbol=", m_symbol,
+                  " | SUCCESS | retcode=", rc,
+                  " | ", m_trade.ResultRetcodeDescription(),
                   " | #", m_trade.ResultOrder(),
                   " | ", DoubleToString(m_trade.ResultVolume(), 2),
                   " | ", DoubleToString(m_trade.ResultPrice(), _Digits));
     }
     else
     {
-        Print("[JINPA][ERROR] ", shortAction, " failed",
-              " | retcode=", rc,
+        Print("[JINPA][MANUAL_TRADE] ", shortAction,
+              " | symbol=", m_symbol,
+              " | FAILED | retcode=", rc,
               " | ", m_trade.ResultRetcodeDescription());
     }
 }
@@ -204,12 +208,16 @@ bool CManualTradeController::Execute(const SManualTradeRequest &request)
                             request.orderType == ORDER_TYPE_SELL_LIMIT);
     if(request.useATRStopLoss && request.atrStopLoss <= 0.0)
     {
-        Print("[JINPA][WARN] ATR SL not ready (atrSL=0) — wait a tick for indicator to load.");
+        Print("[JINPA][MANUAL_TRADE] ", EnumToString(request.orderType),
+              " | symbol=", m_symbol,
+              " | CONTROLLER_REJECTED | reason=ATR SL not ready (atrSL=0)");
         return false;
     }
     if(isPending && request.atrPendingOffset <= 0.0)
     {
-        Print("[JINPA][WARN] ATR PO not ready (atrPO=0) — wait a tick for indicator to load.");
+        Print("[JINPA][MANUAL_TRADE] ", EnumToString(request.orderType),
+              " | symbol=", m_symbol,
+              " | CONTROLLER_REJECTED | reason=ATR PO not ready (atrPO=0)");
         return false;
     }
 
@@ -311,7 +319,9 @@ bool CManualTradeController::Execute(const SManualTradeRequest &request)
     if(attempted)
         LogResult(EnumToString(request.orderType), request.logLevel);
     else if(request.logLevel >= 1)
-        Print("[JINPA][ERROR] Lot=0 — cannot place ", EnumToString(request.orderType),
+        Print("[JINPA][MANUAL_TRADE] ", EnumToString(request.orderType),
+              " | symbol=", m_symbol,
+              " | CONTROLLER_REJECTED | reason=Lot=0",
               " | atrSL=", DoubleToString(request.atrStopLoss, digits),
               " atrPO=", DoubleToString(request.atrPendingOffset, digits));
 

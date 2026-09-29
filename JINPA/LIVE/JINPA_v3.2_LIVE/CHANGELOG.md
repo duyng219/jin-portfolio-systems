@@ -1,5 +1,20 @@
 # JINPA Changelog
 
+## v3.2 LIVE candidate — Phase P7A (Normal-chart TEST Interaction)
+
+- Fixed the TEST panel's normal-chart execution path: namespaced
+  `CHARTEVENT_OBJECT_CLICK` events now dispatch immediately instead of waiting
+  for a transient pressed state to be observed by a later market tick.
+- Retained button-state polling only for Visual Strategy Tester compatibility;
+  both paths converge on one dispatcher, reset button state before execution
+  and submit at most one shared-controller request per handled interaction.
+- Added concise click-source and shared `CTrade` result diagnostics, including
+  symbol, retcode and retcode description. No credentials are logged.
+- Preserved the approved compact TEST geometry, LIVE panel behavior, WATCH,
+  notification suppression, DD rules and the no-Auto-Trade firewall.
+- Compile/static validation is recorded by the P7A report; broker-side normal
+  chart and Strategy Tester interaction remain runtime validation items.
+
 ## v3.2 LIVE candidate — Phase P6 (Final Static Architecture Audit)
 
 - PASS: LIVE and TEST differ only at panel, Comment policy, visual identity and
