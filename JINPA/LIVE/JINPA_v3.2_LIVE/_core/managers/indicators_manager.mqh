@@ -41,29 +41,6 @@ void CIndicator::RefreshMain(void)
 }
 
 //+------------------------------------------------------------------+
-//| CiMA — Moving Average                                            |
-//+------------------------------------------------------------------+
-class CiMA : public CIndicator
-{
-public:
-    int Init(string pSymbol, ENUM_TIMEFRAMES pTimeframe, int pPeriod,
-             int pShift, ENUM_MA_METHOD pMethod, ENUM_APPLIED_PRICE pPrice);
-};
-
-int CiMA::Init(string pSymbol, ENUM_TIMEFRAMES pTimeframe, int pPeriod,
-               int pShift, ENUM_MA_METHOD pMethod, ENUM_APPLIED_PRICE pPrice)
-{
-    ResetLastError();
-    handle = iMA(pSymbol, pTimeframe, pPeriod, pShift, pMethod, pPrice);
-    if(handle == INVALID_HANDLE)
-    {
-        Print("..MA Init error: ", GetLastError());
-        return -1;
-    }
-    return handle;
-}
-
-//+------------------------------------------------------------------+
 //| CiATR — Average True Range                                       |
 //+------------------------------------------------------------------+
 class CiATR : public CIndicator

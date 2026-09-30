@@ -16,7 +16,6 @@ jinpa-manual.mq5
 │   ├── CTradeExecutor Trade     ← Gửi orders tới broker
 │   ├── CBar Bar                 ← OHLCV bar data
 │   ├── CiATR ATR                ← ATR indicator
-│   ├── CiMA MA                  ← MA indicator
 │   ├── CUIManager uiManager     ← 10 buttons trên chart
 │   ├── CDrawdownManager         ← Track drawdown ngày/tháng
 │   ├── COrderExecutor           ← Bridge UI buttons → orders
@@ -32,7 +31,7 @@ jinpa-manual.mq5
 ```
 OnTick()
 │
-├── 1. Refresh ATR, MA values
+├── 1. Refresh ATR values
 │
 ├── 2. Refresh Bar data (6 bars), lấy Ask/Bid
 │
@@ -41,7 +40,7 @@ OnTick()
 │
 ├── 4. Đếm open buy/sell positions
 │
-├── 5. InfoDisplay.UpdateDisplay() + UpdateButtonTooltips()
+├── 5. InfoDisplay.UpdateDisplay()
 │
 ├── 6. OrderExecutor.HandleAllOrders(ask, bid, atr, ...)
 │   ├── Mỗi button được poll qua uiManager.XxxPressed()
@@ -175,7 +174,7 @@ Reset monthly: khi tháng thay đổi.
 
 ### CInfoDisplay — Info Display (`info_display.mqh`)
 
-Tạo 6 `OBJ_LABEL` objects góc trên-phải chart. Gọi mỗi tick qua `UpdateDisplay()`. Update tooltip các buttons qua `UpdateButtonTooltips()`.
+Tạo 6 `OBJ_LABEL` objects góc trên-phải chart. Gọi mỗi tick qua `UpdateDisplay()`.
 
 ---
 
@@ -200,7 +199,6 @@ OnInit()
 ├── Kiểm tra TERMINAL_TRADE_ALLOWED + MQL_TRADE_ALLOWED
 ├── SymbolSelect(_Symbol)
 ├── uiManager.Initialize()  → CreateAllButtons()
-├── MA.Init()               → handle error → INIT_FAILED
 ├── ATR.Init()              → handle error → INIT_FAILED
 └── orderExecutor.Initialize(tất cả params)
 ```

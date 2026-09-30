@@ -32,7 +32,6 @@ public:
                        double balance, double risk, int spread, ulong magicNumber);
     void UpdatePoolSummary(string symbol, ulong magicNumber, double risk, double maxDrawdown,
                            double displayVirtualCapital = 0.0);
-    void UpdateButtonTooltips(double askPrice, double bidPrice);
     void ClearDisplay();
 };
 
@@ -282,16 +281,6 @@ void CInfoDisplay::UpdatePoolSummary(string symbol, ulong magicNumber, double ri
     SetText("InfoPoolLine9",
             FormatCandleCloseTime(symbol),
             x, y0 + 8 * rowGap, 9, clrLime);
-}
-
-void CInfoDisplay::UpdateButtonTooltips(double askPrice, double bidPrice)
-{
-    ObjectSetString(0, "Btn Buy",        OBJPROP_TOOLTIP, "Buy at: "  + DoubleToString(askPrice, 5));
-    ObjectSetString(0, "Btn Buy Stop",   OBJPROP_TOOLTIP, "Buy Stop");
-    ObjectSetString(0, "Btn Buy Limit",  OBJPROP_TOOLTIP, "Buy Limit");
-    ObjectSetString(0, "Btn Sell",       OBJPROP_TOOLTIP, "Sell at: " + DoubleToString(bidPrice, 5));
-    ObjectSetString(0, "Btn Sell Stop",  OBJPROP_TOOLTIP, "Sell Stop");
-    ObjectSetString(0, "Btn Sell Limit", OBJPROP_TOOLTIP, "Sell Limit");
 }
 
 void CInfoDisplay::ClearDisplay()

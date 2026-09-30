@@ -1,5 +1,16 @@
 # JINPA Changelog
 
+## v3.2 LIVE — Cleanup 01B
+
+- Removed the unused per-tick `CBar` refresh and stale legacy tooltip update
+  path.
+- Trading and WATCH semantics are unchanged.
+
+## v3.2 LIVE — Cleanup 01A
+
+- Removed the unused MA runtime chain.
+- Trading and WATCH semantics are unchanged.
+
 ## v3.2 LIVE — Hotfix ARROW-01
 
 - Removed the ATR indicator dependency from Setup ACTIVE Arrow rendering.
