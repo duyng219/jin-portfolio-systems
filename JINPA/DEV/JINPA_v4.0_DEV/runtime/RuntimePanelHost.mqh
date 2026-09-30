@@ -42,7 +42,7 @@ public:
                     const int y1,
                     const int x2,
                     const int y2,
-                    CManualTradeController* manualTradeController,
+                    CTradeExecutionController* tradeExecutionController,
                     CTestCommentResolver* testCommentResolver,
                     const SRuntimePanelConfig &config);
     void Shutdown(const int reason);
@@ -72,7 +72,7 @@ bool CRuntimePanelHost::Initialize(const JINPA_RUNTIME_MODE mode,
                                    const int y1,
                                    const int x2,
                                    const int y2,
-                                   CManualTradeController* manualTradeController,
+                                   CTradeExecutionController* tradeExecutionController,
                                    CTestCommentResolver* testCommentResolver,
                                    const SRuntimePanelConfig &config)
 {
@@ -80,7 +80,7 @@ bool CRuntimePanelHost::Initialize(const JINPA_RUNTIME_MODE mode,
 
     if(m_mode == JINPA_MODE_TEST)
     {
-        if(manualTradeController == NULL || !manualTradeController.IsReady()
+        if(tradeExecutionController == NULL || !tradeExecutionController.IsReady()
            || testCommentResolver == NULL)
         {
             Print("[JINPA][ERROR] TEST panel dependencies are not ready.");
@@ -96,15 +96,15 @@ bool CRuntimePanelHost::Initialize(const JINPA_RUNTIME_MODE mode,
         testConfig.stopLossPoints           = config.stopLossPoints;
         testConfig.logLevel                 = (int)config.logLevel;
         m_initialized = m_testPanel.Initialize(chart, subwindow,
-                                                manualTradeController,
+                                                tradeExecutionController,
                                                 testCommentResolver,
                                                 testConfig);
         return m_initialized;
     }
 
-    if(manualTradeController == NULL || !manualTradeController.IsReady())
+    if(tradeExecutionController == NULL || !tradeExecutionController.IsReady())
     {
-        Print("[JINPA][ERROR] LIVE panel cannot start: manual trade controller is not ready.");
+        Print("[JINPA][ERROR] LIVE panel cannot start: trade execution controller is not ready.");
         return false;
     }
 
@@ -112,7 +112,7 @@ bool CRuntimePanelHost::Initialize(const JINPA_RUNTIME_MODE mode,
         return false;
 
     m_livePanel.SetDependencies(config.symbol, config.magic,
-                                manualTradeController,
+                                tradeExecutionController,
                                 config.moneyManagement,
                                 config.minLotPerEquitySteps,
                                 config.riskPercent,

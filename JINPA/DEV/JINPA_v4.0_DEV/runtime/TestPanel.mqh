@@ -10,7 +10,7 @@
 #include <Controls/Button.mqh>
 #include "../_panel/panel_defines.mqh"
 #include "TestCommentResolver.mqh"
-#include "../trade/ManualTradeController.mqh"
+#include "../trade/TradeExecutionController.mqh"
 
 #define JINPA_TEST_LEGACY_TITLE "JINPA_TEST_PANEL_TITLE"
 #define JINPA_TEST_BUY_MARKET  "JINPA_TEST_PANEL_BUY_MARKET"
@@ -49,7 +49,7 @@ private:
     double                  m_atrPO;
     int                     m_stopLossPoints;
     STestPanelConfig        m_config;
-    CManualTradeController* m_controller;
+    CTradeExecutionController* m_controller;
     CTestCommentResolver*   m_commentResolver;
 
     CButton m_buyMarket;
@@ -85,7 +85,7 @@ public:
     CTestPanel();
     bool Initialize(const long chart,
                     const int subwindow,
-                    CManualTradeController* controller,
+                    CTradeExecutionController* controller,
                     CTestCommentResolver* commentResolver,
                     const STestPanelConfig &config);
     void Shutdown(const int reason);
@@ -298,7 +298,7 @@ void CTestPanel::RecoverIfNeeded()
 
 bool CTestPanel::Initialize(const long chart,
                             const int subwindow,
-                            CManualTradeController* controller,
+                            CTradeExecutionController* controller,
                             CTestCommentResolver* commentResolver,
                             const STestPanelConfig &config)
 {
@@ -352,7 +352,8 @@ void CTestPanel::PlaceOrder(const ENUM_ORDER_TYPE orderType)
         return;
     }
 
-    SManualTradeRequest request;
+    STradeExecutionRequest request;
+    request.source                   = TRADE_SOURCE_MANUAL;
     request.orderType                = orderType;
     request.moneyManagement          = m_config.moneyManagement;
     request.minLotPerEquitySteps     = m_config.minLotPerEquitySteps;

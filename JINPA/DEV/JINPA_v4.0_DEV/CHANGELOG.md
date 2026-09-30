@@ -1,5 +1,19 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase AUTO-R&D-01 (Shared Execution Contract)
+
+- Renamed `CManualTradeController` to `CTradeExecutionController` and
+  `SManualTradeRequest` to `STradeExecutionRequest` without changing execution
+  behavior.
+- Renamed the controller source file to `trade/TradeExecutionController.mqh`
+  and migrated the LIVE and TEST manual adapters atomically.
+- Added `JINPA_TRADE_SOURCE`; all current requests explicitly use
+  `TRADE_SOURCE_MANUAL` and entry diagnostics now use
+  `[JINPA][TRADE][MANUAL]`.
+- DD ownership, WATCH, RuntimeMode behavior, broker comments, CSV/JSON schemas,
+  and all order/risk/SL semantics remain unchanged. Auto Trade is not
+  implemented.
+
 ## v4.0 DEV — Phase V4-SYNC-01 runtime baseline sync
 
 - Removed the dead MA runtime chain while preserving the active ATR lifecycle.

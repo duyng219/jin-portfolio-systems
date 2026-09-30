@@ -20,7 +20,7 @@
 #include "_core/infrastructure/info_display.mqh"
 #include "_core/infrastructure/magic_number_resolver.mqh"
 #include "runtime/RuntimeTypes.mqh"
-#include "trade/ManualTradeController.mqh"
+#include "trade/TradeExecutionController.mqh"
 #include "runtime/RuntimePanelHost.mqh"
 #include "watch/WatchIntegration.mqh"
 
@@ -31,7 +31,7 @@ CPositionManager PM;
 CiATR            ATR;
 CDrawdownManager drawdownManager;
 CInfoDisplay     infoDisplay;
-CManualTradeController g_manualTradeController;
+CTradeExecutionController g_tradeExecutionController;
 CTestCommentResolver g_testCommentResolver;
 CRuntimePanelHost g_runtimePanel;
 ulong            MagicNumber = 0;             // Resolved once per EA instance
@@ -294,9 +294,9 @@ int OnInit()
     if((long)TerminalInfoInteger(TERMINAL_SCREEN_DPI) < JINPA_UI_REFERENCE_DPI)
         panelH = MathMin(panelH, ScaleUI(MIN_PANEL_H));
 
-    if(!g_manualTradeController.Initialize(_Symbol, MagicNumber, &RM, &PM, &trade))
+    if(!g_tradeExecutionController.Initialize(_Symbol, MagicNumber, &RM, &PM, &trade))
     {
-        Alert("Manual trade controller initialization failed!");
+        Alert("Trade execution controller initialization failed!");
         return INIT_FAILED;
     }
 
@@ -319,7 +319,7 @@ int OnInit()
 
     if(!g_runtimePanel.Initialize(RuntimeMode, 0, 0,
                                 panelX, panelY, panelX + panelW, panelY + panelH,
-                                &g_manualTradeController, &g_testCommentResolver,
+                                &g_tradeExecutionController, &g_testCommentResolver,
                                 panelConfig))
     {
         Alert("Runtime panel initialization failed!");

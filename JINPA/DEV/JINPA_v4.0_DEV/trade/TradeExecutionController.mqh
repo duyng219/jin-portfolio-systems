@@ -1,18 +1,30 @@
 //+------------------------------------------------------------------+
-//| ManualTradeController.mqh                                        |
-//| Shared manual order execution for JINPA v3.2 runtime panels      |
+//| TradeExecutionController.mqh                                     |
+//| Shared order execution for JINPA runtime consumers               |
 //+------------------------------------------------------------------+
 #property strict
 
-#ifndef JINPA_MANUAL_TRADE_CONTROLLER_MQH
-#define JINPA_MANUAL_TRADE_CONTROLLER_MQH
+#ifndef JINPA_TRADE_EXECUTION_CONTROLLER_MQH
+#define JINPA_TRADE_EXECUTION_CONTROLLER_MQH
 
 #include <Trade/Trade.mqh>
 #include "../_core/managers/risk_manager.mqh"
 #include "../_core/managers/position_manager.mqh"
 
-struct SManualTradeRequest
+enum JINPA_TRADE_SOURCE
 {
+    TRADE_SOURCE_MANUAL = 0,
+    TRADE_SOURCE_AUTO   = 1
+};
+
+string JINPATradeSourceName(const JINPA_TRADE_SOURCE source)
+{
+    return (source == TRADE_SOURCE_AUTO ? "AUTO" : "MANUAL");
+}
+
+struct STradeExecutionRequest
+{
+    JINPA_TRADE_SOURCE     source;
     ENUM_ORDER_TYPE        orderType;
     ENUM_MONEY_MANAGEMENT  moneyManagement;
     double                 minLotPerEquitySteps;
@@ -27,7 +39,7 @@ struct SManualTradeRequest
     string                 comment;
 };
 
-class CManualTradeController
+class CTradeExecutionController
 {
 private:
     string             m_symbol;
@@ -38,18 +50,20 @@ private:
 
     bool   DependenciesReady() const;
     bool   IsWeekendFxLikeMarket() const;
-    double CalculateVolume(const SManualTradeRequest &request,
+    double CalculateVolume(const STradeExecutionRequest &request,
                            const double slDistance = 0.0,
                            const double openPrice = 0.0) const;
-    double CalculateMarketStopLoss(const SManualTradeRequest &request,
+    double CalculateMarketStopLoss(const STradeExecutionRequest &request,
                                    const bool isBuy,
                                    const double basePrice) const;
-    void   LogResult(const string action, const int logLevel) const;
+    void   LogResult(const string action,
+                     const int logLevel,
+                     const JINPA_TRADE_SOURCE source) const;
     int    CancelPendingSide(const bool buySide, const int logLevel);
     int    ClosePositionSide(const bool buySide, const int logLevel);
 
 public:
-    CManualTradeController();
+    CTradeExecutionController();
 
     bool Initialize(const string symbol,
                     const ulong magic,
@@ -57,7 +71,7 @@ public:
                     CPositionManager* positionManager,
                     CTrade* tradeService);
     bool IsReady() const;
-    bool Execute(const SManualTradeRequest &request);
+    bool Execute(const STradeExecutionRequest &request);
 
     int CancelBuyPending(const int logLevel);
     int CancelSellPending(const int logLevel);
@@ -65,7 +79,7 @@ public:
     int CloseSellPositions(const int logLevel);
 };
 
-CManualTradeController::CManualTradeController() :
+CTradeExecutionController::CTradeExecutionController() :
     m_symbol(""),
     m_magic(0),
     m_riskManager(NULL),
@@ -74,7 +88,7 @@ CManualTradeController::CManualTradeController() :
 {
 }
 
-bool CManualTradeController::Initialize(const string symbol,
+bool CTradeExecutionController::Initialize(const string symbol,
                                         const ulong magic,
                                         CRiskManager* riskManager,
                                         CPositionManager* positionManager,
@@ -89,18 +103,18 @@ bool CManualTradeController::Initialize(const string symbol,
     return DependenciesReady();
 }
 
-bool CManualTradeController::DependenciesReady() const
+bool CTradeExecutionController::DependenciesReady() const
 {
     return (m_symbol != "" && m_riskManager != NULL &&
             m_positionManager != NULL && m_trade != NULL);
 }
 
-bool CManualTradeController::IsReady() const
+bool CTradeExecutionController::IsReady() const
 {
     return DependenciesReady();
 }
 
-bool CManualTradeController::IsWeekendFxLikeMarket() const
+bool CTradeExecutionController::IsWeekendFxLikeMarket() const
 {
     MqlDateTime dt;
     TimeToStruct(TimeCurrent(), dt);
@@ -119,7 +133,7 @@ bool CManualTradeController::IsWeekendFxLikeMarket() const
     return (StringFind(symbolName, pairName) >= 0);
 }
 
-double CManualTradeController::CalculateVolume(const SManualTradeRequest &request,
+double CTradeExecutionController::CalculateVolume(const STradeExecutionRequest &request,
                                                const double slDistance,
                                                const double openPrice) const
 {
@@ -143,7 +157,7 @@ double CManualTradeController::CalculateVolume(const SManualTradeRequest &reques
                                          openPrice);
 }
 
-double CManualTradeController::CalculateMarketStopLoss(const SManualTradeRequest &request,
+double CTradeExecutionController::CalculateMarketStopLoss(const STradeExecutionRequest &request,
                                                        const bool isBuy,
                                                        const double basePrice) const
 {
@@ -156,7 +170,10 @@ double CManualTradeController::CalculateMarketStopLoss(const SManualTradeRequest
     return NormalizeDouble(basePrice + (isBuy ? -distance : distance), _Digits);
 }
 
-void CManualTradeController::LogResult(const string action, const int logLevel) const
+void CTradeExecutionController::LogResult(
+    const string action,
+    const int logLevel,
+    const JINPA_TRADE_SOURCE source) const
 {
     if(logLevel < 1)
         return;
@@ -173,7 +190,7 @@ void CManualTradeController::LogResult(const string action, const int logLevel) 
     if(ok)
     {
         if(logLevel >= 2)
-            Print("[JINPA][MANUAL_TRADE] ", shortAction,
+            Print("[JINPA][TRADE][", JINPATradeSourceName(source), "] ", shortAction,
                   " | symbol=", m_symbol,
                   " | SUCCESS | retcode=", rc,
                   " | ", m_trade.ResultRetcodeDescription(),
@@ -183,18 +200,18 @@ void CManualTradeController::LogResult(const string action, const int logLevel) 
     }
     else
     {
-        Print("[JINPA][MANUAL_TRADE] ", shortAction,
+        Print("[JINPA][TRADE][", JINPATradeSourceName(source), "] ", shortAction,
               " | symbol=", m_symbol,
               " | FAILED | retcode=", rc,
               " | ", m_trade.ResultRetcodeDescription());
     }
 }
 
-bool CManualTradeController::Execute(const SManualTradeRequest &request)
+bool CTradeExecutionController::Execute(const STradeExecutionRequest &request)
 {
     if(!DependenciesReady())
     {
-        Print("[JINPA][ERROR] Manual trade controller dependencies not set.");
+        Print("[JINPA][ERROR] Trade execution controller dependencies not set.");
         return false;
     }
 
@@ -208,14 +225,16 @@ bool CManualTradeController::Execute(const SManualTradeRequest &request)
                             request.orderType == ORDER_TYPE_SELL_LIMIT);
     if(request.useATRStopLoss && request.atrStopLoss <= 0.0)
     {
-        Print("[JINPA][MANUAL_TRADE] ", EnumToString(request.orderType),
+        Print("[JINPA][TRADE][", JINPATradeSourceName(request.source), "] ",
+              EnumToString(request.orderType),
               " | symbol=", m_symbol,
               " | CONTROLLER_REJECTED | reason=ATR SL not ready (atrSL=0)");
         return false;
     }
     if(isPending && request.atrPendingOffset <= 0.0)
     {
-        Print("[JINPA][MANUAL_TRADE] ", EnumToString(request.orderType),
+        Print("[JINPA][TRADE][", JINPATradeSourceName(request.source), "] ",
+              EnumToString(request.orderType),
               " | symbol=", m_symbol,
               " | CONTROLLER_REJECTED | reason=ATR PO not ready (atrPO=0)");
         return false;
@@ -312,14 +331,16 @@ bool CManualTradeController::Execute(const SManualTradeRequest &request)
         }
 
         default:
-            Print("[JINPA][ERROR] Unsupported manual order type: ", EnumToString(request.orderType));
+            Print("[JINPA][ERROR] Unsupported trade execution order type: ",
+                  EnumToString(request.orderType));
             return false;
     }
 
     if(attempted)
-        LogResult(EnumToString(request.orderType), request.logLevel);
+        LogResult(EnumToString(request.orderType), request.logLevel, request.source);
     else if(request.logLevel >= 1)
-        Print("[JINPA][MANUAL_TRADE] ", EnumToString(request.orderType),
+        Print("[JINPA][TRADE][", JINPATradeSourceName(request.source), "] ",
+              EnumToString(request.orderType),
               " | symbol=", m_symbol,
               " | CONTROLLER_REJECTED | reason=Lot=0",
               " | atrSL=", DoubleToString(request.atrStopLoss, digits),
@@ -328,7 +349,7 @@ bool CManualTradeController::Execute(const SManualTradeRequest &request)
     return attempted;
 }
 
-int CManualTradeController::CancelPendingSide(const bool buySide, const int logLevel)
+int CTradeExecutionController::CancelPendingSide(const bool buySide, const int logLevel)
 {
     if(!DependenciesReady())
         return 0;
@@ -365,7 +386,7 @@ int CManualTradeController::CancelPendingSide(const bool buySide, const int logL
     return cancelled;
 }
 
-int CManualTradeController::ClosePositionSide(const bool buySide, const int logLevel)
+int CTradeExecutionController::ClosePositionSide(const bool buySide, const int logLevel)
 {
     if(!DependenciesReady())
         return 0;
@@ -395,24 +416,24 @@ int CManualTradeController::ClosePositionSide(const bool buySide, const int logL
     return closed;
 }
 
-int CManualTradeController::CancelBuyPending(const int logLevel)
+int CTradeExecutionController::CancelBuyPending(const int logLevel)
 {
     return CancelPendingSide(true, logLevel);
 }
 
-int CManualTradeController::CancelSellPending(const int logLevel)
+int CTradeExecutionController::CancelSellPending(const int logLevel)
 {
     return CancelPendingSide(false, logLevel);
 }
 
-int CManualTradeController::CloseBuyPositions(const int logLevel)
+int CTradeExecutionController::CloseBuyPositions(const int logLevel)
 {
     return ClosePositionSide(true, logLevel);
 }
 
-int CManualTradeController::CloseSellPositions(const int logLevel)
+int CTradeExecutionController::CloseSellPositions(const int logLevel)
 {
     return ClosePositionSide(false, logLevel);
 }
 
-#endif // JINPA_MANUAL_TRADE_CONTROLLER_MQH
+#endif // JINPA_TRADE_EXECUTION_CONTROLLER_MQH

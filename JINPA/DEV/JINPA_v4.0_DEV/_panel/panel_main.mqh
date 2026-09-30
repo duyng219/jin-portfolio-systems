@@ -17,7 +17,7 @@
 
 #include "panel_defines.mqh"
 #include "trade_log.mqh"
-#include "../trade/ManualTradeController.mqh"
+#include "../trade/TradeExecutionController.mqh"
 
 #define PANEL_LOG_ROWS 10
 
@@ -89,7 +89,7 @@ private:
     //── Injected dependencies ──────────────────────────────────────
     string             m_symbol;
     ulong              m_magic;
-    CManualTradeController* m_manualTradeController;
+    CTradeExecutionController* m_tradeExecutionController;
     ENUM_MONEY_MANAGEMENT m_mmType;
     double             m_minLotSteps;
     double             m_riskPct;
@@ -145,7 +145,7 @@ public:
                         const int x1, const int y1, const int x2, const int y2);
 
     void SetDependencies(string symbol, ulong magic,
-                         CManualTradeController* manualTradeController,
+                         CTradeExecutionController* tradeExecutionController,
                          ENUM_MONEY_MANAGEMENT mm, double minLotSteps,
                          double riskPct, double fixedLot, ushort poExpMin,
                          ENUM_LOG_LEVEL logLevel);
@@ -178,7 +178,7 @@ EVENT_MAP_END(CAppDialog)
 
 //+------------------------------------------------------------------+
 CJINPAPanel::CJINPAPanel() :
-    m_manualTradeController(NULL),
+    m_tradeExecutionController(NULL),
     m_magic(0), m_mmType(MM_EQUITY_RISK_PERCENT),
     m_minLotSteps(500), m_riskPct(0.5), m_fixedLot(0.01),
     m_poExpMin(360), m_logLevel(LOG_INFO),
@@ -617,14 +617,14 @@ bool CJINPAPanel::CreateControls(int ox, int oy, int pw, int ph)
 
 //+------------------------------------------------------------------+
 void CJINPAPanel::SetDependencies(string symbol, ulong magic,
-                                   CManualTradeController* manualTradeController,
+                                   CTradeExecutionController* tradeExecutionController,
                                    ENUM_MONEY_MANAGEMENT mm, double minLotSteps,
                                    double riskPct, double fixedLot, ushort poExpMin,
                                    ENUM_LOG_LEVEL logLevel)
 {
     m_symbol      = symbol;
     m_magic       = magic;
-    m_manualTradeController = manualTradeController;
+    m_tradeExecutionController = tradeExecutionController;
     m_mmType      = mm;
     m_minLotSteps = minLotSteps;
     m_riskPct     = riskPct;
@@ -700,9 +700,9 @@ string CJINPAPanel::GetComment()
 //+------------------------------------------------------------------+
 void CJINPAPanel::PlaceOrder(ENUM_ORDER_TYPE type)
 {
-    if(m_manualTradeController == NULL || !m_manualTradeController.IsReady())
+    if(m_tradeExecutionController == NULL || !m_tradeExecutionController.IsReady())
     {
-        Print("[JINPA][ERROR] Manual trade controller not set.");
+        Print("[JINPA][ERROR] Trade execution controller not set.");
         return;
     }
 
@@ -713,7 +713,8 @@ void CJINPAPanel::PlaceOrder(ENUM_ORDER_TYPE type)
     }
 
     long mmValue = m_cmbRiskM.Value();
-    SManualTradeRequest request;
+    STradeExecutionRequest request;
+    request.source                   = TRADE_SOURCE_MANUAL;
     request.orderType                = type;
     request.moneyManagement          = (mmValue >= 0 && mmValue <= 4)
                                        ? (ENUM_MONEY_MANAGEMENT)(int)mmValue
@@ -729,7 +730,7 @@ void CJINPAPanel::PlaceOrder(ENUM_ORDER_TYPE type)
     request.logLevel                 = (int)m_logLevel;
     request.comment                  = GetComment();
 
-    if(m_manualTradeController.Execute(request))
+    if(m_tradeExecutionController.Execute(request))
         RefreshLog();
 }
 
@@ -754,32 +755,32 @@ void CJINPAPanel::OnSellLimit()   { m_btnSellLimit.Pressed(false); PlaceOrder(OR
 void CJINPAPanel::OnCancelBO()
 {
     m_btnCancelBO.Pressed(false);
-    if(m_manualTradeController != NULL)
-        m_manualTradeController.CancelBuyPending((int)m_logLevel);
+    if(m_tradeExecutionController != NULL)
+        m_tradeExecutionController.CancelBuyPending((int)m_logLevel);
     RefreshLog();
 }
 
 void CJINPAPanel::OnCancelSO()
 {
     m_btnCancelSO.Pressed(false);
-    if(m_manualTradeController != NULL)
-        m_manualTradeController.CancelSellPending((int)m_logLevel);
+    if(m_tradeExecutionController != NULL)
+        m_tradeExecutionController.CancelSellPending((int)m_logLevel);
     RefreshLog();
 }
 
 void CJINPAPanel::OnCancelBuy()
 {
     m_btnCancelBuy.Pressed(false);
-    if(m_manualTradeController != NULL)
-        m_manualTradeController.CloseBuyPositions((int)m_logLevel);
+    if(m_tradeExecutionController != NULL)
+        m_tradeExecutionController.CloseBuyPositions((int)m_logLevel);
     RefreshLog();
 }
 
 void CJINPAPanel::OnCancelSell()
 {
     m_btnCancelSell.Pressed(false);
-    if(m_manualTradeController != NULL)
-        m_manualTradeController.CloseSellPositions((int)m_logLevel);
+    if(m_tradeExecutionController != NULL)
+        m_tradeExecutionController.CloseSellPositions((int)m_logLevel);
     RefreshLog();
 }
 

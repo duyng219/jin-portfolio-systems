@@ -17,7 +17,7 @@ State:
 - First input: `RuntimeMode` (`JINPA_MODE_LIVE` or `JINPA_MODE_TEST`).
 - `CRuntimePanelHost` owns mode-specific UI lifecycle. P2 retained the existing
   LIVE panel and left the TEST panel as the explicit Phase P3 extension point.
-- `CManualTradeController` is the single manual open/cancel/close authority.
+- `CTradeExecutionController` is the single shared entry/cancel/close authority.
   The LIVE panel still builds setup/suffix/custom Comment and passes it
   unchanged to the controller.
 - WATCH remains mode-independent. Notification behavior is unchanged in P2;
@@ -29,7 +29,7 @@ State:
 
 - TEST mode now creates a dedicated `CTestPanel` with ten manual controls:
   six entry buttons plus side-wide cancel and close actions.
-- Every TEST action uses the same `CManualTradeController` as LIVE. The legacy
+- Every TEST action uses the same `CTradeExecutionController` as LIVE. The legacy
   DEV `COrderExecutor` and DEV runtime infrastructure are not imported.
 - Entry Comments are resolved at click time by `CTestCommentResolver`. It reads
   a read-only WATCH snapshot, accepts direction-compatible WATCH/READY/ACTIVE
@@ -52,7 +52,7 @@ State:
 - LIVE mode remains unrestricted by account type; its existing terminal/EA
   trading checks remain authoritative.
 - LIVE and TEST intentionally differ at the UI and Comment-policy boundary.
-  Both converge on one `CManualTradeController`, shared risk/position managers,
+  Both converge on one `CTradeExecutionController`, shared risk/position managers,
   one `CTrade`, shared Magic filtering and the same WATCH runtime.
 - Entry is blocked by the shared daily-DD halt in both modes; cancel/close stays
   available and trailing remains a mode-independent main-runtime service.
@@ -77,7 +77,8 @@ State:
 
 - LIVE and TEST differ only at the panel, Comment-policy, visual identity and
   external-notification permission boundaries.
-- Both panels submit `SManualTradeRequest` to one `CManualTradeController`,
+- Both panels submit `STradeExecutionRequest` with
+  `source=TRADE_SOURCE_MANUAL` to one `CTradeExecutionController`,
   which owns all manual market/pending placement, side-wide cancellation and
   side-wide position closure through the shared `CTrade` instance.
 - Risk, position management, daily-DD, trailing, WATCH engines, six canonical
@@ -96,7 +97,7 @@ State:
   observe a transient button state.
 - Visual Strategy Tester retains button-state polling because its chart-event
   contract differs from a normal terminal chart. Both sources converge on the
-  same TEST dispatcher, Comment resolver and `CManualTradeController`.
+  same TEST dispatcher, Comment resolver and `CTradeExecutionController`.
 - The dispatcher clears button state before invoking the shared controller, so
   one handled interaction produces at most one manual request.
 - TEST execution diagnostics identify the click source and the existing shared
@@ -233,7 +234,7 @@ Open Sell: 0
 JINPA_v4.0_DEV/
 ├── JINPA_v4.0_DEV.mq5           # Main lifecycle and shared services
 ├── runtime/                     # RuntimeMode, panel host, TEST UI/Comment
-├── trade/ManualTradeController.mqh
+├── trade/TradeExecutionController.mqh
 ├── _panel/panel_main.mqh        # Production LIVE UI/Comment policy
 ├── _core/                       # Shared risk, DD, position, indicators/info
 ├── watch/                       # Shared WATCH/setup/render/notification stack
@@ -243,6 +244,10 @@ JINPA_v4.0_DEV/
 Legacy framework/UI/order-executor files under `_core` are retained source
 artifacts only. They are not included by `JINPA_v4.0_DEV.mq5` or its active
 include graph.
+
+The execution controller and request contract are now shared/generic. Current
+LIVE and TEST requests are still manual and explicitly use
+`TRADE_SOURCE_MANUAL`; no Auto Trade consumer is implemented yet.
 
 ---
 
