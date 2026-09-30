@@ -69,25 +69,12 @@ private:
       return name;
    }
 
-   double AtrOffset(const string symbol,
-                    const ENUM_TIMEFRAMES timeframe,
-                    const int shift,
-                    const MqlRates &signalBar) const
+   double VisualOffset(const string symbol,
+                       const MqlRates &signalBar) const
    {
-      const int atrHandle = iATR(symbol, timeframe, 14);
-      if(atrHandle != INVALID_HANDLE)
-      {
-         double atrValues[1];
-         const int copied = CopyBuffer(atrHandle, 0, shift, 1, atrValues);
-         IndicatorRelease(atrHandle);
-         if(copied == 1 && atrValues[0] > 0.0
-            && atrValues[0] != EMPTY_VALUE)
-            return 0.20 * atrValues[0];
-      }
-
       const double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
       const double range = MathMax(0.0, signalBar.high - signalBar.low);
-      return MathMax(10.0 * point, 0.15 * range);
+      return MathMax(10.0 * point, 0.05 * range);
    }
 
    bool Render(const string symbol,
@@ -120,7 +107,7 @@ private:
          return false;
       }
 
-      const double offset = AtrOffset(symbol, timeframe, shift, signalBars[0]);
+      const double offset = VisualOffset(symbol, signalBars[0]);
       const int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
       const bool isBuy = direction == "BUY";
       const double price = NormalizeDouble(

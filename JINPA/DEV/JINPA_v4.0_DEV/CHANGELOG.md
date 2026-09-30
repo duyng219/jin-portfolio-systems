@@ -1,5 +1,11 @@
 # JINPA Changelog
 
+## v4.0 DEV — Hotfix ARROW-01 parity
+
+- Removed the ATR indicator dependency from Setup ACTIVE Arrow rendering.
+- Visual arrow offset now uses candle range and symbol point, preventing
+  invalid `CopyBuffer` handle spam without changing WATCH semantics.
+
 ## v4.0 DEV baseline — Phase V4-FORK-01
 
 - Forked from canonical `JINPA_v3.2_LIVE`.
@@ -12,7 +18,7 @@
 - Added one historical chart arrow when the final arbitrated WATCH output for
   one of the six canonical setups transitions into `ACTIVE`.
 - BUY arrows point up below the authoritative activation closed bar; SELL
-  arrows point down above it, using a small ATR-based visual offset.
+  arrows point down above it, using a small candle-range/point visual offset.
 - Arrow identity is deterministic by symbol, timeframe, activation bar, setup
   and direction. Continued `ACTIVE` bars do not create duplicates.
 - Rendering is independent of WATCH collapse state, runtime mode and
