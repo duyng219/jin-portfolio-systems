@@ -31,6 +31,28 @@ struct SymbolState
    bool            activityInitialized;
 };
 
+// Read-only final setup projection published after arbitration.  This is a
+// state contract only; consumers own any transition or execution policy.
+struct SFinalSetupEvent
+{
+   string          symbol;
+   ENUM_TIMEFRAMES timeframe;
+   string          setup;
+   string          setupStatus;
+   string          direction;
+   datetime        triggerBarTime;
+};
+
+void ResetFinalSetupEvent(SFinalSetupEvent &event)
+{
+   event.symbol         = "";
+   event.timeframe      = PERIOD_CURRENT;
+   event.setup          = "-";
+   event.setupStatus    = "NONE";
+   event.direction      = "NONE";
+   event.triggerBarTime = 0;
+}
+
 // Read-only setup projection for UI/research consumers.  Direction is kept as
 // BUY/SELL/NONE text so callers do not depend on individual engine enums.
 struct WatchSetupSnapshot

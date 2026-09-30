@@ -149,6 +149,9 @@ Baseline development invariant:
   production architecture.
 - This DEV baseline derives from the same WATCH, execution, risk,
   position, DD, trailing, setup and shared notification-policy implementations.
+- WATCH exposes a read-only final post-arbitration setup event contract for
+  future independent consumers; it adds no transition, deduplication or order
+  execution behavior.
 - No Auto Trade architecture or execution path is defined in this baseline.
 
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công

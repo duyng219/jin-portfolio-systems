@@ -1,5 +1,13 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase AUTO-R&D-03 (Final Active Event Contract)
+
+- Added a deterministic, read-only final setup event populated immediately
+  after WATCH setup arbitration from the existing authoritative projection,
+  direction and trigger-bar sources.
+- Preserved the existing setup snapshot, engines, arbitration, arrows, Radar,
+  notifications and execution behavior. Auto Trade is not implemented.
+
 ## v4.0 DEV — Phase AUTO-R&D-02 (Authoritative Daily-DD Entry Gate)
 
 - Added resolved daily-DD halt state to `CTradeExecutionController` and made

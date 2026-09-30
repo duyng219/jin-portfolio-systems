@@ -38,6 +38,7 @@ private:
     CPullbackBaseRenderer m_pullbackBaseRenderer;
     CMarketRadar    m_marketRadar;
     SymbolState     m_states[1];
+    SFinalSetupEvent m_finalSetupEvent;
     PriceStructureState m_structureState;
     SwingPoint      m_structureSwings[];
     BrokenCoreRecord m_brokenCores[];
@@ -70,6 +71,7 @@ private:
 
     void            ResetContext(void);
     void            UpdateStructureConsumers(void);
+    void            UpdateFinalSetupEvent(void);
     string          FinalSetupDirection(const string setup) const;
     datetime        FinalSetupTriggerTime(const string setup) const;
 
@@ -107,6 +109,7 @@ public:
     void            Shutdown(void);
     bool            IsEnabled(void) const { return m_enabled; }
     bool            GetSetupSnapshot(WatchSetupSnapshot &snapshot) const;
+    bool            GetFinalSetupEvent(SFinalSetupEvent &event) const;
 };
 
 CWatchIntegration::CWatchIntegration(void)
@@ -238,6 +241,16 @@ bool CWatchIntegration::GetSetupSnapshot(WatchSetupSnapshot &snapshot) const
     return snapshot.isReady;
 }
 
+bool CWatchIntegration::GetFinalSetupEvent(SFinalSetupEvent &event) const
+{
+    ResetFinalSetupEvent(event);
+    if(!m_enabled)
+        return false;
+
+    event = m_finalSetupEvent;
+    return true;
+}
+
 ENUM_JINPA_NOTIFICATION_ROUTE_RESULT
 CWatchIntegration::SendStartupNotification(void)
 {
@@ -272,6 +285,7 @@ void CWatchIntegration::ResetContext(void)
     m_lastMarketStructure = "UNKNOWN";
     m_lastPullbackSetup = "-";
     m_lastPullbackStatus = "NONE";
+    ResetFinalSetupEvent(m_finalSetupEvent);
 
     m_states[0].symbol              = "";
     m_states[0].timeframe           = PERIOD_CURRENT;
@@ -342,6 +356,16 @@ datetime CWatchIntegration::FinalSetupTriggerTime(const string setup) const
     if(setup == "bres-pmb" || setup == "revs-pfb" || setup == "revs-pmr")
         return m_rangeEdgeSetupEngine.TriggerBarTime();
     return 0;
+}
+
+void CWatchIntegration::UpdateFinalSetupEvent(void)
+{
+    m_finalSetupEvent.symbol         = m_states[0].symbol;
+    m_finalSetupEvent.timeframe      = m_states[0].timeframe;
+    m_finalSetupEvent.setup          = m_states[0].setup;
+    m_finalSetupEvent.setupStatus    = m_states[0].setupStatus;
+    m_finalSetupEvent.direction      = FinalSetupDirection(m_states[0].setup);
+    m_finalSetupEvent.triggerBarTime = FinalSetupTriggerTime(m_states[0].setup);
 }
 
 void CWatchIntegration::UpdateStructureConsumers(void)
@@ -436,6 +460,8 @@ void CWatchIntegration::UpdateStructureConsumers(void)
             m_pmaSetupEngine.SetupText(), m_pmaSetupEngine.StatusText(),
             m_rangeEdgeSetupEngine.SetupText(),
             m_rangeEdgeSetupEngine.StatusText(), m_states[0]);
+
+        UpdateFinalSetupEvent();
 
         // Observe only the final arbitrated projection. The owning engine
         // supplies immutable direction and closed activation-bar time.
