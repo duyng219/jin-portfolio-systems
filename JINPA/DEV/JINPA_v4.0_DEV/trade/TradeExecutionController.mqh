@@ -47,6 +47,7 @@ private:
     CRiskManager*      m_riskManager;
     CPositionManager*  m_positionManager;
     CTrade*            m_trade;
+    bool               m_tradingHalt;
 
     bool   DependenciesReady() const;
     bool   IsWeekendFxLikeMarket() const;
@@ -71,6 +72,7 @@ public:
                     CPositionManager* positionManager,
                     CTrade* tradeService);
     bool IsReady() const;
+    void SetTradingHalt(const bool halted);
     bool Execute(const STradeExecutionRequest &request);
 
     int CancelBuyPending(const int logLevel);
@@ -84,7 +86,8 @@ CTradeExecutionController::CTradeExecutionController() :
     m_magic(0),
     m_riskManager(NULL),
     m_positionManager(NULL),
-    m_trade(NULL)
+    m_trade(NULL),
+    m_tradingHalt(false)
 {
 }
 
@@ -112,6 +115,11 @@ bool CTradeExecutionController::DependenciesReady() const
 bool CTradeExecutionController::IsReady() const
 {
     return DependenciesReady();
+}
+
+void CTradeExecutionController::SetTradingHalt(const bool halted)
+{
+    m_tradingHalt = halted;
 }
 
 bool CTradeExecutionController::IsWeekendFxLikeMarket() const
@@ -212,6 +220,13 @@ bool CTradeExecutionController::Execute(const STradeExecutionRequest &request)
     if(!DependenciesReady())
     {
         Print("[JINPA][ERROR] Trade execution controller dependencies not set.");
+        return false;
+    }
+
+    if(m_tradingHalt)
+    {
+        Print("[JINPA][TRADE][", JINPATradeSourceName(request.source),
+              "] Entry blocked | reason=DD_HALT");
         return false;
     }
 

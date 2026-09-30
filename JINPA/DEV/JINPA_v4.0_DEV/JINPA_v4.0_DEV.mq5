@@ -405,6 +405,7 @@ void OnTick()
 
     double dailyDD = drawdownManager.GetDailyPercent();
     bool   dailyHalt = (MaxDrawdownDaily > 0 && dailyDD <= -MaxDrawdownDaily);
+    g_tradeExecutionController.SetTradingHalt(dailyHalt);
 
     if(dailyHalt)
     {

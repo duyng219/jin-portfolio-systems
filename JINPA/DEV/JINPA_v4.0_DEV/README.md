@@ -54,8 +54,10 @@ State:
 - LIVE and TEST intentionally differ at the UI and Comment-policy boundary.
   Both converge on one `CTradeExecutionController`, shared risk/position managers,
   one `CTrade`, shared Magic filtering and the same WATCH runtime.
-- Entry is blocked by the shared daily-DD halt in both modes; cancel/close stays
-  available and trailing remains a mode-independent main-runtime service.
+- Entry is blocked by the shared daily-DD halt in both modes. The execution
+  controller owns the authoritative entry gate while each panel retains its
+  early rejection for immediate manual feedback. Cancel/close stays available
+  and trailing remains a mode-independent main-runtime service.
 - Notification policy/queue/retry behavior remains shared. P5 owns the final
   external transport permission described below.
 

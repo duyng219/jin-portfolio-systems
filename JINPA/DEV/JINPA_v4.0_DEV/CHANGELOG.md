@@ -1,5 +1,15 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase AUTO-R&D-02 (Authoritative Daily-DD Entry Gate)
+
+- Added resolved daily-DD halt state to `CTradeExecutionController` and made
+  `Execute()` the authoritative entry rejection boundary.
+- Main now sends the same `dailyHalt` boolean to the shared execution
+  controller while the LIVE and TEST panels retain their existing early
+  rejection for immediate manual feedback.
+- DD halt does not block pending cancellation, position closure, trailing,
+  WATCH, or notifications. Auto Trade is not implemented.
+
 ## v4.0 DEV — Phase AUTO-R&D-01 (Shared Execution Contract)
 
 - Renamed `CManualTradeController` to `CTradeExecutionController` and
