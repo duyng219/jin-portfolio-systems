@@ -1,5 +1,13 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase V4-SYNC-01 runtime baseline sync
+
+- Removed the dead MA runtime chain while preserving the active ATR lifecycle.
+- Removed unused per-tick `CBar`, Ask/Bid and legacy tooltip work.
+- Normalized startup INPUT, notification, WATCH and completion log ordering.
+- Verified the Setup ACTIVE Arrow renderer remains indicator-independent and
+  aligned with the finalized v3.2 candle-range/symbol-point offset.
+
 ## v4.0 DEV — Hotfix ARROW-01 parity
 
 - Removed the ATR indicator dependency from Setup ACTIVE Arrow rendering.

@@ -14,7 +14,6 @@
 //+------ INCLUDES ------+//
 #include <Trade/Trade.mqh>
 #include "_core/managers/indicators_manager.mqh"
-#include "_core/managers/bar_manager.mqh"
 #include "_core/managers/risk_manager.mqh"
 #include "_core/managers/drawdown_manager.mqh"
 #include "_core/managers/position_manager.mqh"
@@ -29,9 +28,7 @@
 CTrade           trade;
 CRiskManager     RM;
 CPositionManager PM;
-CBar             Bar;
 CiATR            ATR;
-CiMA             MA;
 CDrawdownManager drawdownManager;
 CInfoDisplay     infoDisplay;
 CManualTradeController g_manualTradeController;
@@ -135,12 +132,6 @@ input double                              RiskPercent                      = 0.5
 input double                              FixedVolume                    = 0.01;  // Fixed Lot Size
 input double                              MinLotPerEquitySteps      = 500;   // Equity per Lot
 
-sinput group                              "────────────── MOVING AVERAGE ─────────────"
-input int                                       MAPeriod             = 21;
-input ENUM_MA_METHOD         MAMethod          = MODE_EMA;
-input int                                       MAShift                = 0;
-input ENUM_APPLIED_PRICE       MAPrice               = PRICE_CLOSE;
-
 sinput group                              "─────────────── ATR SETTINGS ──────────────"
 input int                                       ATRPeriod                     = 14;
 input double                                ATRFactorSL                 = 2.2;   // Factor for initial Stop Loss
@@ -174,6 +165,8 @@ input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;
 int OnInit()
 {
     const string runtimeEnvironment = JINPARuntimeEnvironmentName();
+    Print("[JINPA][STARTUP] JINPA v4.0 DEV");
+
     if(RuntimeMode == JINPA_MODE_TEST
        && runtimeEnvironment != "STRATEGY_TESTER"
        && runtimeEnvironment != "DEMO")
@@ -224,6 +217,35 @@ int OnInit()
         Print("[JINPA][WARN] Unknown symbol ", _Symbol,
               " | using fallback Magic ", MagicNumber);
 
+    Print("[JINPA][INPUT 1/5] RuntimeMode=", JINPARuntimeModeName(RuntimeMode),
+          " | Environment=", runtimeEnvironment);
+    Print("[JINPA][INPUT 2/5] Symbol=", _Symbol,
+          " | Timeframe=", WatcherTimeframeToString((ENUM_TIMEFRAMES)_Period),
+          " | Magic=", MagicNumber,
+          " | POExpMin=", POExpirationMinutes,
+          " | MaxDD=", DoubleToString(MaxDrawdownDaily, 2), "%");
+    Print("[JINPA][INPUT 3/5] MM=", EnumToString(MoneyManagement),
+          " | Risk=", DoubleToString(RiskPercent, 2), "%",
+          " | FixedLot=", DoubleToString(FixedVolume, 2),
+          " | MinLotEqStep=", DoubleToString(MinLotPerEquitySteps, 2),
+          " | DisplayVC=", DoubleToString(DisplayVirtualCapital, 2),
+          " | SLPoints=", slPointsValue);
+    Print("[JINPA][INPUT 4/5] ATR=", IntegerToString(ATRPeriod),
+          " | ATRFactorSL=", DoubleToString(ATRFactorSL, 2),
+          " | ATRFactorTSL=", DoubleToString(ATRFactorTSL, 2),
+          " | ATRFactorPO=", DoubleToString(ATRFactorPO, 2),
+          " | TSL=", EnumToString(TSLMode),
+          " | TSLActivationATR=", DoubleToString(TSLActivationATR, 2),
+          " | TSLStepATR=", DoubleToString(TSLStepATR, 2));
+    Print("[JINPA][INPUT 5/5] Swing=", SwingLeftBars, "/", SwingRightBars,
+          " | StructureATR=", StructureATRPeriod,
+          " | CoreBreakBuffer=", DoubleToString(CoreBreakATRBuffer, 4),
+          " | CoreBreakCloses=", CoreBreakConfirmCloses,
+          " | ShowSwings=", (ShowStructureSwings ? "true" : "false"),
+          " | Telegram=", (EnableTelegramPush ? "ON" : "OFF"),
+          " | MT5Push=", (EnableMT5Push ? "ON" : "OFF"),
+          " | LogLevel=", EnumToString(LogLevel));
+
     trade.SetExpertMagicNumber(MagicNumber);
     trade.LogLevel(LOG_LEVEL_ERRORS);
 
@@ -242,12 +264,6 @@ int OnInit()
     if(!SymbolSelect(_Symbol, true))
     {
         Alert("Failed to select symbol: ", _Symbol);
-        return INIT_FAILED;
-    }
-
-    if(MA.Init(_Symbol, _Period, MAPeriod, MAShift, MAMethod, MAPrice) == -1)
-    {
-        Alert("MA indicator initialization failed!");
         return INIT_FAILED;
     }
 
@@ -314,11 +330,6 @@ int OnInit()
         runtimeModeAllowsExternalNotifications,
         EnableTelegramPush, TelegramBotToken, TelegramChatId,
         EnableMT5Push);
-    const bool watchInitialized =
-        watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period,
-                                    RuntimeMode == JINPA_MODE_LIVE);
-    if(!watchInitialized)
-        Print("[JINPA][WARN] Structure integration disabled — initialization failed.");
 
     string externalPushStatus = "FORCED_OFF";
     if(externalNotificationsAllowed)
@@ -331,50 +342,39 @@ int OnInit()
             externalPushStatus = "UNAVAILABLE_CONFIGURATION";
     }
 
-    Print("[JINPA v4.0 DEV INPUT 1/5] RuntimeMode=", JINPARuntimeModeName(RuntimeMode),
-          " | Environment=", runtimeEnvironment,
-          " | Panel=", g_runtimePanel.Status(),
-          " | ExternalPush=", externalPushStatus);
-    Print("[JINPA v4.0 DEV INPUT 2/5] Symbol=", _Symbol,
-          " | Magic=", MagicNumber,
-          " | POExpMin=", POExpirationMinutes,
-          " | MaxDD=", DoubleToString(MaxDrawdownDaily, 2), "%");
-    Print("[JINPA v4.0 DEV INPUT 3/5] MM=", EnumToString(MoneyManagement),
-          " | Risk=", DoubleToString(RiskPercent, 2), "%",
-          " | FixedLot=", DoubleToString(FixedVolume, 2),
-          " | MinLotEqStep=", DoubleToString(MinLotPerEquitySteps, 2),
-          " | DisplayVC=", DoubleToString(DisplayVirtualCapital, 2),
-          " | SLPoints=", slPointsValue);
-    Print("[JINPA v4.0 DEV INPUT 4/5] MA=", IntegerToString(MAPeriod), "/", EnumToString(MAMethod),
-          " | ATR=", IntegerToString(ATRPeriod),
-          " | ATRFactorSL=", DoubleToString(ATRFactorSL, 2),
-          " | ATRFactorTSL=", DoubleToString(ATRFactorTSL, 2),
-          " | ATRFactorPO=", DoubleToString(ATRFactorPO, 2),
-          " | TSL=", EnumToString(TSLMode),
-          " | LogLevel=", EnumToString(LogLevel));
     string notificationStatus = watchIntegration.NotificationTransportStatus();
     const string notificationReason =
         watchIntegration.NotificationConfigurationReason();
     if(notificationReason != "")
         notificationStatus += " | Reason=" + notificationReason;
-    if(!watchInitialized)
-        notificationStatus += " | Watch=UNAVAILABLE";
-    Print("[JINPA v4.0 DEV INPUT 5/5] ", notificationStatus);
+    Print("[JINPA][NOTIFY] ExternalPush=", externalPushStatus,
+          " | ", notificationStatus);
     if(externalNotificationsAllowed
        && !watchIntegration.HasAvailableNotificationTransport())
         Print("[JINPA][WARN] WARNING: No available notification transport");
+
+    Print("[JINPA][STARTUP] Core services initialized",
+          " | ATR=READY",
+          " | Panel=", g_runtimePanel.Status());
+
+    const bool watchInitialized =
+        watchIntegration.Initialize(_Symbol, (ENUM_TIMEFRAMES)_Period,
+                                    RuntimeMode == JINPA_MODE_LIVE);
+    if(!watchInitialized)
+        Print("[JINPA][WARN] Structure integration disabled — initialization failed.");
+    Print("[JINPA][WATCH] Initialization=",
+          (watchInitialized ? "READY" : "UNAVAILABLE"));
     if(RuntimeMode == JINPA_MODE_TEST)
     {
-        Print("[JINPA][RUNTIME] TEST MODE ACTIVE");
-        Print("[JINPA][RUNTIME] Panel=TEST | Execution=SHARED_CONTROLLER",
-              " | CommentResolver=WATCH_AWARE");
-        Print("[JINPA][RUNTIME] WATCH semantic core=ACTIVE");
-        Print("[JINPA][RUNTIME] External notifications are suppressed.");
+        Print("[JINPA][STARTUP] TEST services",
+              " | Panel=TEST | Execution=SHARED_CONTROLLER",
+              " | CommentResolver=WATCH_AWARE",
+              " | WATCH=", (watchInitialized ? "READY" : "UNAVAILABLE"),
+              " | ExternalNotifications=SUPPRESSED");
     }
-    Print("JINPA v4.0 DEV initialized successfully | RuntimeMode=",
-          JINPARuntimeModeName(RuntimeMode), ".");
     if(watchInitialized && externalNotificationsAllowed)
         watchIntegration.SendStartupNotification();
+    Print("[JINPA][STARTUP] INITIALIZATION COMPLETE");
     return INIT_SUCCEEDED;
 }
 
@@ -393,21 +393,13 @@ void OnTick()
     //──────────────────────────────────────────────────────────────────
     // 1 - REFRESH INDICATORS
     //──────────────────────────────────────────────────────────────────
-    MA.RefreshMain();
     ATR.RefreshMain();
 
     double atrValue   = ATR.main[1] * ATRFactorSL;  // Initial Stop Loss
     double atrValuePO = ATR.main[0] * ATRFactorPO;  // Pending order offset
 
     //──────────────────────────────────────────────────────────────────
-    // 2 - GET MARKET PRICES
-    //──────────────────────────────────────────────────────────────────
-    Bar.Refresh(_Symbol, PERIOD_CURRENT, 6);
-    double askPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-    double bidPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-
-    //──────────────────────────────────────────────────────────────────
-    // 3 - UPDATE DRAWDOWN TRACKING
+    // 2 - UPDATE DRAWDOWN TRACKING
     //──────────────────────────────────────────────────────────────────
     drawdownManager.UpdateDaily();
 
@@ -422,13 +414,12 @@ void OnTick()
         g_runtimePanel.SetTradingHalt(false);
 
     //──────────────────────────────────────────────────────────────────
-    // 4 - UPDATE INFORMATION DISPLAY
+    // 3 - UPDATE INFORMATION DISPLAY
     //──────────────────────────────────────────────────────────────────
     infoDisplay.UpdatePoolSummary(_Symbol, MagicNumber, RiskPercent, dailyDD, DisplayVirtualCapital);
-    infoDisplay.UpdateButtonTooltips(askPrice, bidPrice);
 
     //──────────────────────────────────────────────────────────────────
-    // 5 - UPDATE PANEL + PERIODIC LOG REFRESH
+    // 4 - UPDATE PANEL + PERIODIC LOG REFRESH
     //──────────────────────────────────────────────────────────────────
     g_runtimePanel.UpdateMarketData(atrValue, atrValuePO, slPointsValue, dailyDD);
     if(dailyHalt)
@@ -436,7 +427,7 @@ void OnTick()
     g_runtimePanel.Tick();
 
     //──────────────────────────────────────────────────────────────────
-    // 6 - TRAILING STOP LOSS
+    // 5 - TRAILING STOP LOSS
     //──────────────────────────────────────────────────────────────────
     PM.TrailingStopLossByATR(_Symbol, MagicNumber, ATR.main[1], ATRFactorTSL,
                              TSLMode, TSLActivationATR, TSLStepATR);

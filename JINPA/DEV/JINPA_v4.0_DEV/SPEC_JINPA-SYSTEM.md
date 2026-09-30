@@ -14,9 +14,7 @@ jinpa-manual.mq5
 │   ├── CRM RM                   ← Risk / lot sizing
 │   ├── CPM PM                   ← Position manager (SL/TP/TSL)
 │   ├── CTradeExecutor Trade     ← Gửi orders tới broker
-│   ├── CBar Bar                 ← OHLCV bar data
 │   ├── CiATR ATR                ← ATR indicator
-│   ├── CiMA MA                  ← MA indicator
 │   ├── CUIManager uiManager     ← 10 buttons trên chart
 │   ├── CDrawdownManager         ← Track drawdown ngày/tháng
 │   ├── COrderExecutor           ← Bridge UI buttons → orders
@@ -32,23 +30,16 @@ jinpa-manual.mq5
 ```
 OnTick()
 │
-├── 1. Refresh ATR, MA values
+├── 1. Refresh ATR values
 │
-├── 2. Refresh Bar data (6 bars), lấy Ask/Bid
-│
-├── 3. DrawdownManager.UpdateDaily() + UpdateMonthly()
+├── 2. DrawdownManager.UpdateDaily() + UpdateMonthly()
 │   └── Nếu dailyDD >= MaxDrawdownDaily → return (halt)
 │
-├── 4. Đếm open buy/sell positions
+├── 3. InfoDisplay.UpdatePoolSummary()
 │
-├── 5. InfoDisplay.UpdateDisplay() + UpdateButtonTooltips()
+├── 4. RuntimePanel.UpdateMarketData() + Tick()
 │
-├── 6. OrderExecutor.HandleAllOrders(ask, bid, atr, ...)
-│   ├── Mỗi button được poll qua uiManager.XxxPressed()
-│   ├── Nếu pressed → tính SL → tính volume → gửi order
-│   └── Reset button state
-│
-└── 7. PM.TrailingStopLossByATR() — cập nhật TSL tất cả positions
+└── 5. PM.TrailingStopLossByATR() — cập nhật TSL tất cả positions
 ```
 
 ---
@@ -175,7 +166,8 @@ Reset monthly: khi tháng thay đổi.
 
 ### CInfoDisplay — Info Display (`info_display.mqh`)
 
-Tạo 6 `OBJ_LABEL` objects góc trên-phải chart. Gọi mỗi tick qua `UpdateDisplay()`. Update tooltip các buttons qua `UpdateButtonTooltips()`.
+Tạo các `OBJ_LABEL` objects góc trên-phải chart. Pool summary hiện hành được
+cập nhật mỗi tick qua `UpdatePoolSummary()`.
 
 ---
 
@@ -200,7 +192,6 @@ OnInit()
 ├── Kiểm tra TERMINAL_TRADE_ALLOWED + MQL_TRADE_ALLOWED
 ├── SymbolSelect(_Symbol)
 ├── uiManager.Initialize()  → CreateAllButtons()
-├── MA.Init()               → handle error → INIT_FAILED
 ├── ATR.Init()              → handle error → INIT_FAILED
 └── orderExecutor.Initialize(tất cả params)
 ```
