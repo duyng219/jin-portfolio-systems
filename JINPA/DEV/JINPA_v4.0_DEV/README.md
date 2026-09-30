@@ -171,6 +171,11 @@ Baseline development invariant:
 - Hedging accounts may hold opposite positions. On netting accounts, an
   opposite market order follows native MT5 behavior and may reduce, close or
   reverse the existing net position. Runtime execution validation is pending.
+- Auto audit output now records each eligible identity and its exact execution
+  request once, followed by source-aware `[JINPA][TRADE][AUTO]` controller and
+  broker-result diagnostics. Manual requests retain the corresponding
+  `[JINPA][TRADE][MANUAL]` identity.
+- Broker comments remain `<setup>_auto`; existing CSV/JSON schemas are unchanged.
 
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công
 > One-click order entry + ATR-based risk management

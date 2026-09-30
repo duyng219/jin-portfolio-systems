@@ -1,5 +1,16 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase AUTO-R&D-07 (Auto Logging / Audit Trail)
+
+- Standardized one-time Auto `ELIGIBLE` and `ENTRY_REQUEST` diagnostics with
+  event identity, selected mode, request source, risk/SL values and unchanged
+  broker comment.
+- Normalized shared controller dependency, validation, volume/margin and broker
+  result messages under source-aware `[JINPA][TRADE][MANUAL|AUTO]` prefixes.
+- Logging respects the existing level contract and adds no retries or execution
+  changes. CSV/JSON schemas, WATCH and notification logs remain unchanged.
+- Runtime validation remains pending.
+
 ## v4.0 DEV — Phase AUTO-R&D-06 (Market Execution Wiring)
 
 - Deferred each newly eligible final ACTIVE event until the same tick's shared

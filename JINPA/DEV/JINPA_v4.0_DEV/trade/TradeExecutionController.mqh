@@ -59,7 +59,8 @@ private:
                                    const double basePrice) const;
     void   LogResult(const string action,
                      const int logLevel,
-                     const JINPA_TRADE_SOURCE source) const;
+                     const JINPA_TRADE_SOURCE source,
+                     const string comment) const;
     int    CancelPendingSide(const bool buySide, const int logLevel);
     int    ClosePositionSide(const bool buySide, const int logLevel);
 
@@ -181,7 +182,8 @@ double CTradeExecutionController::CalculateMarketStopLoss(const STradeExecutionR
 void CTradeExecutionController::LogResult(
     const string action,
     const int logLevel,
-    const JINPA_TRADE_SOURCE source) const
+    const JINPA_TRADE_SOURCE source,
+    const string comment) const
 {
     if(logLevel < 1)
         return;
@@ -202,16 +204,18 @@ void CTradeExecutionController::LogResult(
                   " | symbol=", m_symbol,
                   " | SUCCESS | retcode=", rc,
                   " | ", m_trade.ResultRetcodeDescription(),
-                  " | #", m_trade.ResultOrder(),
-                  " | ", DoubleToString(m_trade.ResultVolume(), 2),
-                  " | ", DoubleToString(m_trade.ResultPrice(), _Digits));
+                  " | order=", m_trade.ResultOrder(),
+                  " | volume=", DoubleToString(m_trade.ResultVolume(), 2),
+                  " | price=", DoubleToString(m_trade.ResultPrice(), _Digits),
+                  " | comment=", comment);
     }
     else
     {
         Print("[JINPA][TRADE][", JINPATradeSourceName(source), "] ", shortAction,
               " | symbol=", m_symbol,
               " | FAILED | retcode=", rc,
-              " | ", m_trade.ResultRetcodeDescription());
+              " | ", m_trade.ResultRetcodeDescription(),
+              " | comment=", comment);
     }
 }
 
@@ -219,7 +223,8 @@ bool CTradeExecutionController::Execute(const STradeExecutionRequest &request)
 {
     if(!DependenciesReady())
     {
-        Print("[JINPA][ERROR] Trade execution controller dependencies not set.");
+        Print("[JINPA][TRADE][", JINPATradeSourceName(request.source),
+              "] CONTROLLER_REJECTED | reason=DEPENDENCIES_NOT_READY");
         return false;
     }
 
@@ -231,8 +236,9 @@ bool CTradeExecutionController::Execute(const STradeExecutionRequest &request)
     }
 
     if(IsWeekendFxLikeMarket())
-        Print("[JINPA][WARN] Weekend order attempt on ", m_symbol,
-              " (FX/metal-like market). Today is Saturday/Sunday by broker server time. Please check before trading.");
+        Print("[JINPA][TRADE][", JINPATradeSourceName(request.source),
+              "] WARN | symbol=", m_symbol,
+              " | reason=WEEKEND_FX_LIKE_MARKET");
 
     const bool isPending = (request.orderType == ORDER_TYPE_BUY_STOP ||
                             request.orderType == ORDER_TYPE_SELL_STOP ||
@@ -346,18 +352,21 @@ bool CTradeExecutionController::Execute(const STradeExecutionRequest &request)
         }
 
         default:
-            Print("[JINPA][ERROR] Unsupported trade execution order type: ",
-                  EnumToString(request.orderType));
+            Print("[JINPA][TRADE][", JINPATradeSourceName(request.source), "] ",
+                  EnumToString(request.orderType),
+                  " | symbol=", m_symbol,
+                  " | CONTROLLER_REJECTED | reason=UNSUPPORTED_ORDER_TYPE");
             return false;
     }
 
     if(attempted)
-        LogResult(EnumToString(request.orderType), request.logLevel, request.source);
+        LogResult(EnumToString(request.orderType), request.logLevel,
+                  request.source, request.comment);
     else if(request.logLevel >= 1)
         Print("[JINPA][TRADE][", JINPATradeSourceName(request.source), "] ",
               EnumToString(request.orderType),
               " | symbol=", m_symbol,
-              " | CONTROLLER_REJECTED | reason=Lot=0",
+              " | CONTROLLER_REJECTED | reason=VOLUME_OR_MARGIN_REJECTED",
               " | atrSL=", DoubleToString(request.atrStopLoss, digits),
               " atrPO=", DoubleToString(request.atrPendingOffset, digits));
 

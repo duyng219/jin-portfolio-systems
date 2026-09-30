@@ -187,12 +187,15 @@ void ObserveAutoSetupEvent(void)
     g_pendingAutoEvent = eligibleEvent;
     g_hasPendingAutoEvent = true;
 
-    Print("[JINPA][AUTO] ELIGIBLE",
-          " | Symbol=", eligibleEvent.symbol,
-          " | Timeframe=", WatcherTimeframeToString(eligibleEvent.timeframe),
-          " | TriggerBar=", TimeToString(eligibleEvent.triggerBarTime),
-          " | Setup=", eligibleEvent.setup,
-          " | Direction=", eligibleEvent.direction);
+    if(LogLevel >= LOG_INFO)
+        Print("[JINPA][AUTO] ELIGIBLE",
+              " | symbol=", eligibleEvent.symbol,
+              " | tf=", WatcherTimeframeToString(eligibleEvent.timeframe),
+              " | setup=", eligibleEvent.setup,
+              " | direction=", eligibleEvent.direction,
+              " | trigger=", TimeToString(eligibleEvent.triggerBarTime,
+                                            TIME_DATE | TIME_MINUTES),
+              " | mode=", EnumToString(AutoSetupMode));
 }
 
 void ExecutePendingAutoMarketEntry(const double atrStopLoss,
@@ -226,9 +229,25 @@ void ExecutePendingAutoMarketEntry(const double atrStopLoss,
     request.logLevel                 = (int)LogLevel;
     request.comment                  = event.setup + "_auto";
 
-    Print("[JINPA][AUTO] ENTRY_REQUEST",
-          " | setup=", event.setup,
-          " | direction=", event.direction);
+    if(request.logLevel >= LOG_INFO)
+    {
+        const string slMode = request.useATRStopLoss ? "ATR" : "POINTS";
+        const string slValue = request.useATRStopLoss
+                               ? DoubleToString(request.atrStopLoss, _Digits)
+                               : IntegerToString(request.stopLossPoints);
+        Print("[JINPA][AUTO] ENTRY_REQUEST",
+              " | setup=", event.setup,
+              " | direction=", event.direction,
+              " | source=", JINPATradeSourceName(request.source),
+              " | orderType=", EnumToString(request.orderType),
+              " | comment=", request.comment,
+              " | mm=", EnumToString(request.moneyManagement),
+              " | risk=", DoubleToString(request.riskPercent, 2),
+              " | fixedLot=", DoubleToString(request.fixedVolume, 2),
+              " | minLotEqStep=", DoubleToString(request.minLotPerEquitySteps, 2),
+              " | slMode=", slMode,
+              " | slValue=", slValue);
+    }
     g_tradeExecutionController.Execute(request);
 }
 
