@@ -1,5 +1,15 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase AUTO-R&D-04 (Auto Inputs + Setup Policy)
+
+- Added `AutoTradeEnabled=false` and `AutoSetupMode=AUTO_ALL` in a dedicated
+  main-file input group and reported both through the existing startup INPUT
+  block.
+- Added four setup modes with a stateless, fail-closed mapping across the six
+  canonical setup identities.
+- No Auto consumer, event consumption, deduplication, execution, broker call,
+  or WATCH semantic change is implemented.
+
 ## v4.0 DEV — Phase AUTO-R&D-03 (Final Active Event Contract)
 
 - Added a deterministic, read-only final setup event populated immediately

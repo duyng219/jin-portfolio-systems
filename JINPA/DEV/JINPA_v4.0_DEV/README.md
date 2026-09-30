@@ -152,7 +152,13 @@ Baseline development invariant:
 - WATCH exposes a read-only final post-arbitration setup event contract for
   future independent consumers; it adds no transition, deduplication or order
   execution behavior.
-- No Auto Trade architecture or execution path is defined in this baseline.
+- Auto configuration is disabled by default. `AUTO_ALL` is the default setup
+  mode and allows all six canonical identities; `AUTO_PULLBACK` allows
+  `revs-ppf`/`revs-pps`, `AUTO_BREAKOUT` allows `bres-pmb`/`bres-pma`, and
+  `AUTO_RANGE_REVERSAL` allows `revs-pfb`/`revs-pmr`.
+- The setup policy is a stateless identity filter only. It is not connected to
+  WATCH events, runtime execution, risk, stops or broker operations.
+- No Auto Trade consumer or execution path is defined in this baseline.
 
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công
 > One-click order entry + ATR-based risk management

@@ -20,6 +20,7 @@
 #include "_core/infrastructure/info_display.mqh"
 #include "_core/infrastructure/magic_number_resolver.mqh"
 #include "runtime/RuntimeTypes.mqh"
+#include "auto/AutoTradePolicy.mqh"
 #include "trade/TradeExecutionController.mqh"
 #include "runtime/RuntimePanelHost.mqh"
 #include "watch/WatchIntegration.mqh"
@@ -120,6 +121,10 @@ void LogExitDeal(const ulong dealTicket)
 sinput group                              "──────────── RUNTIME MODE ────────────"
 input JINPA_RUNTIME_MODE                  RuntimeMode              = JINPA_MODE_LIVE;
 
+sinput group                              "──────────── AUTO TRADE ────────────"
+input bool                                AutoTradeEnabled         = false;
+input JINPA_AUTO_SETUP_MODE               AutoSetupMode            = AUTO_ALL;
+
 sinput group                              "────────────── BASIC SETTINGS ──────────────"
 input double                              DisplayVirtualCapital     = 10000;  // Display Virtual Capital - 0 = Account Equity only
 input int                                    slPointsValue                      = 0;      // Stop Loss Points - 0 = Use ATR
@@ -218,7 +223,9 @@ int OnInit()
               " | using fallback Magic ", MagicNumber);
 
     Print("[JINPA][INPUT 1/5] RuntimeMode=", JINPARuntimeModeName(RuntimeMode),
-          " | Environment=", runtimeEnvironment);
+          " | Environment=", runtimeEnvironment,
+          " | AutoTrade=", (AutoTradeEnabled ? "ON" : "OFF"),
+          " | AutoMode=", EnumToString(AutoSetupMode));
     Print("[JINPA][INPUT 2/5] Symbol=", _Symbol,
           " | Timeframe=", WatcherTimeframeToString((ENUM_TIMEFRAMES)_Period),
           " | Magic=", MagicNumber,
