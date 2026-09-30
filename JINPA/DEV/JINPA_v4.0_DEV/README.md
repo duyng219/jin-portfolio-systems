@@ -158,7 +158,12 @@ Baseline development invariant:
   `AUTO_RANGE_REVERSAL` allows `revs-pfb`/`revs-pmr`.
 - The setup policy is a stateless identity filter only. It is not connected to
   WATCH events, runtime execution, risk, stops or broker operations.
-- No Auto Trade consumer or execution path is defined in this baseline.
+- The Auto consumer observes the final WATCH event and establishes a baseline
+  on its first snapshot. Each valid ACTIVE identity—symbol, timeframe,
+  trigger-bar time, setup and direction—is consumed at most once per EA
+  session, including identities seen while Auto is off or rejected by mode.
+- Eligible identities are logged only; Auto execution remains disconnected.
+- No Auto Trade execution path is defined in this baseline.
 
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công
 > One-click order entry + ATR-based risk management

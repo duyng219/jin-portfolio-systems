@@ -20,7 +20,7 @@
 #include "_core/infrastructure/info_display.mqh"
 #include "_core/infrastructure/magic_number_resolver.mqh"
 #include "runtime/RuntimeTypes.mqh"
-#include "auto/AutoTradePolicy.mqh"
+#include "auto/AutoTradeConsumer.mqh"
 #include "trade/TradeExecutionController.mqh"
 #include "runtime/RuntimePanelHost.mqh"
 #include "watch/WatchIntegration.mqh"
@@ -35,6 +35,7 @@ CInfoDisplay     infoDisplay;
 CTradeExecutionController g_tradeExecutionController;
 CTestCommentResolver g_testCommentResolver;
 CRuntimePanelHost g_runtimePanel;
+CAutoTradeConsumer autoTradeConsumer;
 ulong            MagicNumber = 0;             // Resolved once per EA instance
 string           CanonicalSymbol = "UNKNOWN";
 CWatchIntegration watchIntegration;
@@ -167,8 +168,28 @@ input bool                                EnableMT5Push              = false;
 sinput group                              "────────────────── LOGGING ─────────────────"
 input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;
 
+void ObserveAutoSetupEvent(void)
+{
+    SFinalSetupEvent finalEvent;
+    if(!watchIntegration.GetFinalSetupEvent(finalEvent))
+        return;
+
+    SFinalSetupEvent eligibleEvent;
+    if(!autoTradeConsumer.ConsumeEligibleEvent(
+           finalEvent, AutoTradeEnabled, AutoSetupMode, eligibleEvent))
+        return;
+
+    Print("[JINPA][AUTO] ELIGIBLE",
+          " | Symbol=", eligibleEvent.symbol,
+          " | Timeframe=", WatcherTimeframeToString(eligibleEvent.timeframe),
+          " | TriggerBar=", TimeToString(eligibleEvent.triggerBarTime),
+          " | Setup=", eligibleEvent.setup,
+          " | Direction=", eligibleEvent.direction);
+}
+
 int OnInit()
 {
+    autoTradeConsumer.Reset();
     const string runtimeEnvironment = JINPARuntimeEnvironmentName();
     Print("[JINPA][STARTUP] JINPA v4.0 DEV");
 
@@ -371,6 +392,8 @@ int OnInit()
         Print("[JINPA][WARN] Structure integration disabled — initialization failed.");
     Print("[JINPA][WATCH] Initialization=",
           (watchInitialized ? "READY" : "UNAVAILABLE"));
+    if(watchInitialized)
+        ObserveAutoSetupEvent();
     if(RuntimeMode == JINPA_MODE_TEST)
     {
         Print("[JINPA][STARTUP] TEST services",
@@ -396,6 +419,7 @@ void OnDeinit(const int reason)
 void OnTick()
 {
     watchIntegration.ProcessTick();
+    ObserveAutoSetupEvent();
 
     //──────────────────────────────────────────────────────────────────
     // 1 - REFRESH INDICATORS

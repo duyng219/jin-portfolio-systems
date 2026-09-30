@@ -1,5 +1,16 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase AUTO-R&D-05 (Event Consumer + Dedup/Baseline)
+
+- Added a main-wired Auto observation layer consuming only the final
+  post-arbitration `SFinalSetupEvent`.
+- The first snapshot establishes baseline, and each valid ACTIVE identity can
+  produce at most one future-attempt handoff per EA session.
+- Events observed while Auto is disabled or rejected by setup mode are consumed
+  without handoff and cannot be replayed after configuration changes.
+- Eligible handoffs are diagnostic-only. No trade request, execution-controller
+  call, broker operation, DD/risk/SL dependency or RuntimeMode coupling exists.
+
 ## v4.0 DEV — Phase AUTO-R&D-04 (Auto Inputs + Setup Policy)
 
 - Added `AutoTradeEnabled=false` and `AutoSetupMode=AUTO_ALL` in a dedicated
