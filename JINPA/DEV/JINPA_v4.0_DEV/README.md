@@ -162,8 +162,15 @@ Baseline development invariant:
   on its first snapshot. Each valid ACTIVE identity—symbol, timeframe,
   trigger-bar time, setup and direction—is consumed at most once per EA
   session, including identities seen while Auto is off or rejected by mode.
-- Eligible identities are logged only; Auto execution remains disconnected.
-- No Auto Trade execution path is defined in this baseline.
+- Eligible identities are deferred until the same tick's shared ATR and DD
+  refresh completes, then mapped to market BUY/SELL requests through the same
+  `CTradeExecutionController`, risk/SL inputs, Magic and trailing domain used
+  by Manual execution. Pending Auto orders are not implemented.
+- Consumption occurs before execution, so DD, ATR, risk, margin or broker
+  rejection never retries the same identity.
+- Hedging accounts may hold opposite positions. On netting accounts, an
+  opposite market order follows native MT5 behavior and may reduce, close or
+  reverse the existing net position. Runtime execution validation is pending.
 
 > MT5 Expert Advisor hỗ trợ giao dịch thủ công
 > One-click order entry + ATR-based risk management

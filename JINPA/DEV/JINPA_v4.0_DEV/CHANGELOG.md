@@ -1,5 +1,19 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase AUTO-R&D-06 (Market Execution Wiring)
+
+- Deferred each newly eligible final ACTIVE event until the same tick's shared
+  ATR and daily-DD refresh, then submitted one market BUY/SELL request through
+  `CTradeExecutionController` with `TRADE_SOURCE_AUTO`.
+- Auto requests use the canonical main risk/SL/pending-expiration/log inputs,
+  shared Magic and trailing domain, and exact `<setup>_auto` comments. Auto
+  pending orders and position-count/opposite-side policies are not implemented.
+- Events remain consumed before execution and are never retried after DD, ATR,
+  risk, margin or broker rejection. Controller return semantics are unchanged.
+- Hedging/netting behavior remains native to the account. Runtime execution
+  validation is pending; WATCH, Manual, Arrow and notification semantics are
+  unchanged.
+
 ## v4.0 DEV — Phase AUTO-R&D-05 (Event Consumer + Dedup/Baseline)
 
 - Added a main-wired Auto observation layer consuming only the final

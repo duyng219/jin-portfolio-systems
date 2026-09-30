@@ -36,6 +36,8 @@ CTradeExecutionController g_tradeExecutionController;
 CTestCommentResolver g_testCommentResolver;
 CRuntimePanelHost g_runtimePanel;
 CAutoTradeConsumer autoTradeConsumer;
+bool             g_hasPendingAutoEvent = false;
+SFinalSetupEvent g_pendingAutoEvent;
 ulong            MagicNumber = 0;             // Resolved once per EA instance
 string           CanonicalSymbol = "UNKNOWN";
 CWatchIntegration watchIntegration;
@@ -170,6 +172,9 @@ input ENUM_LOG_LEVEL             LogLevel = LOG_INFO;
 
 void ObserveAutoSetupEvent(void)
 {
+    if(g_hasPendingAutoEvent)
+        return;
+
     SFinalSetupEvent finalEvent;
     if(!watchIntegration.GetFinalSetupEvent(finalEvent))
         return;
@@ -179,6 +184,9 @@ void ObserveAutoSetupEvent(void)
            finalEvent, AutoTradeEnabled, AutoSetupMode, eligibleEvent))
         return;
 
+    g_pendingAutoEvent = eligibleEvent;
+    g_hasPendingAutoEvent = true;
+
     Print("[JINPA][AUTO] ELIGIBLE",
           " | Symbol=", eligibleEvent.symbol,
           " | Timeframe=", WatcherTimeframeToString(eligibleEvent.timeframe),
@@ -187,9 +195,48 @@ void ObserveAutoSetupEvent(void)
           " | Direction=", eligibleEvent.direction);
 }
 
+void ExecutePendingAutoMarketEntry(const double atrStopLoss,
+                                   const double atrPendingOffset)
+{
+    if(!g_hasPendingAutoEvent)
+        return;
+
+    const SFinalSetupEvent event = g_pendingAutoEvent;
+    g_hasPendingAutoEvent = false;
+    ResetFinalSetupEvent(g_pendingAutoEvent);
+
+    ENUM_ORDER_TYPE orderType = ORDER_TYPE_BUY;
+    if(event.direction == "SELL")
+        orderType = ORDER_TYPE_SELL;
+    else if(event.direction != "BUY")
+        return;
+
+    STradeExecutionRequest request;
+    request.source                   = TRADE_SOURCE_AUTO;
+    request.orderType                = orderType;
+    request.moneyManagement          = MoneyManagement;
+    request.minLotPerEquitySteps     = MinLotPerEquitySteps;
+    request.riskPercent              = RiskPercent;
+    request.fixedVolume              = FixedVolume;
+    request.useATRStopLoss           = (slPointsValue <= 0);
+    request.stopLossPoints           = slPointsValue;
+    request.atrStopLoss              = atrStopLoss;
+    request.atrPendingOffset         = atrPendingOffset;
+    request.pendingExpirationMinutes = POExpirationMinutes;
+    request.logLevel                 = (int)LogLevel;
+    request.comment                  = event.setup + "_auto";
+
+    Print("[JINPA][AUTO] ENTRY_REQUEST",
+          " | setup=", event.setup,
+          " | direction=", event.direction);
+    g_tradeExecutionController.Execute(request);
+}
+
 int OnInit()
 {
     autoTradeConsumer.Reset();
+    g_hasPendingAutoEvent = false;
+    ResetFinalSetupEvent(g_pendingAutoEvent);
     const string runtimeEnvironment = JINPARuntimeEnvironmentName();
     Print("[JINPA][STARTUP] JINPA v4.0 DEV");
 
@@ -436,14 +483,18 @@ void OnTick()
 
     double dailyDD = drawdownManager.GetDailyPercent();
     bool   dailyHalt = (MaxDrawdownDaily > 0 && dailyDD <= -MaxDrawdownDaily);
-    g_tradeExecutionController.SetTradingHalt(dailyHalt);
 
     if(dailyHalt)
     {
         Comment("Max Daily DD reached: ", DoubleToString(MathAbs(dailyDD), 2), "% — Trading Halted!");
+        g_runtimePanel.SetTradingHalt(
+            true, "Max Daily DD reached: " + DoubleToString(MathAbs(dailyDD), 2) + "%");
     }
     else
         g_runtimePanel.SetTradingHalt(false);
+
+    g_tradeExecutionController.SetTradingHalt(dailyHalt);
+    ExecutePendingAutoMarketEntry(atrValue, atrValuePO);
 
     //──────────────────────────────────────────────────────────────────
     // 3 - UPDATE INFORMATION DISPLAY
@@ -454,8 +505,6 @@ void OnTick()
     // 4 - UPDATE PANEL + PERIODIC LOG REFRESH
     //──────────────────────────────────────────────────────────────────
     g_runtimePanel.UpdateMarketData(atrValue, atrValuePO, slPointsValue, dailyDD);
-    if(dailyHalt)
-        g_runtimePanel.SetTradingHalt(true, "Max Daily DD reached: " + DoubleToString(MathAbs(dailyDD), 2) + "%");
     g_runtimePanel.Tick();
 
     //──────────────────────────────────────────────────────────────────
