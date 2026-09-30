@@ -166,10 +166,6 @@ int OnInit()
 {
     const string runtimeEnvironment = JINPARuntimeEnvironmentName();
     Print("[JINPA][STARTUP] JINPA v3.2 LIVE");
-    Print("[JINPA][STARTUP] RuntimeMode=", JINPARuntimeModeName(RuntimeMode),
-          " | Environment=", runtimeEnvironment);
-    Print("[JINPA][STARTUP] Symbol=", _Symbol,
-          " | Timeframe=", WatcherTimeframeToString((ENUM_TIMEFRAMES)_Period));
 
     if(RuntimeMode == JINPA_MODE_TEST
        && runtimeEnvironment != "STRATEGY_TESTER"
