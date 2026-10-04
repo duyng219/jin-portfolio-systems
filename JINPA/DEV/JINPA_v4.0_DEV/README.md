@@ -156,6 +156,9 @@ Baseline development invariant:
   mode and allows all six canonical identities; `AUTO_PULLBACK` allows
   `revs-ppf`/`revs-pps`, `AUTO_BREAKOUT` allows `bres-pmb`/`bres-pma`, and
   `AUTO_RANGE_REVERSAL` allows `revs-pfb`/`revs-pmr`.
+- `AUTO_PULLBACK_BREAKOUT` allows `revs-ppf`/`revs-pps` and
+  `bres-pmb`/`bres-pma`; this is a policy-only extension and does not change
+  Auto execution architecture.
 - The setup policy is a stateless identity filter only. It is not connected to
   WATCH events, runtime execution, risk, stops or broker operations.
 - The Auto consumer observes the final WATCH event and establishes a baseline

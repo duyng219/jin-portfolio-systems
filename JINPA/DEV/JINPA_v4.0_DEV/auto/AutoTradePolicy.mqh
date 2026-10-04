@@ -29,6 +29,10 @@ bool CAutoTradePolicy::IsSetupAllowed(const JINPA_AUTO_SETUP_MODE mode,
                || setup == "bres-pmb" || setup == "bres-pma"
                || setup == "revs-pfb" || setup == "revs-pmr";
 
+    if(mode == AUTO_PULLBACK_BREAKOUT)
+        return setup == "revs-ppf" || setup == "revs-pps"
+               || setup == "bres-pmb" || setup == "bres-pma";
+
     return false;
 }
 

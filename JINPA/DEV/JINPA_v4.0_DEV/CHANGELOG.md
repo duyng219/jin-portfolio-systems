@@ -1,5 +1,13 @@
 # JINPA Changelog
 
+## v4.0 DEV — Phase AUTO-R&D-09A.1 (Pullback + Breakout Auto Mode)
+
+- Appended `AUTO_PULLBACK_BREAKOUT=4` without changing existing Auto mode
+  numeric values or the default `AUTO_ALL` input.
+- The new policy mode allows `revs-ppf`, `revs-pps`, `bres-pmb`, and
+  `bres-pma`; range-reversal and non-canonical setup identities remain blocked.
+- No Auto execution architecture or shared trade-controller behavior changed.
+
 ## v4.0 DEV — Phase AUTO-R&D-07 (Auto Logging / Audit Trail)
 
 - Standardized one-time Auto `ELIGIBLE` and `ENTRY_REQUEST` diagnostics with
