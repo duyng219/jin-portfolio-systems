@@ -126,7 +126,7 @@ private:
       }
 
       ObjectSetInteger(m_chartId, name, OBJPROP_COLOR,
-                       isBuy ? clrLimeGreen : clrTomato);
+                       isBuy ? clrOrange : clrOrange);
       ObjectSetInteger(m_chartId, name, OBJPROP_WIDTH, 1);
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, false);
