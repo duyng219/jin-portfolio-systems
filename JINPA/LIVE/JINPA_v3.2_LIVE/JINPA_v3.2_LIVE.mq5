@@ -122,41 +122,42 @@ input JINPA_RUNTIME_MODE                  RuntimeMode              = JINPA_MODE_
 
 sinput group                              "────────────── BASIC SETTINGS ──────────────"
 input double                              DisplayVirtualCapital     = 10000;  // Display Virtual Capital - 0 = Account Equity only
-input int                                    slPointsValue                      = 0;      // Stop Loss Points - 0 = Use ATR
-input ushort                              POExpirationMinutes       = 360;    // Pending Order Expiration (minutes)
-input double                             MaxDrawdownDaily           = 0;      // Max Daily Drawdown (%) - 0 = Disabled
+const  int                                    slPointsValue                      = 0;      // Stop Loss Points - 0 = Use ATR
+const  ushort                              POExpirationMinutes       = 360;    // Pending Order Expiration (minutes)
+input  double                             MaxDrawdownDaily           = 0;      // Max Daily Drawdown (%) - 0 = Disabled
 
 sinput group                              "────────────── RISK MANAGEMENT ────────────"
-input ENUM_MONEY_MANAGEMENT    MoneyManagement      = MM_EQUITY_RISK_PERCENT; // Risk Method
-input double                              RiskPercent                      = 0.5;   // Risk per Trade (%)
-input double                              FixedVolume                    = 0.01;  // Fixed Lot Size
-input double                              MinLotPerEquitySteps      = 500;   // Equity per Lot
+input ENUM_MONEY_MANAGEMENT    MoneyManagement      = MM_EQUITY_RISK_PERCENT; 
+input double                              RiskPercent                      = 0.2;  
+const  double                              FixedVolume                    = 0.01; 
+const  double                              MinLotPerEquitySteps      = 500;  
 
-sinput group                              "─────────────── ATR SETTINGS ──────────────"
-input int                                       ATRPeriod                     = 14;
-input double                                ATRFactorSL                 = 2.2;   // Factor for initial Stop Loss
-input double                                ATRFactorTSL                = 2.5;   // Factor for Trailing Stop distance
-input double                                ATRFactorPO                 = 2.5;   // Factor (Pending Order offset)
+// sinput group                              "─────────────── ATR SETTINGS ──────────────"
+const  int                                       ATRPeriod                     = 14;
+const double                                ATRFactorSL                 = 2.2;   // 
+const double                                ATRFactorTSL                = 2.5;   // 
+const  double                                ATRFactorPO                 = 2.5;   // 
 
-sinput group                              "──────────── TRAILING STOP ─────────────────"
-input ENUM_TSL_MODE            TSLMode          = TSL_STEP;
-input double                              TSLActivationATR = 2.5;
-input double                              TSLStepATR       = 2.5;   // Minimum ATR move between TSL updates
+// sinput group                              "──────────── TRAILING STOP ─────────────────"
+const ENUM_TSL_MODE            TSLMode          = TSL_STEP;
+const double                              TSLStepATR       = 3.9; 
+// input double                              TSLActivationATR = 2.5;
+const  double                             TSLActivationATR = 2.5;
 
-sinput group                              "──────────── STRUCTURE ENGINE ───────────────"
-input int                                 SwingLeftBars             = 3;     // Confirmed swing left window
-input int                                 SwingRightBars            = 3;     // Confirmed swing right window
-input int                                 StructureATRPeriod         = 14;    // Shared swing-distance/Core-break ATR
-input double                              CoreBreakATRBuffer         = 0.10;  // Core boundary ATR multiplier
-input int                                 CoreBreakConfirmCloses     = 2;     // Consecutive closes beyond boundary
+// sinput group                              "──────────── STRUCTURE ENGINE ───────────────"
+const  int                                 SwingLeftBars             = 3;     // Confirmed swing left window
+const  int                                 SwingRightBars            = 3;     // Confirmed swing right window
+const  int                                 StructureATRPeriod         = 14;    // Shared swing-distance/Core-break ATR
+const  double                          CoreBreakATRBuffer         = 0.10;  // Core boundary ATR multiplier
+const  int                                 CoreBreakConfirmCloses     = 2;     // Consecutive closes beyond boundary
 
 sinput group                              "──────────── STRUCTURE DISPLAY ──────────────"
 input bool                                ShowStructureSwings        = true;  // Show HH/HL/LH/LL
 
 sinput group                              "──────────── NOTIFICATIONS ─────────────"
 input bool                                EnableTelegramPush         = true;
-input string                              TelegramBotToken           = "";
-input string                              TelegramChatId             = "";
+input string                              TelegramBotToken           = "8983834527:AAFYBtSJ0Tupc7eKxBwJpSIH4tBQiVEwkbY(x)";
+input string                              TelegramChatId             = "1349135415(x)";
 input bool                                EnableMT5Push              = false;
 
 sinput group                              "────────────────── LOGGING ─────────────────"

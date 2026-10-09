@@ -135,21 +135,21 @@ input ushort                              POExpirationMinutes       = 360;    //
 input double                             MaxDrawdownDaily           = 0;      // Max Daily Drawdown (%) - 0 = Disabled
 
 sinput group                              "────────────── RISK MANAGEMENT ────────────"
-input ENUM_MONEY_MANAGEMENT    MoneyManagement      = MM_EQUITY_RISK_PERCENT; // Risk Method
-input double                              RiskPercent                      = 0.5;   // Risk per Trade (%)
-input double                              FixedVolume                    = 0.01;  // Fixed Lot Size
-input double                              MinLotPerEquitySteps      = 500;   // Equity per Lot
+input ENUM_MONEY_MANAGEMENT    MoneyManagement      = MM_EQUITY_RISK_PERCENT; 
+input double                              RiskPercent                      = 0.5;  
+input double                              FixedVolume                    = 0.01; 
+input double                              MinLotPerEquitySteps      = 500;  
 
 sinput group                              "─────────────── ATR SETTINGS ──────────────"
 input int                                       ATRPeriod                     = 14;
-input double                                ATRFactorSL                 = 2.2;   // Factor for initial Stop Loss
-input double                                ATRFactorTSL                = 2.5;   // Factor for Trailing Stop distance
-input double                                ATRFactorPO                 = 2.5;   // Factor (Pending Order offset)
+input double                                ATRFactorSL                 = 2.2;   // 
+input double                                ATRFactorTSL                = 2.5;   // 
+input double                                ATRFactorPO                 = 2.5;   // 
 
 sinput group                              "──────────── TRAILING STOP ─────────────────"
 input ENUM_TSL_MODE            TSLMode          = TSL_STEP;
-input double                              TSLActivationATR = 2.5;
-input double                              TSLStepATR       = 2.5;   // Minimum ATR move between TSL updates
+input double                              TSLStepATR       = 3.9; 
+ input double                              TSLActivationATR = 2.5;
 
 sinput group                              "──────────── STRUCTURE ENGINE ───────────────"
 input int                                 SwingLeftBars             = 3;     // Confirmed swing left window
